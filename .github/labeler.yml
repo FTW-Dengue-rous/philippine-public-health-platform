@@ -1,21 +1,21 @@
-ingestion:
-  - changed-files:
-      - any-glob-to-any-file: "src/ingestion/**"
-bronze:
-  - changed-files:
-      - any-glob-to-any-file: "src/bronze/**"
-silver:
-  - changed-files:
-      - any-glob-to-any-file: "src/silver/**"
-gold:
-  - changed-files:
-      - any-glob-to-any-file: "src/gold/**"
-quality:
-  - changed-files:
-      - any-glob-to-any-file: "src/quality/**"
 setup:
   - changed-files:
-      - any-glob-to-any-file: "setup/**"
+      - any-glob-to-any-file: "src/00_setup/**"
+ingestion:
+  - changed-files:
+      - any-glob-to-any-file: "src/01_ingestion/**"
+bronze:
+  - changed-files:
+      - any-glob-to-any-file: "src/02_bronze/**"
+silver:
+  - changed-files:
+      - any-glob-to-any-file: "src/03_silver/**"
+gold:
+  - changed-files:
+      - any-glob-to-any-file: "src/04_gold/**"
+quality:
+  - changed-files:
+      - any-glob-to-any-file: "src/05_quality/**"
 tests:
   - changed-files:
       - any-glob-to-any-file: "tests/**"
