@@ -1,5 +1,5 @@
 # Dev / CI tools (not needed on Databricks)
-ruff
+ruff==0.16.9  # keep in sync with ruff rev in .pre-commit-config.yaml
 pytest
 pytest-cov
 sqlfluff==4.3.0
