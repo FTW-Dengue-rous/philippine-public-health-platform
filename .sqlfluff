@@ -1,0 +1,9 @@
+[sqlfluff]
+dialect = databricks
+templater = raw
+max_line_length = 120
+# Relax rules that are noisy for DDL/setup scripts
+exclude_rules = AM04, ST06
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper

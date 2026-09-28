@@ -1,0 +1,33 @@
+ingestion:
+  - changed-files:
+      - any-glob-to-any-file: "src/ingestion/**"
+bronze:
+  - changed-files:
+      - any-glob-to-any-file: "src/bronze/**"
+silver:
+  - changed-files:
+      - any-glob-to-any-file: "src/silver/**"
+gold:
+  - changed-files:
+      - any-glob-to-any-file: "src/gold/**"
+quality:
+  - changed-files:
+      - any-glob-to-any-file: "src/quality/**"
+setup:
+  - changed-files:
+      - any-glob-to-any-file: "setup/**"
+tests:
+  - changed-files:
+      - any-glob-to-any-file: "tests/**"
+dashboard:
+  - changed-files:
+      - any-glob-to-any-file: "dashboard/**"
+docs:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "**/*.md"]
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/**", ".pre-commit-config.yaml", "pyproject.toml", ".sqlfluff"]
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: "requirements*.txt"

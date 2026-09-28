@@ -1,0 +1,6 @@
+# Dev / CI tools (not needed on Databricks)
+ruff
+pytest
+pytest-cov
+sqlfluff
+pre-commit

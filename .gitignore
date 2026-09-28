@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Environment / secrets — never commit
+.env
+*.env
+secrets/
+*.pem
+*.key
+config/*.local.*
+
+# Data — keep full datasets out of Git (only data/sample/ is tracked)
+data/*
+!data/sample/
+*.parquet
+*.zip
+*.gz
+
+# Databricks
+.databricks/
+*.dbc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Python lint & format (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  test:
+    name: Unit tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: pytest --cov=src --cov-report=term-missing
+
+  sql-lint:
+    name: SQL lint (sqlfluff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install sqlfluff
+      - name: Lint .sql files (skips if none)
+        run: |
+          files=$(git ls-files '*.sql')
+          if [ -z "$files" ]; then echo "No SQL files yet — skipping."; exit 0; fi
+          sqlfluff lint $files
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Uses the gitleaks CLI directly: gitleaks-action needs a license key for org-owned repos
+      - name: Install gitleaks (latest release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo gitleaks/gitleaks --pattern '*_linux_x64.tar.gz' --output gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+      - name: Scan git history for secrets
+        run: ./gitleaks git . --redact --verbose
+
+  repo-hygiene:
+    name: Repo hygiene (large files, notebook outputs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block files over 5 MB
+        run: |
+          big=$(git ls-files -z | xargs -0 -r du -k | awk '$1 > 5120 {print $2}')
+          if [ -n "$big" ]; then
+            echo "::error::Files over 5 MB found — keep datasets out of Git:"; echo "$big"; exit 1
+          fi
+          echo "No large files."
+      - name: Block Jupyter notebooks with saved outputs
+        run: |
+          python - <<'PY'
+          import json, subprocess, sys
+          nbs = subprocess.run(["git", "ls-files", "*.ipynb"], capture_output=True, text=True).stdout.split()
+          bad = [nb for nb in nbs
+                 if any(c.get("outputs") for c in json.load(open(nb, encoding="utf-8")).get("cells", []))]
+          if bad:
+              print("::error::Clear notebook outputs before committing:", *bad, sep="\n")
+              sys.exit(1)
+          print(f"Checked {len(nbs)} notebook(s) — clean.")
+          PY

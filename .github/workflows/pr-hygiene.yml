@@ -1,0 +1,36 @@
+name: PR Hygiene
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write   # labeler may need to create new labels
+
+jobs:
+  title:
+    name: PR title format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  label:
+    name: Label by changed folders
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          sync-labels: true
+
+  assign:
+    name: Auto-assign reviewers
+    if: github.event.action == 'opened' || github.event.action == 'ready_for_review'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: kentaro-m/auto-assign-action@v2.0.0
+        with:
+          configuration-path: .github/auto_assign.yml
