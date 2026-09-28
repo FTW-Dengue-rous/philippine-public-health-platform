@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   push:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read
@@ -18,9 +18,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install ruff
-      - run: ruff check .
-      - run: ruff format --check .
+      - run: pip install pre-commit
+      # Uses the same hooks + pinned versions as local commits (.pre-commit-config.yaml),
+      # so "passes locally" == "passes CI"
+      - name: ruff lint
+        run: pre-commit run ruff --all-files --show-diff-on-failure
+      - name: ruff format
+        run: pre-commit run ruff-format --all-files --show-diff-on-failure
+      - name: End-of-file newline
+        run: pre-commit run end-of-file-fixer --all-files --show-diff-on-failure
+      - name: Trailing whitespace
+        run: pre-commit run trailing-whitespace --all-files --show-diff-on-failure
 
   test:
     name: Unit tests (pytest)
