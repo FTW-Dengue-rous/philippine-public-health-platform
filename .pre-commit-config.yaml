@@ -22,9 +22,10 @@ repos:
       - id: ruff-format
 
   - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 3.2.5
+    rev: 4.3.0
     hooks:
-      - id: sqlfluff-lint
+      - id: sqlfluff-fix    # auto-fixes what it can
+      - id: sqlfluff-lint   # reports what's left
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.7.1

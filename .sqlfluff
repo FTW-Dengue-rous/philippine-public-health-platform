@@ -7,3 +7,7 @@ exclude_rules = AM04, ST06
 
 [sqlfluff:rules:capitalisation.keywords]
 capitalisation_policy = upper
+
+# Databricks notebooks (.sql): keep "-- MAGIC" lines exactly as written.
+[sqlfluff:layout:type:magic_line]
+spacing_before = touch
