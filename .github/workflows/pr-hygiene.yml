@@ -27,10 +27,55 @@ jobs:
           sync-labels: true
 
   assign:
-    name: Auto-assign reviewers
-    if: github.event.action == 'opened' || github.event.action == 'ready_for_review'
+    name: Assign reviewers (fixed checker)
+    if: >-
+      !github.event.pull_request.draft &&
+      (github.event.action == 'opened' ||
+       github.event.action == 'reopened' ||
+       github.event.action == 'ready_for_review')
     runs-on: ubuntu-latest
     steps:
-      - uses: kentaro-m/auto-assign-action@v2.0.0
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
         with:
-          configuration-path: .github/auto_assign.yml
+          script: |
+            const fs = require('fs');
+            const cfg = JSON.parse(fs.readFileSync('.github/reviewers.json', 'utf8'));
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+            const lower = (s) => s.toLowerCase();
+
+            // Skip WIP / draft titles
+            if (/\b(wip|draft)\b/i.test(pr.title)) {
+              core.info('Title marked WIP/draft - skipping reviewer assignment.');
+              return;
+            }
+
+            // Default reviewer + the author's fixed checker (author can't review own PR)
+            const checkers = Object.fromEntries(
+              Object.entries(cfg.checkers).map(([a, c]) => [lower(a), c])
+            );
+            const reviewers = new Set();
+            if (cfg.default_reviewer) reviewers.add(cfg.default_reviewer);
+            const checker = checkers[lower(author)];
+            if (checker) reviewers.add(checker);
+            else core.warning(`No checker mapped for ${author} in .github/reviewers.json`);
+            for (const r of [...reviewers]) if (lower(r) === lower(author)) reviewers.delete(r);
+
+            const base = { owner: context.repo.owner, repo: context.repo.repo };
+            if (reviewers.size) {
+              try {
+                await github.rest.pulls.requestReviewers({
+                  ...base, pull_number: pr.number, reviewers: [...reviewers],
+                });
+                core.info(`Requested review from: ${[...reviewers].join(', ')}`);
+              } catch (e) {
+                core.setFailed(`Could not request ${[...reviewers].join(', ')} - ` +
+                  `check they accepted the repo invite. (${e.message})`);
+              }
+            }
+
+            // Assign the PR to its author
+            await github.rest.issues.addAssignees({
+              ...base, issue_number: pr.number, assignees: [author],
+            });

@@ -1,0 +1,12 @@
+{
+  "_comment": "default_reviewer is added to every PR. checkers maps PR author -> fixed checker. Usernames must have accepted the repo invite.",
+  "default_reviewer": "jg0901",
+  "checkers": {
+    "jg0901": "go-viaaa",
+    "annmargarettel": "jg0901",
+    "shienaaaargh": "annmargarettel",
+    "virnalee": "shienaaaargh",
+    "crisstin92-ui": "virnalee",
+    "go-viaaa": "crisstin92-ui"
+  }
+}
