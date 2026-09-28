@@ -1,11 +1,12 @@
 # Contributing
 
 ## Workflow
-1. Pull latest `main`: `git checkout main && git pull`
+1. Pull latest `dev`: `git checkout main && git pull`
 2. Create a branch: `git checkout -b feature/<short-name>`
-3. Commit, push, and open a PR into `main`
+3. Commit, push, and open a PR into `dev`
 4. All CI checks must be green + 1 approval before merging
 5. Delete the branch after merge
+6. Every end of week/when we finish a milestone (e.g. bronze, silver, gold), merge `dev` into `main`
 
 ## Branch names
 `feature/…` new work · `fix/…` bug fix · `docs/…` docs only · `chore/…` setup/cleanup
