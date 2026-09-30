@@ -10,10 +10,3 @@ sources:
 
     bronze_table: "public_health.bronze.psgc"
     metadata_table: "public_health.bronze.ingestion_metadata"
-
-  poverty:
-    source_name: "PSA Poverty Statistics"
-    source_page_url: "https://psa.gov.ph/statistics/poverty/node/1684084078"
-    dataset_name: "Full Year Official Poverty Statistics"
-
-    landing_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/poverty"
