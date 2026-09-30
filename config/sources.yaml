@@ -1,0 +1,12 @@
+sources:
+  psgc:
+    source_name: "PSA PSGC"
+    base_url: "https://classification.psa.gov.ph/psgc"
+    version: "Q2_2024"
+    endpoint: "all"
+    page_size: 1000
+
+    landing_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/psgc"
+
+    bronze_table: "public_health.bronze.psgc"
+    metadata_table: "public_health.bronze.ingestion_metadata"
