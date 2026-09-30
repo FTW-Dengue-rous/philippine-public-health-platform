@@ -1,4 +1,6 @@
 # Add libraries as the team uses them, e.g.:
-# requests
+requests
+PyYAML
+beautifulsoup4
 # pandas
 # pyspark
