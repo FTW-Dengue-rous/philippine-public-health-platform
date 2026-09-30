@@ -230,4 +230,3 @@ and the notebook exited before raw promotion and the Bronze MERGE.
 
 This demonstrates that rerunning the same PSGC source batch does
 not create duplicate records in the Bronze layer.
-
