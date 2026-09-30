@@ -174,6 +174,19 @@ raw files can be reused instead of downloading the PSA source again.
 The Bronze Delta `MERGE` also protects retry attempts from inserting
 duplicate records.
 
+### Known Source Data Exceptions
+
+Two PSGC records contain a blank `geographic_level` in the PSA source:
+
+- `0990100000` — City of Isabela (Not a Province)
+- `1999900000` — Special Geographic Area
+
+The Bronze layer preserves these source values without inference.
+
+Population observations may also contain blank values or `#N/A`.
+These values are preserved in Bronze and will be standardized to
+NULL during Silver transformation.
+
 ---
 
 ## Validation Queries
@@ -185,6 +198,7 @@ SELECT
     COUNT(*) AS total_rows,
     COUNT(DISTINCT psgc_code) AS unique_psgc_codes
 FROM public_health.bronze.psgc;## Idempotency Rerun Test
+```
 
 **Status: PASSED**
 
