@@ -8,5 +8,10 @@ sources:
 
     landing_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/psgc"
 
+<<<<<<< HEAD
     bronze_table: "public_health.bronze.geography_bronze"
     metadata_table: "public_health.bronze.ingestion_metadata"
+=======
+    bronze_table: "public_health.bronze.psgc"
+    metadata_table: "public_health.bronze.ingestion_metadata"
+>>>>>>> origin/dev
