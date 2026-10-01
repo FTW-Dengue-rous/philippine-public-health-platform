@@ -43,7 +43,7 @@ structured Spark ingestion.
 
 Bronze table:
 
-`public_health.bronze.psgc`
+`public_health.bronze.geography_bronze`
 
 Ingestion metadata table:
 
@@ -87,7 +87,7 @@ content during reruns.
 
 The validated PSGC dataset was merged into:
 
-`public_health.bronze.psgc`
+`public_health.bronze.geography_bronze`
 
 | Validation | Result |
 |---|---:|
@@ -197,9 +197,9 @@ NULL during Silver transformation.
 SELECT
     COUNT(*) AS total_rows,
     COUNT(DISTINCT psgc_code) AS unique_psgc_codes
-FROM public_health.bronze.psgc;## Idempotency Rerun Test
+FROM public_health.bronze.geography_bronze;
 ```
-
+## Idempotency Rerun Test
 **Status: PASSED**
 
 The PSGC ingestion notebook was executed again against the same

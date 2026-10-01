@@ -2,7 +2,7 @@
 
 ## Bronze Layer
 
-### `public_health.bronze.psgc`
+### `public_health.bronze.geography_bronze`
 
 **Purpose**
 
