@@ -9,5 +9,3 @@ CREATE SCHEMA IF NOT EXISTS public_health.silver;
 CREATE SCHEMA IF NOT EXISTS public_health.gold;
 
 CREATE SCHEMA IF NOT EXISTS public_health.quality;
-
-CREATE VOLUME IF NOT EXISTS public_health.bronze.landing;
