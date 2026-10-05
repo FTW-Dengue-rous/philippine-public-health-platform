@@ -1,0 +1,266 @@
+# =============================================================================
+# sources_workforce.yaml — workforce domain
+# Philippine Public Health Platform (FTW Capstone)
+#
+# Same structure and conventions as sources_diseases.yaml:
+#   - Entry name = source_key = folder name. Never change a key once in use.
+#   - Bronze keeps ORIGINAL column names (header_mode: single) or names listed
+#     here (header_mode: names). Renaming to silver names happens in silver.
+#   - Every data column is STRING in bronze. Lineage columns are added by the loader.
+#   - as_of_date = date the file was released or downloaded, NOT load time.
+#   - Row numbers are 0-based, counted from the first row of the file/sheet.
+#   - Bronze tables: public_health.bronze.workforce_<source>_<content>_bronze
+#   - A file in `files:` can override: sheet, data_start_row, skip_rows, encoding,
+#     delimiter, as_of_date, header_mode, columns. Use this when the layout changes
+#     by year or by sheet; the bronze table holds the union of all columns.
+#   - qc: settings used by the bronze QC script.
+#
+# Landing layout (one folder per dataset, files named
+# {source}_{content}_{geo}_{grain}_{years}.{ext}):
+#   workforce/
+#     doh_fhsis_demographic/   doh_fhsis_demographic_province_annual_2018..2024.xlsx
+#                              doh_fhsis_demographic_municipality_annual_2025.xlsx
+#                              (the BGY & BHS tab of these workbooks is read by
+#                               sources_facilities.yaml from this same folder)
+#     psa_gov_practitioners/   psa_gov_practitioners_region_annual_2012_2023.csv
+#
+# =============================================================================
+
+version: 1
+
+landing_root: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing
+
+defaults:
+  domain: workforce
+  all_columns_as_string: true
+  load_mode: upsert
+  silver_enabled: true
+  metadata_table: "public_health.bronze.ingestion_metadata"
+  qc_results_table: "public_health.bronze.qc_results"
+  silver_target: "public_health.silver.workforce_headcount_silver"
+
+# -----------------------------------------------------------------------------
+# Column layouts for the FHSIS health worker sheets (YAML anchors, referenced below).
+# Not read by the loader directly. Positions follow the sheet; null = empty spacer
+# column (loads as col_<n>, always empty).
+#   Suffixes: _lgu_hired, _doh_hired, _total, _ratio (2019+); _male, _female (2018).
+#   Professions: doctors (MDs), dentists, nurses (PHNs before 2024), midwives,
+#   nutritionists, medtech, sanitary_engineers, sanitary_inspectors, bhw (active BHWs).
+# -----------------------------------------------------------------------------
+fhsis_layouts:
+  hw_2018_3b1: &hw_2018_3b1
+    [area_name,
+     doctors_male, doctors_female, doctors_total, doctors_ratio,
+     dentists_male, dentists_female, dentists_total, dentists_ratio,
+     nurses_male, nurses_female, nurses_total, nurses_ratio,
+     midwives_male, midwives_female, midwives_total, midwives_ratio]
+  hw_2018_3b2: &hw_2018_3b2
+    [area_name, population,
+     nutritionists_male, nutritionists_female, nutritionists_total, nutritionists_ratio,
+     medtech_male, medtech_female, medtech_total, medtech_ratio]
+  hw_2018_3b3: &hw_2018_3b3
+    [area_name,
+     sanitary_engineers_male, sanitary_engineers_female, sanitary_engineers_total, sanitary_engineers_ratio,
+     sanitary_inspectors_male, sanitary_inspectors_female, sanitary_inspectors_total, sanitary_inspectors_ratio,
+     bhw_male, bhw_female, bhw_total, bhw_ratio]
+  hw_3part_p1: &hw_3part_p1          # 2019-2021 part 1
+    [area_name, population,
+     doctors_lgu_hired, doctors_doh_hired, doctors_total, doctors_ratio,
+     dentists_lgu_hired, dentists_doh_hired, dentists_total, dentists_ratio,
+     nurses_lgu_hired, nurses_doh_hired, nurses_total, nurses_ratio]
+  hw_3part_p2: &hw_3part_p2          # 2019-2021 part 2
+    [area_name, population,
+     midwives_lgu_hired, midwives_doh_hired, midwives_total, midwives_ratio,
+     nutritionists_lgu_hired, nutritionists_doh_hired, nutritionists_total, nutritionists_ratio,
+     medtech_lgu_hired, medtech_doh_hired, medtech_total, medtech_ratio]
+  hw_3part_p3_hh: &hw_3part_p3_hh    # 2019-2020 part 3 (household count in col 15)
+    [area_name, population,
+     sanitary_engineers_lgu_hired, sanitary_engineers_doh_hired, sanitary_engineers_total, sanitary_engineers_ratio,
+     sanitary_inspectors_lgu_hired, sanitary_inspectors_doh_hired, sanitary_inspectors_total, sanitary_inspectors_ratio,
+     bhw_lgu_hired, bhw_doh_hired, bhw_total, bhw_ratio,
+     null, household_estimates]
+  hw_3part_p3: &hw_3part_p3          # 2021 part 3
+    [area_name, population,
+     sanitary_engineers_lgu_hired, sanitary_engineers_doh_hired, sanitary_engineers_total, sanitary_engineers_ratio,
+     sanitary_inspectors_lgu_hired, sanitary_inspectors_doh_hired, sanitary_inspectors_total, sanitary_inspectors_ratio,
+     bhw_lgu_hired, bhw_doh_hired, bhw_total, bhw_ratio]
+  hw_2part_p1: &hw_2part_p1          # 2022-2023 part 1
+    [area_name, population,
+     doctors_lgu_hired, doctors_doh_hired, doctors_total, doctors_ratio,
+     dentists_lgu_hired, dentists_doh_hired, dentists_total, dentists_ratio,
+     nurses_lgu_hired, nurses_doh_hired, nurses_total, nurses_ratio,
+     midwives_lgu_hired, midwives_doh_hired, midwives_total, midwives_ratio,
+     nutritionists_lgu_hired, nutritionists_doh_hired, nutritionists_total, nutritionists_ratio]
+  hw_2part_p2_hh: &hw_2part_p2_hh    # 2022 part 2 (household count in col 19)
+    [area_name, population,
+     medtech_lgu_hired, medtech_doh_hired, medtech_total, medtech_ratio,
+     sanitary_engineers_lgu_hired, sanitary_engineers_doh_hired, sanitary_engineers_total, sanitary_engineers_ratio,
+     sanitary_inspectors_lgu_hired, sanitary_inspectors_doh_hired, sanitary_inspectors_total, sanitary_inspectors_ratio,
+     bhw_lgu_hired, bhw_doh_hired, bhw_total, bhw_ratio,
+     null, household_estimates]
+  hw_2part_p2: &hw_2part_p2          # 2023 part 2
+    [area_name, population,
+     medtech_lgu_hired, medtech_doh_hired, medtech_total, medtech_ratio,
+     sanitary_engineers_lgu_hired, sanitary_engineers_doh_hired, sanitary_engineers_total, sanitary_engineers_ratio,
+     sanitary_inspectors_lgu_hired, sanitary_inspectors_doh_hired, sanitary_inspectors_total, sanitary_inspectors_ratio,
+     bhw_lgu_hired, bhw_doh_hired, bhw_total, bhw_ratio]
+  hw_2024: &hw_2024
+    [area_name, population,
+     doctors_lgu_hired, doctors_doh_hired, doctors_total, doctors_ratio,
+     nurses_lgu_hired, nurses_doh_hired, nurses_total, nurses_ratio,
+     midwives_lgu_hired, midwives_doh_hired, midwives_total, midwives_ratio,
+     dentists_lgu_hired, dentists_doh_hired, dentists_total, dentists_ratio,
+     medtech_lgu_hired, medtech_doh_hired, medtech_total, medtech_ratio,
+     nutritionists_lgu_hired, nutritionists_doh_hired, nutritionists_total, nutritionists_ratio,
+     sanitary_engineers_lgu_hired, sanitary_engineers_doh_hired, sanitary_engineers_total, sanitary_engineers_ratio,
+     sanitary_inspectors_lgu_hired, sanitary_inspectors_doh_hired, sanitary_inspectors_total, sanitary_inspectors_ratio,
+     household_estimates,
+     bhw_lgu_hired, bhw_doh_hired, bhw_total, bhw_ratio]
+  hw_2025: &hw_2025
+    [psgc_code, area_name, population,
+     doctors_lgu_hired, doctors_doh_hired, doctors_total, doctors_ratio,
+     nurses_lgu_hired, nurses_doh_hired, nurses_total, nurses_ratio,
+     midwives_lgu_hired, midwives_doh_hired, midwives_total, midwives_ratio,
+     dentists_lgu_hired, dentists_doh_hired, dentists_total, dentists_ratio,
+     medtech_lgu_hired, medtech_doh_hired, medtech_total, medtech_ratio,
+     nutritionists_lgu_hired, nutritionists_doh_hired, nutritionists_total, nutritionists_ratio,
+     sanitary_engineers_lgu_hired, sanitary_engineers_doh_hired, sanitary_engineers_total, sanitary_engineers_ratio,
+     sanitary_inspectors_lgu_hired, sanitary_inspectors_doh_hired, sanitary_inspectors_total, sanitary_inspectors_ratio,
+     household_estimates,
+     bhw_lgu_hired, bhw_ratio]
+
+sources:
+
+  # ---------------------------------------------------------------------------
+  # 1. DOH FHSIS health workers: region/province x year 2018-2024, municipality 2025  (PUBLIC)
+  # ---------------------------------------------------------------------------
+  doh_fhsis_demographic:
+    description: Number and ratio of public health workers (LGU and DOH hired) by area, FHSIS Demographic Profile tables
+    agency: Department of Health
+    obtained_via: FHSIS annual report, Demographic Profile workbook (one per year)
+    original_files:
+      2018: Demographics.xlsx
+      2019: Demographics_2019.xlsx
+      2020: Demographic_Philippines.xlsx
+      2021: Demog.xlsx
+      2022: Demog_2022.xlsx
+      2023: Demog_2023.xlsx
+      2024: Demographic_EB_2024.xlsx
+      2025: Demographic_2025_EB_Final.xlsx
+    path: workforce/doh_fhsis_demographic
+    header_mode: names
+    files:
+      - {name: doh_fhsis_demographic_province_annual_2018.xlsx, sheet: Table 3B.1, data_start_row: 8, columns: *hw_2018_3b1}
+      - {name: doh_fhsis_demographic_province_annual_2018.xlsx, sheet: Table 3B.2, data_start_row: 8, columns: *hw_2018_3b2}
+      - {name: doh_fhsis_demographic_province_annual_2018.xlsx, sheet: Table 3B.3, data_start_row: 8, columns: *hw_2018_3b3}
+      - {name: doh_fhsis_demographic_province_annual_2019.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 8, columns: *hw_3part_p1}
+      - {name: doh_fhsis_demographic_province_annual_2019.xlsx, sheet: Health Workers Part2, data_start_row: 8, columns: *hw_3part_p2}
+      - {name: doh_fhsis_demographic_province_annual_2019.xlsx, sheet: HEALTH WORKERS PART3, data_start_row: 8, columns: *hw_3part_p3_hh}
+      - {name: doh_fhsis_demographic_province_annual_2020.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 7, columns: *hw_3part_p1}
+      - {name: doh_fhsis_demographic_province_annual_2020.xlsx, sheet: HEALTH WORKERS PART2, data_start_row: 7, columns: *hw_3part_p2}
+      - {name: doh_fhsis_demographic_province_annual_2020.xlsx, sheet: HEALTH WORKERS PART3, data_start_row: 7, columns: *hw_3part_p3_hh}
+      - {name: doh_fhsis_demographic_province_annual_2021.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 7, columns: *hw_3part_p1}
+      - {name: doh_fhsis_demographic_province_annual_2021.xlsx, sheet: HW Part2, data_start_row: 7, columns: *hw_3part_p2}
+      - {name: doh_fhsis_demographic_province_annual_2021.xlsx, sheet: HEALTH WORKERS PART3, data_start_row: 7, columns: *hw_3part_p3}
+      - {name: doh_fhsis_demographic_province_annual_2022.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 7, columns: *hw_2part_p1}
+      - {name: doh_fhsis_demographic_province_annual_2022.xlsx, sheet: HEALTH WORKERS PART2, data_start_row: 7, columns: *hw_2part_p2_hh}
+      - {name: doh_fhsis_demographic_province_annual_2023.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 7, columns: *hw_2part_p1}
+      - {name: doh_fhsis_demographic_province_annual_2023.xlsx, sheet: HEALTH WORKERS PART2, data_start_row: 7, columns: *hw_2part_p2}
+      - {name: doh_fhsis_demographic_province_annual_2024.xlsx, sheet: Health Workers, data_start_row: 7, columns: *hw_2024}
+      - {name: doh_fhsis_demographic_municipality_annual_2025.xlsx, sheet: Health Workers, data_start_row: 7, columns: *hw_2025}
+    bronze_table: "public_health.bronze.workforce_fhsis_health_workers_bronze"
+    as_of_date: 2026-10-05                 # download date
+    load_mode: upsert
+    merge_keys: [area_name, year]          # year from _source_file; 2025 can use psgc_code
+    sharing: public
+    coverage: 2018-2024 national, region, province and city; 2025 down to municipality with PSGC
+    workforce:
+      geo_level: [national, region, province, municipality]
+      period_grain: year
+      professions: [doctors, dentists, nurses, midwives, nutritionists, medtech,
+                    sanitary_engineers, sanitary_inspectors, bhw]
+    qc:
+      expected_rows:                       # all sheets of a file together
+        doh_fhsis_demographic_province_annual_2018.xlsx: 644
+        doh_fhsis_demographic_province_annual_2019.xlsx: 600
+        doh_fhsis_demographic_province_annual_2020.xlsx: 593
+        doh_fhsis_demographic_province_annual_2021.xlsx: 592
+        doh_fhsis_demographic_province_annual_2022.xlsx: 394
+        doh_fhsis_demographic_province_annual_2023.xlsx: 289
+        doh_fhsis_demographic_province_annual_2024.xlsx: 143
+        doh_fhsis_demographic_municipality_annual_2025.xlsx: 1744
+      numeric_columns: [population, doctors_total, nurses_total, midwives_total, bhw_total]
+      null_tokens: ["*", "#DIV/0!"]
+      max_non_numeric_rows_per_file: 6     # legend lines at the bottom of each sheet
+      control_values:                      # national doctors per year; match PSA Table 9.14 for 2018-2023
+        - {label: "2018 Philippines doctors", column: doctors_total, expected: 3131, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2018.%'"}
+        - {label: "2019 Philippines doctors", column: doctors_total, expected: 3001, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2019.%'"}
+        - {label: "2020 Philippines doctors", column: doctors_total, expected: 3351, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2020.%'"}
+        - {label: "2021 Philippines doctors", column: doctors_total, expected: 4046, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2021.%'"}
+        - {label: "2022 Philippines doctors", column: doctors_total, expected: 4289, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2022.%'"}
+        - {label: "2023 Philippines doctors", column: doctors_total, expected: 4416, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2023.%'"}
+        - {label: "2024 Philippines doctors", column: doctors_total, expected: 5099, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'"}
+        - {label: "2025 Philippines doctors", column: doctors_total, expected: 5150, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2025.%'"}
+    notes:
+      - One workbook per year. Year is not a column; silver reads it from _source_file.
+      - Each sheet loads as its own rows (part 1, 2, 3 of the same area are separate rows). Silver combines them by area and year.
+      - Layout changes by year (3, 2 or 1 sheets; profession order differs). Column names are aligned across years in the layouts above.
+      - Labels MDs and PHNs (2019-2023) are loaded as doctors and nurses. Totals match PSA Table 9.14 "Doctors" and "Nurses".
+      - 2018 is split by sex (male/female), not by LGU/DOH. 2018 Tables 3B.1 and 3B.3 have no population column.
+      - 2019 LGU/DOH split is incomplete (national doctors 2,074 + 190 vs total 3,001; NCR 0/0/660). Use totals only for 2019.
+      - LGU + DOH = Total holds for 2020, 2022-2024; 1 row off in 2021 and 2025. Checked in silver QC, not here.
+      - "* = no report (null). 0 can mean zero or no data (2018 legend says no data); low counts need care."
+      - Ratio columns are population per worker. BHW ratio is population per BHW in 2018-2019 but households per BHW from 2020 (checked against the totals). Recompute rates in gold; never use the file ratios.
+      - Some sheets have scratch calculations beside the table (2018 3B.2/3B.3 rows 73, 78, 230; 2019 part 1 row 44). They load as col_<n> columns; silver ignores col_*.
+      - Stray rows with a blank area and repeated totals (2023 part 2, 2020 part 3) and legend lines at the bottom load as rows. Drop rows with a blank area in silver.
+      - 2018-2024 have no PSGC; match area_name to geography in silver. Names vary (N C R, METRO MANILA, NCR; Region 1 vs I).
+      - 2025 PSGC is mostly text with leading zeros, but some cells are numbers (Bohol 701200000). Left-pad to 10 digits in silver.
+      - 2024 has DOH-hired BHWs; 2025 has LGU-hired BHWs only.
+      - The BGY & BHS tab of these workbooks belongs to the facilities domain (sources_facilities.yaml).
+
+  # ---------------------------------------------------------------------------
+  # 2. PSA Table 9.14: government medical practitioners, region x year, 2012-2023  (OPEN)
+  #    History source for 2012-2017. For 2018-2023 the same numbers come from FHSIS (entry 1).
+  # ---------------------------------------------------------------------------
+  psa_gov_practitioners:
+    description: Number of government medical practitioners (doctors, dentists, nurses, midwives) by region
+    agency: Philippine Statistics Authority (compiled from DOH FHSIS)
+    obtained_via: PSA statistical table 9.14
+    original_file: TABLE 9.14 Number of Government Medical Practitioners by Region- 2012 to 2023.csv
+    path: workforce/psa_gov_practitioners
+    files:
+      - psa_gov_practitioners_region_annual_2012_2023.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 1                           # row 0 is the table title
+    bronze_table: "public_health.bronze.workforce_psa_gov_practitioners_bronze"
+    as_of_date: 2026-10-05                 # download date
+    load_mode: upsert
+    merge_keys: [region_name, profession, year]
+    sharing: open
+    coverage: 2012-2023 annual, Philippines + 17 regions (old definition, no Negros Island Region)
+    column_map:
+      Region: region_name
+      Professionals: profession
+    wide_columns:                          # years are columns; unpivot to (year, headcount) in silver
+      name_pattern: "^[0-9]{4}$"
+      value_name: headcount
+    workforce:
+      geo_level: [national, region]
+      period_grain: year
+      professions: [doctors, dentists, nurses, midwives]
+    qc:
+      expected_rows: 72                    # (Philippines + 17 regions) x 4 professions
+      numeric_columns: ["2012", "2019", "2023"]
+      control_values:
+        - {label: "2023 Philippines doctors", column: "2023", expected: 4416, where: "trim(Region) = 'Philippines' AND trim(Professionals) = 'Doctors'"}
+        - {label: "2012 Philippines midwives", column: "2012", expected: 16948, where: "trim(Region) = 'Philippines' AND trim(Professionals) = 'Midwives'"}
+    notes:
+      - Use for 2012-2017 only. 2018-2023 national doctor totals equal FHSIS exactly; source_priority picks FHSIS.
+      - Region names carry a ".." indent prefix (..NCR, ..IV-A). Strip it in silver.
+      - Regional rows sum exactly to the Philippines row for every profession and year (checked).
+      - Nurses jump about 2.5x in 2019 (5,975 to 15,111). Matches FHSIS PHN totals, so it is in the source (likely DOH-deployed nurses counted from 2019).
+      - Suspect values: Region I 2020 drops to 51 doctors; CARAGA 2013 all zero; XI repeats 2020=2021 and 2022=2023; IX repeats 2019=2020. Flag in silver QC, do not fix.
+      - Government practitioners only. Private sector is not included.
