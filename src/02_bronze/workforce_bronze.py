@@ -35,22 +35,35 @@ import json
 import os
 import re
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import yaml
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (DateType, IntegerType, StringType, StructField,
-                               StructType, TimestampType)
+from pyspark.sql.types import (
+    DateType,
+    IntegerType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 
 spark = SparkSession.builder.getOrCreate()
 
-LINEAGE_COLS = ["_rescued_data", "_source_key", "_source_file", "_source_sheet",
-                "_source_row_num", "_as_of_date", "_ingested_at"]
-RUN_ID = str(uuid.uuid4())                                     # one id per run, written to the metadata log
-INGESTED_AT = datetime.now(timezone.utc).replace(tzinfo=None)  # same timestamp for every row of this run
+LINEAGE_COLS = [
+    "_rescued_data",
+    "_source_key",
+    "_source_file",
+    "_source_sheet",
+    "_source_row_num",
+    "_as_of_date",
+    "_ingested_at",
+]
+RUN_ID = str(uuid.uuid4())  # one id per run, written to the metadata log
+INGESTED_AT = datetime.now(UTC).replace(tzinfo=None)  # same timestamp for every row of this run
 
-CONFIG_NAMES = ("sources_workforce.yaml",)                 # config file for this domain
-DOMAIN = "workforce"                                        # this file only loads entries of this domain
+CONFIG_NAMES = ("sources_workforce.yaml",)  # config file for this domain
+DOMAIN = "workforce"  # this file only loads entries of this domain
 
 
 def find_config(explicit=None):
@@ -63,7 +76,7 @@ def find_config(explicit=None):
     starts = [os.getcwd()]
     try:
         starts.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    except NameError:                                          # __file__ is not set in some runners
+    except NameError:  # __file__ is not set in some runners
         pass
     searched = []
     for start in starts:
@@ -81,7 +94,8 @@ def find_config(explicit=None):
             folder = parent
     raise FileNotFoundError(
         f"None of {CONFIG_NAMES} found. Pass --config_path with its full path. Looked in:\n  "
-        + "\n  ".join(dict.fromkeys(searched)))
+        + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -91,7 +105,7 @@ def find_config(explicit=None):
 
 def load_config(path):
     # Read the YAML and merge `defaults` into every source entry.
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     for required in ("landing_root", "sources"):
         if required not in cfg:
@@ -108,20 +122,33 @@ def load_config(path):
 
 def loadable(entry):
     # True for enabled file sources of this domain (entries with `path` and `bronze_table`).
-    return (entry.get("domain") == DOMAIN and bool(entry.get("path"))
-            and bool(entry.get("bronze_table")) and entry.get("enabled", True))
+    return (
+        entry.get("domain") == DOMAIN
+        and bool(entry.get("path"))
+        and bool(entry.get("bronze_table"))
+        and entry.get("enabled", True)
+    )
 
 
 # Settings a single file in `files:` may override.
 # header_mode and columns are per file too: one source can hold files (or sheets) whose
 # layout changes by year. The bronze table then has the union of their columns.
-FILE_LEVEL_KEYS = ("format", "sheet", "skip_rows", "data_start_row", "encoding", "delimiter", "as_of_date",
-                   "header_mode", "columns")
+FILE_LEVEL_KEYS = (
+    "format",
+    "sheet",
+    "skip_rows",
+    "data_start_row",
+    "encoding",
+    "delimiter",
+    "as_of_date",
+    "header_mode",
+    "columns",
+)
 
 
 def resolve_files(cfg, entry):
     # Return one dict per file: abs path, relative path and the settings to read it with.
-    # A file listed as a dict in `files:` can override the entry settings (sheet, data_start_row, ...).
+    # A file dict can override entry settings such as sheet and data_start_row.
     root = cfg["landing_root"]
     items = []
     if entry.get("files"):
@@ -132,7 +159,9 @@ def resolve_files(cfg, entry):
         for abs_path in sorted(glob.glob(os.path.join(root, entry["path"]))):
             items.append((os.path.relpath(abs_path, root), {}))
     if not items:
-        raise FileNotFoundError(f"[{entry['entry_name']}] nothing matches {os.path.join(root, entry['path'])}")
+        raise FileNotFoundError(
+            f"[{entry['entry_name']}] nothing matches {os.path.join(root, entry['path'])}"
+        )
 
     out = []
     for rel, item in items:
@@ -140,7 +169,7 @@ def resolve_files(cfg, entry):
         if "format" not in item and "format" not in entry:
             settings["format"] = os.path.splitext(rel)[1].lstrip(".").lower()
         elif "format" not in item and entry.get("files"):
-            ext = os.path.splitext(rel)[1].lstrip(".").lower()      # mixed csv/xlsx in one entry
+            ext = os.path.splitext(rel)[1].lstrip(".").lower()  # mixed csv/xlsx in one entry
             settings["format"] = ext or entry["format"]
         abs_path = os.path.join(root, rel)
         if not os.path.exists(abs_path):
@@ -159,11 +188,13 @@ def resolve_files(cfg, entry):
 def _require(package):
     # Import a package; if it is missing, install it for this run and import again.
     import importlib
+
     try:
         return importlib.import_module(package)
     except ModuleNotFoundError:
         import subprocess
         import sys
+
         print(f"  installing {package} (not found on this cluster)")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", package])
         importlib.invalidate_caches()
@@ -177,7 +208,7 @@ def _to_str(v):
     if isinstance(v, (datetime, date)):
         return v.isoformat()
     if isinstance(v, float) and v.is_integer():
-        return str(int(v))                 # Excel stores whole numbers as floats: 2016.0 -> "2016"
+        return str(int(v))  # Excel stores whole numbers as floats: 2016.0 -> "2016"
     s = str(v)
     return s if s.strip() != "" else None
 
@@ -186,10 +217,12 @@ def read_csv_rows(path, entry):
     # Read a CSV into a list of rows. Bad bytes are replaced, never dropped.
     encoding = entry.get("encoding", "utf-8")
     if encoding.lower().replace("-", "") == "utf8":
-        encoding = "utf-8-sig"          # also removes a BOM if present
-    with open(path, "r", encoding=encoding, errors="replace", newline="") as f:
-        return [[_to_str(c) for c in row]
-                for row in csv.reader(f, delimiter=entry.get("delimiter", ","))]
+        encoding = "utf-8-sig"  # also removes a BOM if present
+    with open(path, encoding=encoding, errors="replace", newline="") as f:
+        return [
+            [_to_str(c) for c in row]
+            for row in csv.reader(f, delimiter=entry.get("delimiter", ","))
+        ]
 
 
 def read_xlsx_rows(path, entry):
@@ -200,8 +233,9 @@ def read_xlsx_rows(path, entry):
     if sheet is None:
         sheet = wb.sheetnames[0]
     if sheet not in wb.sheetnames:
-        raise ValueError(f"[{entry['entry_name']}] sheet '{sheet}' not found. "
-                         f"Available sheets: {wb.sheetnames}")
+        raise ValueError(
+            f"[{entry['entry_name']}] sheet '{sheet}' not found. Available sheets: {wb.sheetnames}"
+        )
     rows = [[_to_str(c) for c in row] for row in wb[sheet].iter_rows(values_only=True)]
     wb.close()
     return rows, sheet
@@ -213,7 +247,7 @@ def clean_column_names(raw_names):
     # Spark and Delta compare names case-insensitively, so duplicates are matched that way too.
     names, seen = [], {}
     for i, raw in enumerate(raw_names):
-        name = re.sub(r"-\s*\n\s*", "-", (raw or "").strip())        # header wrapped after a hyphen
+        name = re.sub(r"-\s*\n\s*", "-", (raw or "").strip())  # header wrapped after a hyphen
         name = re.sub(r"[ ,;{}()\n\t=.]+", "_", name).strip("_")
         if not name:
             name = f"col_{i}"
@@ -240,19 +274,20 @@ def build_records(rows, entry):
     mode = entry.get("header_mode", "single")
     skip = int(entry.get("skip_rows", 0) or 0)
 
-    if mode == "single":                      # one header row at index skip_rows
-        header = rows[skip][:_width(rows[skip])]
+    if mode == "single":  # one header row at index skip_rows
+        header = rows[skip][: _width(rows[skip])]
         columns = clean_column_names(header)
         first_data = skip + 1
-    elif mode == "names":                     # names come from the YAML; data starts at data_start_row
+    elif mode == "names":  # names come from the YAML; data starts at data_start_row
         first_data = int(entry["data_start_row"])
         named = entry["columns"]
-        if isinstance(named, dict):           # {position: name}
+        if isinstance(named, dict):  # {position: name}
             named = [named.get(i) for i in range(max(named) + 1)]
         width = max([len(named)] + [_width(r) for r in rows[first_data:]])
-        columns = clean_column_names([named[i] if i < len(named) and named[i] else f"col_{i}"
-                                      for i in range(width)])
-    else:                                     # none: col_0, col_1, ...
+        columns = clean_column_names(
+            [named[i] if i < len(named) and named[i] else f"col_{i}" for i in range(width)]
+        )
+    else:  # none: col_0, col_1, ...
         first_data = int(entry.get("data_start_row", skip) or 0)
         width = max(_width(r) for r in rows[first_data:])
         columns = [f"col_{i}" for i in range(width)]
@@ -261,7 +296,7 @@ def build_records(rows, entry):
     records = []
     for row_num in range(first_data, len(rows)):
         row = rows[row_num]
-        if _width(row) == 0:                  # skip fully empty rows
+        if _width(row) == 0:  # skip fully empty rows
             continue
         values = (row + [None] * n)[:n]
         extra = [c for c in row[n:] if c is not None]
@@ -278,7 +313,8 @@ def build_records(rows, entry):
 def to_bronze_df(columns, records, entry, rel_path, sheet, as_of):
     # Build the Spark DataFrame: data columns as strings, then the lineage columns.
     schema = StructType(
-        [StructField(c, StringType(), True) for c in columns] + [
+        [StructField(c, StringType(), True) for c in columns]
+        + [
             StructField("_rescued_data", StringType(), True),
             StructField("_source_key", StringType(), False),
             StructField("_source_file", StringType(), False),
@@ -286,9 +322,12 @@ def to_bronze_df(columns, records, entry, rel_path, sheet, as_of):
             StructField("_source_row_num", IntegerType(), False),
             StructField("_as_of_date", DateType(), False),
             StructField("_ingested_at", TimestampType(), False),
-        ])
-    data = [tuple(values) + (rescued, entry["source_key"], rel_path, sheet, row_num, as_of, INGESTED_AT)
-            for values, rescued, row_num in records]
+        ]
+    )
+    data = [
+        tuple(values) + (rescued, entry["source_key"], rel_path, sheet, row_num, as_of, INGESTED_AT)
+        for values, rescued, row_num in records
+    ]
     return spark.createDataFrame(data, schema)
 
 
@@ -297,25 +336,27 @@ def write_bronze(df, table, rel_paths):
     if spark.catalog.tableExists(table):
         in_list = ", ".join("'" + p.replace("'", "''") + "'" for p in rel_paths)
         spark.sql(f"DELETE FROM {table} WHERE _source_file IN ({in_list})")
-    (df.write.format("delta")
-       .mode("append")
-       .option("mergeSchema", "true")     # bronze only: a new file may add a column
-       .saveAsTable(table))
+    (
+        df.write.format("delta")
+        .mode("append")
+        .option("mergeSchema", "true")  # bronze only: a new file may add a column
+        .saveAsTable(table)
+    )
 
 
 # Ingestion metadata: the team's documented columns first (shared with the API ingestion),
 # then the file-load extras (null for API rows). One row per file, or per sheet.
 METADATA_SCHEMA = [
-    ("batch_id", "string"),          # one id per loader run, shared by all its files
-    ("source_name", "string"),       # YAML source key
-    ("source_version", "string"),    # as_of_date of the file (ISO text)
-    ("endpoint", "string"),          # API endpoint; null for files
+    ("batch_id", "string"),  # one id per loader run, shared by all its files
+    ("source_name", "string"),  # YAML source key
+    ("source_version", "string"),  # as_of_date of the file (ISO text)
+    ("endpoint", "string"),  # API endpoint; null for files
     ("content_checksum", "string"),  # sha256 of the file bytes
-    ("raw_file_path", "string"),     # full landing path
-    ("record_count", "bigint"),      # rows written to bronze
-    ("page_count", "int"),           # API pages; null for files
-    ("retrieved_at", "timestamp"),   # load time (UTC)
-    ("status", "string"),            # processed | failed (in_progress, skipped_duplicate: API job)
+    ("raw_file_path", "string"),  # full landing path
+    ("record_count", "bigint"),  # rows written to bronze
+    ("page_count", "int"),  # API pages; null for files
+    ("retrieved_at", "timestamp"),  # load time (UTC)
+    ("status", "string"),  # processed | failed (in_progress, skipped_duplicate: API job)
     ("bronze_table", "string"),
     ("source_sheet", "string"),
     ("column_count", "int"),
@@ -332,24 +373,31 @@ def metadata_row(**values):
     return tuple(values.get(name) for name, _ in METADATA_SCHEMA)
 
 
-def file_checksum(path, _cache={}):
+_CHECKSUM_CACHE = {}
+
+
+def file_checksum(path):
     # sha256 of a file, cached per path (a workbook listed once per sheet is hashed once).
-    if path not in _cache:
+    if path not in _CHECKSUM_CACHE:
         h = hashlib.sha256()
         with open(path, "rb") as f:
             for block in iter(lambda: f.read(1 << 20), b""):
                 h.update(block)
-        _cache[path] = h.hexdigest()
-    return _cache[path]
+        _CHECKSUM_CACHE[path] = h.hexdigest()
+    return _CHECKSUM_CACHE[path]
 
 
 def log_metadata(table, rows):
     # Append one row per file to the ingestion metadata table.
     schema = ", ".join(f"{name} {dtype}" for name, dtype in METADATA_SCHEMA)
     try:
-        (spark.createDataFrame(rows, schema)
-              .write.format("delta").mode("append").saveAsTable(table))
-    except Exception as e:                                    # do not lose a good load over logging
+        (
+            spark.createDataFrame(rows, schema)
+            .write.format("delta")
+            .mode("append")
+            .saveAsTable(table)
+        )
+    except Exception as e:  # do not lose a good load over logging
         print(f"WARNING: could not write to {table}. Check its columns. {str(e)[:300]}")
         for r in rows:
             print("  metadata row:", r)
@@ -365,7 +413,7 @@ def ingest_source(cfg, entry):
     table = entry["bronze_table"]
     files = resolve_files(cfg, entry)
     frames, meta_rows, all_columns = [], [], []
-    canonical = {}                    # lower-case name -> first spelling seen (VALID FROM = Valid From)
+    canonical = {}  # lower-case name -> first spelling seen (VALID FROM = Valid From)
 
     for f in files:
         st, rel_path = f["settings"], f["rel"]
@@ -384,17 +432,31 @@ def ingest_source(cfg, entry):
 
         frames.append(to_bronze_df(columns, records, entry, rel_path, sheet, st["as_of_date"]))
         all_columns += [c for c in columns if c not in all_columns]
-        meta_rows.append(metadata_row(
-            batch_id=RUN_ID, source_name=entry["source_key"], source_version=st["as_of_date"].isoformat(),
-            content_checksum=file_checksum(f["abs"]), raw_file_path=f["abs"], record_count=len(records),
-            retrieved_at=INGESTED_AT, status="processed", bronze_table=table, source_sheet=sheet,
-            column_count=len(columns), file_size_bytes=os.path.getsize(f["abs"])))
-        print(f"  read {rel_path}" + (f" [{sheet}]" if sheet else "")
-              + f": {len(records):,} rows, {len(columns)} columns")
+        meta_rows.append(
+            metadata_row(
+                batch_id=RUN_ID,
+                source_name=entry["source_key"],
+                source_version=st["as_of_date"].isoformat(),
+                content_checksum=file_checksum(f["abs"]),
+                raw_file_path=f["abs"],
+                record_count=len(records),
+                retrieved_at=INGESTED_AT,
+                status="processed",
+                bronze_table=table,
+                source_sheet=sheet,
+                column_count=len(columns),
+                file_size_bytes=os.path.getsize(f["abs"]),
+            )
+        )
+        print(
+            f"  read {rel_path}"
+            + (f" [{sheet}]" if sheet else "")
+            + f": {len(records):,} rows, {len(columns)} columns"
+        )
 
     df = frames[0]
     for other in frames[1:]:
-        df = df.unionByName(other, allowMissingColumns=True)   # a file may have an extra column
+        df = df.unionByName(other, allowMissingColumns=True)  # a file may have an extra column
     df = df.select(*all_columns, *LINEAGE_COLS)
 
     write_bronze(df, table, [f["rel"] for f in files])
@@ -406,12 +468,19 @@ def ingest_source(cfg, entry):
 # Run
 # -----------------------------------------------------------------------------
 
+
 def parse_args():
     p = argparse.ArgumentParser(description="Bronze ingestion for the workforce domain")
-    p.add_argument("--config_path", default=None,
-                   help="Full path to the sources YAML (found automatically if omitted)")
-    p.add_argument("--source_keys", default="ALL",
-                   help="Comma-separated source keys, or ALL for every enabled source")
+    p.add_argument(
+        "--config_path",
+        default=None,
+        help="Full path to the sources YAML (found automatically if omitted)",
+    )
+    p.add_argument(
+        "--source_keys",
+        default="ALL",
+        help="Comma-separated source keys, or ALL for every enabled source",
+    )
     args, _ = p.parse_known_args()
     return args
 
@@ -442,22 +511,41 @@ def main():
         try:
             meta_rows = ingest_source(cfg, entry)
             log_metadata(entry["metadata_table"], meta_rows)
-            m = dict(zip([name for name, _ in METADATA_SCHEMA], zip(*meta_rows)))
-            results += [(key, p, n, "SUCCESS", None) for p, n in zip(m["raw_file_path"], m["record_count"])]
+            m = dict(
+                zip(
+                    [name for name, _ in METADATA_SCHEMA],
+                    zip(*meta_rows, strict=False),
+                    strict=False,
+                )
+            )
+            results += [
+                (key, p, n, "SUCCESS", None)
+                for p, n in zip(m["raw_file_path"], m["record_count"], strict=False)
+            ]
         except Exception as e:
             failures.append(key)
             msg = str(e)[:500]
             print(f"  FAILED: {msg}")
-            log_metadata(entry["metadata_table"],
-                         [metadata_row(batch_id=RUN_ID, source_name=entry["source_key"],
-                                       raw_file_path=os.path.join(cfg["landing_root"], entry.get("path") or ""),
-                                       retrieved_at=INGESTED_AT, status="failed",
-                                       bronze_table=entry.get("bronze_table"), error_message=msg)])
+            log_metadata(
+                entry["metadata_table"],
+                [
+                    metadata_row(
+                        batch_id=RUN_ID,
+                        source_name=entry["source_key"],
+                        raw_file_path=os.path.join(cfg["landing_root"], entry.get("path") or ""),
+                        retrieved_at=INGESTED_AT,
+                        status="failed",
+                        bronze_table=entry.get("bronze_table"),
+                        error_message=msg,
+                    )
+                ],
+            )
             results.append((key, entry.get("path"), None, "FAILED", msg))
 
     # Summary, then fail the run if any source failed.
     spark.createDataFrame(
-        results, "source_key string, source_file string, row_count long, status string, error string"
+        results,
+        "source_key string, source_file string, row_count long, status string, error string",
     ).show(100, truncate=False)
     if failures:
         raise RuntimeError(f"Bronze ingest failed for: {failures}. Run id {RUN_ID}")
