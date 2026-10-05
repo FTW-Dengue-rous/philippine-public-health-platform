@@ -1,0 +1,254 @@
+# =============================================================================
+# socioeconomic domain
+#   - Entry name = source_key = folder name (nested folders joined by "_").
+#   - Every data column is STRING in bronze. Lineage columns are added by the loader.
+#   - Original column names when the header is usable (header_mode: single);
+#     otherwise names are listed here (header_mode: names).
+#   - A file in `files:` can override: sheet, data_start_row, skip_rows, encoding,
+#     delimiter, as_of_date, header_mode, columns.
+#   - Bronze tables: public_health.bronze.socioeconomic_<source>_<content>_bronze
+#
+# File naming
+#   Tables by area and period:  {source}_{content}_{geo}_{grain}_{years}.{ext}
+#   Code lists (snapshots):     {source}_{content}_{finest geo}_asof_{yyyymmdd}.{ext}
+#
+# Landing layout (under landing_root):
+#   socioeconomic/
+#     psa_poverty/                                 
+#          psa_poverty_province_biennial_2021_2025.xlsx
+#     psa_health_expenditure/share_national_annual/      
+#          psa_health_expenditure_share_national_annual_2016_2023.csv
+#     psa_health_expenditure/per_capita_national_annual/ 
+#          psa_health_expenditure_per_capita_national_annual_2016_2023.csv
+#     psa_child_mortality/                         
+#          psa_child_mortality_region_survey_2017_2022.csv
+#   geography/
+#     psa_psgc/                                    
+#          psa_psgc_barangay_asof_20260713.xlsx  (see entry 5)
+# =============================================================================
+
+version: 1
+
+landing_root: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing
+
+defaults:
+  domain: socioeconomic
+  all_columns_as_string: true
+  load_mode: upsert
+  silver_enabled: true
+  metadata_table: "public_health.bronze.ingestion_metadata"
+  qc_results_table: "public_health.bronze.qc_results"        
+  
+# -----------------------------------------------------------------------------
+# Column layouts (YAML anchors, referenced below).
+# -----------------------------------------------------------------------------
+layouts:
+  # PSA official poverty statistics, Table 2: per capita poverty threshold and
+  # poverty incidence among POPULATION. cv = coefficient of variation, se = standard error.
+  poverty_tab2: &poverty_tab2
+    [area_name,
+     threshold_2021, threshold_2023, threshold_2025,
+     incidence_2021, incidence_2023, incidence_2025,
+     incidence_cv_2021, incidence_cv_2023, incidence_cv_2025,
+     incidence_se_2021, incidence_se_2023, incidence_se_2025,
+     incidence_ci_low_2021, incidence_ci_high_2021,
+     incidence_ci_low_2023, incidence_ci_high_2023,
+     incidence_ci_low_2025, incidence_ci_high_2025,
+     notes]
+  # Table 6: magnitude of poor POPULATION ('000).
+  poverty_tab6: &poverty_tab6
+    [area_name,
+     poor_pop_2021, poor_pop_2023, poor_pop_2025,
+     poor_pop_cv_2021, poor_pop_cv_2023, poor_pop_cv_2025,
+     poor_pop_se_2021, poor_pop_se_2023, poor_pop_se_2025,
+     poor_pop_ci_low_2021, poor_pop_ci_high_2021,
+     poor_pop_ci_low_2023, poor_pop_ci_high_2023,
+     poor_pop_ci_low_2025, poor_pop_ci_high_2025,
+     notes]
+
+sources:
+
+  # ---------------------------------------------------------------------------
+  # 1. PSA official poverty statistics: region and province, 2021 / 2023 / 2025  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_poverty:
+    description: Per capita poverty threshold, poverty incidence and magnitude of poor population, by region and province
+    agency: Philippine Statistics Authority
+    obtained_via: PSA official poverty statistics release (Full-Year 2025) 
+    original_file: psa_poverty_2021_2025_asof_20260826.xlsx
+    path: socioeconomic/psa_poverty
+    header_mode: names
+    files:
+      - {name: psa_poverty_province_biennial_2021_2025.xlsx, sheet: tab2, data_start_row: 7, columns: *poverty_tab2}
+      - {name: psa_poverty_province_biennial_2021_2025.xlsx, sheet: tab6, data_start_row: 7, columns: *poverty_tab6}
+    bronze_table: "public_health.bronze.socioeconomic_psa_poverty_bronze"
+    as_of_date: 2026-08-26                 # PSA release date (from the original file name)
+    load_mode: upsert
+    merge_keys: [area_name, year]          # each sheet loads as its own rows; silver combines by area
+    sharing: open
+    coverage: Philippines, 18 regions (with NCR districts) and provinces; survey years 2021, 2023, 2025
+    qc:
+      expected_rows: 235                   # tab2 117 + tab6 118 rows incl. footnotes (local test 2026-10-05)
+      numeric_columns: [incidence_2025, threshold_2025, poor_pop_2025]
+      max_non_numeric_rows_per_file: 10    # footnote lines at the bottom of each sheet
+      control_values:
+        - {label: "2025 Philippines poverty incidence (population)", column: incidence_2025, expected: 9.7, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'tab2'"}
+        - {label: "2025 Philippines poverty threshold", column: threshold_2025, expected: 35120.89, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'tab2'"}
+        - {label: "2025 Philippines poor population ('000)", column: poor_pop_2025, expected: 11083.03, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'tab6'"}
+    notes:
+      - Only tab2 (incidence among population) and tab6 (magnitude of poor population) are loaded. tab1 and tab5 are the same measures for families; tab15 groups provinces into clusters (derived).
+      - Use population-based incidence (tab2) for the equity questions (C1-C4).
+      - Rows mix Philippines, regions, NCR districts and provinces with no codes. Match area_name to PSGC in silver.
+      - Values with CV above 20% are flagged b/ in the notes column (low precision). Keep the notes column; use it to flag estimates in gold.
+      - Footnote lines (1/, 2/, a/, b/, c/) at the bottom of each sheet load as rows; drop rows with no numeric values in silver.
+      - Provinces created after 2021 (Maguindanao del Norte / del Sur) are blank for earlier years.
+
+  # ---------------------------------------------------------------------------
+  # 2. PSA Table 9.26: current health expenditure by financing agent, % share, 2016-2023  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_health_expenditure_share_national_annual:
+    description: Percent share of current health expenditure by financing agent (government, PhilHealth, insurance, households), Philippines
+    agency: Philippine Statistics Authority (Philippine National Health Accounts)
+    obtained_via: Philippine Statistical Yearbook 2025, Table 9.26
+    original_file: 2025_T9_26.csv
+    path: socioeconomic/psa_health_expenditure/share_national_annual
+    files:
+      - psa_health_expenditure_share_national_annual_2016_2023.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: names                     # years sit in every other column; two label columns
+    data_start_row: 5
+    columns: {0: agent_level1, 1: agent_level2,
+              2: share_2016, 4: share_2017, 6: share_2018, 8: share_2019,
+              10: share_2020, 12: share_2021, 13: share_2022, 14: share_2023}
+    bronze_table: "public_health.bronze.socioeconomic_psa_health_expenditure_share_bronze"
+    as_of_date: 2026-10-05
+    load_mode: upsert
+    merge_keys: [financing_agent, year]
+    sharing: open
+    qc:
+      expected_rows: 18
+      numeric_columns: [share_2023]
+      null_tokens: ["a/"]
+      max_non_numeric_rows_per_file: 3     # footnote and source lines
+      control_values:
+        - {label: "2023 households (out-of-pocket) share", column: share_2023, expected: 44.4, where: "trim(agent_level1) = 'Households'"}
+        - {label: "2023 total", column: share_2023, expected: 100.0, where: "trim(agent_level1) = 'Total Current Health Expenditure'"}
+    notes:
+      - Households = out-of-pocket payments. 44.4% in 2023 (50.5% in 2016). This is the evidence for the "costly" point.
+      - Two-level hierarchy. Level 1 in agent_level1; sub-agents in agent_level2 with agent_level1 blank. Carry level 1 down in silver; never add a parent to its children.
+      - Empty spacer columns load as col_3, col_5, col_7, col_9, col_11.
+      - "a/ = share below 0.05 percent (null token)."
+      - Year labels have trailing spaces in the source (2019 , 2020 ).
+
+  # ---------------------------------------------------------------------------
+  # 3. PSA Table 9.24: per capita health expenditure and growth rate, 2016-2023  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_health_expenditure_per_capita_national_annual:
+    description: Per capita health expenditure (pesos, current prices) and annual growth rate, Philippines
+    agency: Philippine Statistics Authority (Philippine National Health Accounts)
+    obtained_via: Philippine Statistical Yearbook 2025, Table 9.24
+    original_file: 2025_T9_24.csv
+    path: socioeconomic/psa_health_expenditure/per_capita_national_annual
+    files:
+      - psa_health_expenditure_per_capita_national_annual_2016_2023.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: names                     # the year header row is shifted one column left of the values
+    data_start_row: 4
+    columns: {0: indicator, 2: value_2016, 3: value_2017, 4: value_2018, 5: value_2019,
+              6: value_2020, 7: value_2021, 8: value_2022, 9: value_2023}
+    bronze_table: "public_health.bronze.socioeconomic_psa_health_expenditure_per_capita_bronze"
+    as_of_date: 2026-10-05
+    load_mode: upsert
+    merge_keys: [indicator, year]
+    sharing: open
+    qc:
+      expected_rows: 8                     # amount, growth header x2, growth, 3 note lines, source line
+      control_values:
+        - {label: "2023 per capita health expenditure (PHP)", column: value_2023, expected: 11082.68, where: "trim(indicator) = 'Per Capita Health Expenditure'"}
+    notes:
+      - Row 4 (0-based) = per capita amount (pesos). Row 7 = growth rate for the period ending that year (8.3% in value_2016 is 2015-16). Rows 5-6 are the growth-rate sub-header and load as rows; keep only rows 4 and 7 in silver (_source_row_num).
+      - The source header row puts 2016 one column left of its value; columns here follow the values, not that header.
+      - 2021 and 2022 are revised (r). Population basis changes in 2020 (census) and 2021 (2020-based projections), see notes in the file.
+      - Values have thousands separators and trailing spaces; growth rates carry %.
+
+  # ---------------------------------------------------------------------------
+  # 4. PSA Table 9.9: early childhood mortality by region and background, 2017 and 2022  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_child_mortality:
+    description: Infant, child and under-five mortality rates (per 1,000) by region, residence, mother's education and wealth quintile
+    agency: Philippine Statistics Authority (National Demographic and Health Survey)
+    obtained_via: Philippine Statistical Yearbook 2025, Table 9.9
+    original_file: 2025_T9_9.csv
+    path: socioeconomic/psa_child_mortality
+    files:
+      - psa_child_mortality_region_survey_2017_2022.csv
+    format: csv
+    delimiter: ","
+    encoding: cp1252                       # not UTF-8 (en dash in a footnote)
+    header_mode: names
+    data_start_row: 5
+    columns: {0: characteristic_group, 1: characteristic,
+              2: imr_2022, 3: imr_2017, 4: cmr_2022, 5: cmr_2017, 6: u5mr_2022, 7: u5mr_2017}
+    bronze_table: "public_health.bronze.socioeconomic_psa_child_mortality_bronze"
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    merge_keys: [characteristic_group, characteristic, survey_year]
+    sharing: open
+    qc:
+      expected_rows: 39
+      control_values:
+        - {label: "2022 NCR infant mortality", column: imr_2022, expected: 8, where: "trim(characteristic) = 'NCR'"}
+        - {label: "2017 BARMM under-five mortality", column: u5mr_2017, expected: 55, where: "trim(characteristic) = 'BARMM'"}
+    notes:
+      - NDHS survey years 2017 and 2022; rates for the 10 years before each survey. Rates per 1,000 live births.
+      - Group header rows (Region, Residence, Mother's Education, Wealth quintile) have only characteristic_group filled; carry it down in silver.
+      - Values in parentheses are based on 250-499 children (low precision); * = fewer than 250, suppressed. Keep as text in bronze; flag in silver.
+      - 17 regions, old definition (no Negros Island Region).
+      - Equity angle (C1-C4) - under-five mortality by wealth quintile, 35 (lowest) vs 8 (highest) in 2022.
+
+  # ---------------------------------------------------------------------------
+  # 5. PSA PSGC datafile: all geographic units with income class and urban/rural  (OPEN)
+  #    Owned by the geography domain; landed under geography/. Kept here because
+  #    income class and urban/rural are the socioeconomic attributes we need.
+  #    If the geography loader already ingests this exact file, set enabled: false
+  #    and read the attributes from the geography table instead.
+  # ---------------------------------------------------------------------------
+  psa_psgc:
+    description: Philippine Standard Geographic Code datafile (region to barangay) with city class, income classification, urban/rural and 2024 population
+    agency: Philippine Statistics Authority
+    obtained_via: PSA PSGC publication (datafile as of 30 June 2026)
+    original_file: income_class_per_province_asof_20260713.xlsx
+    path: geography/psa_psgc
+    files:
+      - {name: psa_psgc_barangay_asof_20260713.xlsx, sheet: PSGC}
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.socioeconomic_psa_psgc_bronze"
+    as_of_date: 2026-07-13                 # PSA web release date (team convention)
+    load_mode: latest_file
+    merge_keys: [10-digit_PSGC]
+    sharing: open
+    column_map:
+      10-digit PSGC: psgc_code
+      Name: geo_name
+      Geographic Level: geo_level
+      City Class: city_class
+      "Income\nClassification (DOF DO No. 074.2024)": income_class
+      "Urban / Rural\n(based on 2020 CPH)": urban_rural
+      2024 Population: population_2024
+    qc:
+      expected_rows: 43768
+      numeric_columns: [2024 Population]
+      null_tokens: ["#N/A"]                # City of Isabela (Not a Province) has #N/A population
+      control_values:
+        - {label: "Sum of region populations 2024", column: 2024_Population, expected: 112727776, where: "Geographic_Level = 'Reg'"}
+    notes:
+      - Only the PSGC sheet is loaded. National Summary and Prov Sum are controls (82 provinces, 149 cities, 1,493 municipalities, 42,010 barangays as of 30 June 2026).
+      - PSGC codes are 10-digit text with leading zeros. Correspondence codes are partly numbers and lose leading zeros; pad to 9 digits in silver.
+      - Income class applies to Prov, City and Mun rows (1st-5th; * = see Notes sheet; - = not classified). Urban/Rural applies to barangays only.
+      - Region populations sum to 112,727,776; the National Summary shows 112,729,484. The 1,708 difference sits outside the region rows; to be CONFIRMED in silver.
+      - An unnamed empty column loads as col_9.

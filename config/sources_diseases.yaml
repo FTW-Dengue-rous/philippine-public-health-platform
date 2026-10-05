@@ -3,8 +3,7 @@
 #   - Bronze keeps the ORIGINAL column names from the file. Only characters
 #     Delta does not allow (space , ; { } ( ) = tab newline) become "_".
 #     Renaming to standard names (column_map) happens in silver.
-#   - path is relative to landing_root. Use `files:` to list files explicitly,
-#     or a glob in `path`.
+#   - path is relative to landing_root. 
 #   - as_of_date = date the file was downloaded or released (NOT load time).
 #     A file in `files:` can override it: {name: x.csv, as_of_date: 2026-11-01}
 #   - header_mode:
@@ -14,14 +13,15 @@
 #                 Unnamed positions become col_<n>.
 #       none   -> col_0, col_1, ... (stacked tables with no consistent columns)
 #   - A file in `files:` can be a dict and override: sheet, data_start_row, skip_rows,
-#     encoding, delimiter, as_of_date. Format is taken from the file extension.
+#     encoding, delimiter, as_of_date, header_mode, columns. Format is taken from the
+#     file extension.
 #   - enabled: false -> skipped when source_keys = ALL (still runs if named explicitly).
 #   - Row numbers are 0-based, counted from the first row of the file/sheet.
 #   - One folder = one layout = one bronze table. A new file goes into the folder that
 #     matches its geography level and grain, and is added to that entry's `files:` list.
 #   - load_mode (used by silver): upsert -> per merge key keep the row with the
 #     latest _as_of_date. Bronze always keeps every file.
-#   - qc: settings used by the bronze QC notebook.
+#   - qc: settings used by the bronze QC layer.
 
 version: 1
 
@@ -36,11 +36,6 @@ defaults:
   qc_results_table: "public_health.bronze.qc_results"
   silver_target: "public_health.silver.diseases_metric_silver"
 
-# disease domain
-# One entry per source. The bronze loader reads an entry, loads the file(s)
-# to bronze with every data column as STRING, and adds the lineage columns:
-#   _rescued_data | _source_key | _source_file | _source_sheet |
-#   _source_row_num | _as_of_date | _ingested_at
 
 sources:
   # ---------------------------------------------------------------------------
@@ -59,7 +54,7 @@ sources:
     header_mode: single
     skip_rows: 0
     bronze_table: "public_health.bronze.diseases_doh_foi_dengue_bronze"
-    as_of_date: 2025-09-30 # Check date received
+    as_of_date: 2025-09-30
     load_mode: upsert
     merge_keys: [region_name, year, month]
     sharing: restricted
@@ -544,7 +539,7 @@ sources:
 # ==============================
 psa_cause_codes:
   "1-005": tb                # respiratory tuberculosis
-  "1-006": tb_other          # other tuberculosis (decide once whether tb includes this)
+  "1-006": tb_other          # other tuberculosis
   "1-052": diabetes
   "1-066": hypertension
   "1-067": ischaemic_heart
