@@ -1,10 +1,9 @@
 -- =============================================================================
 -- Shared ingestion log for all bronze loads (API and file loaders).
--- Documented team columns first; file-load extras after (null for API rows).
 -- Run once. Then every loader only appends.
 -- =============================================================================
 
--- 1. Keep the current table (created by the first diseases run, old file-loader schema).
+-- 1. Keep the current table (old file-loader schema).
 ALTER TABLE public_health.bronze.ingestion_metadata
   RENAME TO public_health.bronze.ingestion_metadata_v0;
 
