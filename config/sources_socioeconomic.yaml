@@ -14,16 +14,16 @@
 #
 # Landing layout (under landing_root):
 #   socioeconomic/
-#     psa_poverty/                                 
+#     psa_poverty/
 #          psa_poverty_province_biennial_2021_2025.xlsx
-#     psa_health_expenditure/share_national_annual/      
+#     psa_health_expenditure/share_national_annual/
 #          psa_health_expenditure_share_national_annual_2016_2023.csv
-#     psa_health_expenditure/per_capita_national_annual/ 
+#     psa_health_expenditure/per_capita_national_annual/
 #          psa_health_expenditure_per_capita_national_annual_2016_2023.csv
-#     psa_child_mortality/                         
+#     psa_child_mortality/
 #          psa_child_mortality_region_survey_2017_2022.csv
 #   geography/
-#     psa_psgc/                                    
+#     psa_psgc/
 #          psa_psgc_barangay_asof_20260713.xlsx  (see entry 5)
 # =============================================================================
 
@@ -37,8 +37,8 @@ defaults:
   load_mode: upsert
   silver_enabled: true
   metadata_table: "public_health.bronze.ingestion_metadata"
-  qc_results_table: "public_health.bronze.qc_results"        
-  
+  qc_results_table: "public_health.bronze.qc_results"
+
 # -----------------------------------------------------------------------------
 # Column layouts (YAML anchors, referenced below).
 # -----------------------------------------------------------------------------
@@ -74,7 +74,7 @@ sources:
   psa_poverty:
     description: Per capita poverty threshold, poverty incidence and magnitude of poor population, by region and province
     agency: Philippine Statistics Authority
-    obtained_via: PSA official poverty statistics release (Full-Year 2025) 
+    obtained_via: PSA official poverty statistics release (Full-Year 2025)
     original_file: psa_poverty_2021_2025_asof_20260826.xlsx
     path: socioeconomic/psa_poverty
     header_mode: names
