@@ -139,7 +139,7 @@ FILE_LEVEL_KEYS = (
     "delimiter",
     "as_of_date",
     "header_mode",
-    "columns"
+    "columns",
 )
 
 
