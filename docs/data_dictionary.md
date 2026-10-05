@@ -343,6 +343,278 @@ may contain commas, surrounding spaces, blank strings, or source values such
 as `#N/A`. Cleaning, type conversion, and exploding population observations
 are Silver-layer responsibilities.
 
+---
+
+### `public_health.bronze.geography_phl_admin_boundaries`
+
+**Purpose**
+
+Stores source-aligned Philippine administrative boundary features retrieved
+from the Humanitarian Data Exchange (HDX) Common Operational Dataset for
+Administrative Boundaries (COD-AB).
+
+The Bronze table preserves each complete GeoJSON Feature, raw properties,
+geometry, and technical lineage metadata required for auditability,
+idempotent reruns, and downstream geographic reconciliation.
+
+**Grain**
+
+One row per GeoJSON Feature per administrative level per immutable HDX
+source version.
+
+**Source**
+
+HDX Philippines Administrative Boundaries (`cod-ab-phl`).
+
+Source format: GeoJSON.
+
+Source resource:
+
+`https://data.humdata.org/dataset/cod-ab-phl/resource/0120c30e-ba8b-487d-83f5-a664eddd3a8e`
+
+**Source key**
+
+`hdx_phl_admin`
+
+**Administrative levels**
+
+* ADM1 — region-level boundaries
+* ADM2 — province-level boundaries
+* ADM3 — municipality/city-level boundaries
+
+HDX p-codes are preserved as source values in Bronze. They are not yet
+treated as canonical/current PSA Philippine Standard Geographic Code (PSGC)
+identifiers.
+
+PSGC reconciliation, canonical naming, hierarchy standardization, and
+resolution of source-specific administrative differences are Silver-layer
+responsibilities.
+
+**Source version key**
+
+`_source_version`
+
+The source version is the SHA-256 checksum of the immutable downloaded HDX
+source archive.
+
+**Batch key**
+
+`_batch_id`
+
+The batch identifier is deterministic and follows:
+
+`dataset_id:source_version`
+
+**Bronze rerun rule**
+
+For the same `_source_version`:
+
+* if no records exist, load the complete validated batch;
+* if the complete expected batch already exists, perform a no-op;
+* if a partial or inconsistent batch exists, fail rather than append.
+
+This prevents duplicate records when the same immutable source version is
+rerun.
+
+| Column | Data Type | Description |
+|---|---|---|
+| `source_feature_json` | STRING | Complete GeoJSON Feature preserved from the HDX source for auditability, traceability, and future reprocessing. |
+| `_staging_file_path` | STRING | Exact prepared JSONL file read by Spark for the Bronze record. Technical staging is not a Medallion layer. |
+| `feature_type` | STRING | GeoJSON object type. Expected source value is `Feature`. |
+| `source_feature_id` | STRING | GeoJSON Feature identifier when supplied by the source; may be null. |
+| `properties_json` | STRING | Raw GeoJSON `properties` object containing source administrative attributes. |
+| `geometry_json` | STRING | Raw GeoJSON geometry object including source coordinates. |
+| `geometry_type` | STRING | Source geometry type. Validated values for the current source are `Polygon` and `MultiPolygon`. |
+| `_source_key` | STRING | Source configuration key. Expected value: `hdx_phl_admin`. |
+| `_dataset_id` | STRING | HDX dataset identifier. Expected value: `cod-ab-phl`. |
+| `_source_version` | STRING | SHA-256 checksum identifying the immutable HDX source archive. |
+| `_batch_id` | STRING | Deterministic source batch identifier composed from the dataset ID and source version. |
+| `_admin_level` | INT | Administrative level represented by the Feature: `1`, `2`, or `3`. |
+| `_source_file` | STRING | Original extracted GeoJSON layer, such as `phl_admin1.geojson`, `phl_admin2.geojson`, or `phl_admin3.geojson`. |
+| `_source_file_sha256` | STRING | SHA-256 checksum of the extracted source GeoJSON layer. |
+| `_source_crs` | STRING | Coordinate reference system reported by the source. |
+| `_source_url` | STRING | HDX resource URL used during source ingestion. |
+| `_landing_receipt_path` | STRING | Path to the immutable Landing `receipt.json` containing source provenance and ingestion metadata. |
+| `_staging_manifest_path` | STRING | Path to the validated staging `manifest.json` containing prepared-file metadata and expected row counts. |
+| `_validation_id` | STRING | Validation execution associated with the original Bronze load. Later validation executions of the same source version do not rewrite existing Bronze rows. |
+| `_landing_ingested_at` | TIMESTAMP | Timestamp when the immutable source version was ingested into Landing. |
+| `_bronze_ingested_at` | TIMESTAMP | Timestamp when the Bronze record was committed to the Delta table. |
+| `_record_sha256` | STRING | SHA-256 fingerprint of the complete source GeoJSON Feature used for record-level reconciliation and duplicate detection. |
+
+#### Source property notes
+
+The exact fields available in `properties_json` depend on the
+administrative level.
+
+Common source properties include:
+
+| Source Property | Description |
+|---|---|
+| `adm0_name` | Country-level source name. |
+| `adm0_pcode` | Country-level source p-code. |
+| `adm1_name` | ADM1 source administrative name. |
+| `adm1_pcode` | ADM1 source p-code. |
+| `adm2_name` | ADM2 source administrative name, present on ADM2 and ADM3 records. |
+| `adm2_pcode` | ADM2 source p-code, present on ADM2 and ADM3 records. |
+| `adm3_name` | ADM3 source administrative name. |
+| `adm3_pcode` | ADM3 source p-code. |
+| `adm3_ref_name` | Additional ADM3 reference name when supplied by the source. |
+| `area_sqkm` | Source-provided administrative area in square kilometers. |
+| `center_lat` | Source-provided center latitude. Preserved as supplied and not treated as a calculated centroid. |
+| `center_lon` | Source-provided center longitude. Preserved as supplied and not treated as a calculated centroid. |
+| `valid_on` | Source validity start value. |
+| `valid_to` | Source validity end value when supplied. |
+| `version` | Administrative-boundary version value supplied by the source. |
+| `lang` | Primary source language metadata. |
+| `lang1` | Additional source language metadata. |
+| `lang2` | Additional source language metadata. |
+| `lang3` | Additional source language metadata. |
+
+Alternate-name fields such as `adm0_name1`, `adm0_name2`, `adm0_name3`,
+`adm1_name1`, `adm1_name2`, `adm1_name3`, and equivalent fields for other
+administrative levels are also preserved when present.
+
+The complete `source_feature_json` remains the authoritative Bronze
+representation if additional source properties appear in a future HDX
+version.
+
+The Bronze validation checks geometry type only. A `Polygon` or
+`MultiPolygon` value does not by itself prove full geometric or topological
+validity. Full spatial validity checks belong in downstream processing when
+required.
+
+#### Current validated source snapshot
+
+Current immutable source version:
+
+`032db5d91fcb8a13aef378d6b4453da7225ef7f0fb9c0a1c3bf3c2205d0010d6`
+
+| Administrative Level | Feature Count |
+|---|---:|
+| ADM1 | 17 |
+| ADM2 | 88 |
+| ADM3 | 1,642 |
+| **Total** | **1,747** |
+
+The current source contains:
+
+* ADM1: 15 `MultiPolygon`, 2 `Polygon`
+* ADM2: 59 `MultiPolygon`, 29 `Polygon`
+* ADM3: 369 `MultiPolygon`, 1,273 `Polygon`
+
+The current source CRS is:
+
+`urn:ogc:def:crs:OGC:1.3:CRS84`
+
+These counts describe this immutable source version only.
+
+Future legitimate HDX source versions may contain different administrative
+record counts or geometry distributions. The pipeline derives expected row
+counts from the validated staging manifest rather than hard-coding these
+values.
+
+#### Current rerun validation
+
+The current source version was loaded successfully with:
+
+* ADM1: 17 rows
+* ADM2: 88 rows
+* ADM3: 1,642 rows
+* Total: 1,747 rows
+
+The same source version was rerun and returned:
+
+`write_outcome = already_complete`
+
+No additional Bronze rows were written, and the table remained at 1,747
+records for the source version.
+
+---
+
+### `public_health.bronze.geography_phl_admin_boundaries_dq`
+
+**Purpose**
+
+Stores validation evidence for the HDX Philippines administrative-boundary
+pipeline before a source version is allowed to load into Bronze.
+
+The table keeps validation history across executions rather than replacing
+previous validation results.
+
+**Grain**
+
+One row per validation check per administrative level per validation
+execution.
+
+**Related Bronze table**
+
+`public_health.bronze.geography_phl_admin_boundaries`
+
+**Source dataset**
+
+HDX `cod-ab-phl`.
+
+| Column | Data Type | Description |
+|---|---|---|
+| `validation_id` | STRING | Unique identifier for one validation execution. |
+| `run_id` | STRING | Ingestion notebook run identifier associated with the validation. |
+| `batch_id` | STRING | Source batch being validated. |
+| `dataset` | STRING | Source dataset identifier. Expected value: `cod-ab-phl`. |
+| `executed_at` | TIMESTAMP | Timestamp when the validation execution was recorded. |
+| `stage` | STRING | Pipeline validation stage. |
+| `admin_level` | INT | Administrative level evaluated by the validation rule. |
+| `check_name` | STRING | Name of the validation rule. |
+| `check_type` | STRING | Validation category, such as schema, null, uniqueness, accepted values, foreign key, volume, or format. |
+| `status` | STRING | Validation result. Expected values are `PASS`, `WARN`, or `FAIL`. |
+| `severity` | STRING | Severity assigned to the validation rule. |
+| `fail_count` | BIGINT | Number of records failing the validation rule. |
+| `total_count` | BIGINT | Number of records evaluated by the validation rule. |
+| `fail_pct` | DOUBLE | Percentage of evaluated records that failed the rule. |
+| `threshold` | DOUBLE | Allowed failure threshold recorded for the validation rule. |
+| `detail` | STRING | Additional validation detail or error context. |
+
+#### Validation checks
+
+Current validation includes:
+
+* required source-field availability;
+* optional source-field availability;
+* Spark JSON parsing;
+* manifest-to-record row-count reconciliation;
+* nonblank administrative p-codes;
+* p-code uniqueness within each administrative level;
+* nonblank administrative names;
+* GeoJSON `Feature` type;
+* accepted geometry types (`Polygon` or `MultiPolygon`);
+* ADM2-to-ADM1 parent-reference integrity; and
+* ADM3-to-ADM2 parent-reference integrity.
+
+A source version must have no blocking `FAIL` results before the ingestion
+notebook publishes a validated handoff to the Bronze loader.
+
+`WARN` results are retained for auditability but do not block the handoff.
+
+#### Current validated execution
+
+The latest validated handoff used validation ID:
+
+`8b5188af-8739-464f-8614-ca5b39dd4e2c`
+
+The validation execution recorded:
+
+* 37 validation checks
+* 0 blocking `FAIL` results
+* expected ADM1 rows: 17
+* expected ADM2 rows: 88
+* expected ADM3 rows: 1,642
+* expected total rows: 1,747
+
+A later validation execution of the same immutable source version does not
+rewrite the `_validation_id` stored on already-loaded Bronze records.
+Existing Bronze rows retain the validation execution that authorized their
+original load.
+
+---
 ### `public_health.bronze.ingestion_metadata`
 
 **Purpose**
