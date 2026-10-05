@@ -1,0 +1,50 @@
+# Draft only — catalog structure for the facilities and health-workforce sources.
+# This file is not wired to a loader yet. It deliberately specifies no ingestion
+# metadata or Bronze transformations; those will be agreed separately.
+
+version: 1
+status: draft
+landing_root: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing
+
+groups:
+  facility_registry:
+    doh:
+      agency: Department of Health
+      sources:
+        hospital_list:
+          file: facilities/hospital_list_asof20260630.xlsx
+          format: xlsx
+          bronze_table: ph_public_health.bronze.facilities_hospital_list
+        infirmary:
+          file: facilities/infirmary_asof20260630.xlsx
+          format: xlsx
+          bronze_table: ph_public_health.bronze.facilities_infirmary
+
+    nhfr:
+      agency: National Health Facility Registry
+      sources:
+        active_facilities:
+          file: facilities/nhfr_activefacilities_asof_20260929.csv
+          format: csv
+          bronze_table: ph_public_health.bronze.active_facilities
+
+    psa:
+      agency: Philippine Statistics Authority
+      sources:
+        primary_care:
+          file: facilities/primary_care_asof20260630.xlsx
+          format: xlsx
+          bronze_table: ph_public_health.bronze.facilities_primary_care
+
+  health_workforce:
+    psa:
+      agency: Philippine Statistics Authority
+      sources:
+        government_medical_practitioners:
+          file: health workforce/TABLE 9.14 Number of Government Medical Practitioners by Region- 2012 to 2023.csv
+          format: csv
+          bronze_table: ph_public_health.bronze.government_medical_practitioners_by_region
+
+  # No sources are listed until providers are confirmed in the project docs.
+  services: {}
+  capacity: {}
