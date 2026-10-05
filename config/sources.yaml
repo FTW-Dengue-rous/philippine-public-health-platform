@@ -9,6 +9,8 @@ sources:
     landing_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/psgc"
 
     bronze_table: "public_health.bronze.geography_bronze"
+    geography_silver_table: "public_health.silver.geography_silver"
+    qc_results_table: "public_health.bronze.qc_results"
     metadata_table: "public_health.bronze.ingestion_metadata"
 
   hdx_phl_admin:
@@ -29,3 +31,4 @@ sources:
 
     bronze_table: "public_health.bronze.geography_phl_admin_boundaries"
     dq_results_table: "public_health.bronze.geography_phl_admin_boundaries_dq"
+
