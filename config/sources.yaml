@@ -31,4 +31,3 @@ sources:
 
     bronze_table: "public_health.bronze.geography_phl_admin_boundaries"
     dq_results_table: "public_health.bronze.geography_phl_admin_boundaries_dq"
-
