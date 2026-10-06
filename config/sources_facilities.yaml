@@ -1,66 +1,55 @@
-# Draft only — catalog structure for confirmed facility-registry sources.
-# This file is not wired to a loader yet. It deliberately specifies no ingestion
-# metadata or Bronze transformations; those will be agreed separately.
-
-version: 1
-status: draft
-landing_root: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing
-
-groups:
-  facility_registry:
-    doh:
-      agency: Department of Health
-      sources:
-        hospital_list:
-          file: facilities/hospital_list_asof_20260630.xlsx
-          format: xlsx
-          bronze_table: ph_public_health.bronze.facilities_hospital_list
-        infirmary:
-          file: facilities/infirmary_asof20260630.xlsx
-          format: xlsx
-          bronze_table: ph_public_health.bronze.facilities_infirmary
-
-    nhfr:
-      agency: National Health Facility Registry
-      sources:
-        active_facilities:
-          file: facilities/nhfr_activefacilities_asof_20260929.csv
-          format: csv
-          bronze_table: ph_public_health.bronze.active_facilities
-
-    psa:
-      agency: Philippine Statistics Authority
-      sources:
-        primary_care:
-          file: facilities/primary_care_asof20260630.xlsx
-          format: xlsx
-          bronze_table: ph_public_health.bronze.facilities_primary_care
-
-  # No sources are listed until providers are confirmed in the project docs.
-  services: {}
-  capacity: {}
-
-
-
-# =============================================================================
-# sources_facilities.yaml — facilities domain
-# Philippine Public Health Platform (FTW Capstone)
-#
-# Same structure and conventions as sources_diseases.yaml and sources_workforce.yaml.
+# Conventions
 #   - Entry name = source_key = folder name (nested folders joined by "_":
 #     doh_hfsrb/hospitals -> doh_hfsrb_hospitals). Never change a key once in use.
-#   - Every data column is STRING in bronze. Lineage columns are added by the loader.
-#   - Bronze keeps ORIGINAL column names (header_mode: single) unless the header is
-#     unusable (multi-row, very long, or inconsistent between sheets of the same
-#     table); then names are listed here (header_mode: names).
-#   - A file in `files:` can override: sheet, data_start_row, skip_rows, encoding,
-#     delimiter, as_of_date, header_mode, columns.
-#   - path is relative to landing_root, so an entry may read a folder owned by
-#     another domain (doh_fhsis_demographic lives under workforce/).
+#   - Bronze keeps the ORIGINAL column names from the file. Only characters
+#     Delta does not allow (space , ; { } ( ) = tab newline) become "_".
+#     Renaming to standard names (column_map) happens in silver.
+#   - Every data column is STRING in bronze. Lineage columns are added by the loader:
+#     _rescued_data | _source_key | _source_file | _source_sheet |
+#     _source_row_num | _as_of_date | _ingested_at
+#   - path is relative to landing_root. Use `files:` to list files explicitly,
+#     or a glob in `path`.
+#   - as_of_date = date the file was downloaded or released (NOT load time).
+#     A file in `files:` can override it: {name: x.csv, as_of_date: 2026-11-01}
+#   - header_mode:
+#       single -> the file has one clean header row (at index skip_rows)
+#       names  -> column names are listed here in `columns` (list, or {position: name});
+#                 data starts at data_start_row. Use for titles / multi-row headers,
+#                 very long headers, or inconsistent headers between sheets.
+#                 Unnamed positions become col_<n>.
+#       none   -> col_0, col_1, ... (stacked tables with no consistent columns)
+#   - A file in `files:` can be a dict and override: sheet, data_start_row, skip_rows,
+#     encoding, delimiter, as_of_date, header_mode, columns.
+#     Format is taken from the file extension.
+#   - enabled: false -> skipped when source_keys = ALL (still runs if named explicitly).
+#   - Row numbers are 0-based, counted from the first row of the file/sheet.
+#   - One folder = one layout = one bronze table. A new file goes into the folder that
+#     matches its geography level and grain, and is added to that entry's `files:` list.
 #   - Bronze tables: public_health.bronze.facilities_<source>_<content>_bronze
-#   - load_mode: upsert -> keep latest _as_of_date per merge key (registries);
-#     latest_file -> silver keeps only the newest snapshot of a list (licensed lists,
-#     where a facility that drops out of the list is no longer licensed).
+#   - load_mode (used by silver): upsert -> per merge key keep the row with the
+#     latest _as_of_date (registries). latest_file -> silver keeps only the newest
+#     snapshot of a list (licensed lists, where a facility that drops out of the
+#     list is no longer licensed). Bronze always keeps every file.
+#   - qc: settings used by the bronze QC notebook.
+
+version: 1
+
+landing_root: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing
+
+defaults:
+  domain: facilities
+  all_columns_as_string: true
+  load_mode: upsert
+  silver_enabled: true
+  metadata_table: "public_health.bronze.ingestion_metadata"
+  qc_results_table: "public_health.bronze.qc_results"
+  silver_target: "public_health.silver.facilities_metric_silver"
+
+# facilities domain
+# One entry per source. The bronze loader reads an entry, loads the file(s)
+# to bronze with every data column as STRING, and adds the lineage columns:
+#   _rescued_data | _source_key | _source_file | _source_sheet |
+#   _source_row_num | _as_of_date | _ingested_at
 #
 # File naming
 #   Tables by area and period:   {source}_{content}_{geo}_{grain}_{years}.{ext}
@@ -80,23 +69,9 @@ groups:
 #     psa_beds/region_annual/        psa_beds_region_annual_2020_2024.csv
 #     psa_bhs/region_annual/         psa_bhs_region_annual_2006_2023.csv
 #     hdx_healthsites/               hdx_healthsites_facility_asof_20260929.csv
-#     restricted/bed_occupancy/      bed_occupancy_hospital_annual_2020_2025.xlsx
-#   workforce/doh_fhsis_demographic/ (BGY & BHS tab, read by the last entry)
+#     restricted/                  bed_occupancy_hospital_annual_2020_2025.xlsx
 #
 # Items marked CONFIRM were not verified against the actual file.
-# =============================================================================
-
-version: 1
-
-landing_root: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing
-
-defaults:
-  domain: facilities
-  all_columns_as_string: true
-  load_mode: upsert
-  silver_enabled: true
-  metadata_table: "public_health.bronze.ingestion_metadata"   # CONFIRM columns match the team table
-  qc_results_table: "public_health.bronze.qc_results"         # CONFIRM name with the team
 
 # -----------------------------------------------------------------------------
 # Column layouts (YAML anchors, referenced below; not read by the loader directly).
@@ -162,15 +137,7 @@ layouts:
     [year, philippines, ncr, car, region_01, region_02, region_03, region_04a, mimaropa,
      region_05, region_06, region_07, region_08, region_09, region_10, region_11, region_12,
      caraga, barmm]
-  # FHSIS BGY & BHS tab (see the last entry).
-  bgy_2018: &bgy_2018
-    [area_name, population, barangays_no, barangays_ratio, bhs_no, bhs_ratio]
-  bgy_2019_2024: &bgy_2019_2024
-    [area_name, population, barangays_no, barangays_ratio,
-     mhc_no, mhc_ratio, chc_no, chc_ratio, rhu_no, rhu_ratio,
-     health_centers_total, health_centers_ratio, bhs_no, bhs_ratio]
-  bgy_2025: &bgy_2025
-    [area_name, population, barangays_no, barangays_ratio, rhu_no, rhu_ratio, bhs_no, bhs_ratio]
+
 
 sources:
 
@@ -302,7 +269,7 @@ sources:
     qc:
       expected_rows: 1180                 # Government 1,122 + Private 58 (= SUMMARY 2026 total)
     notes:
-      - Only licensed primary care facilities (1,180), far fewer than all RHUs and BHS. For coverage use FHSIS BGY & BHS counts; this list shows licensing progress.
+      - Only licensed primary care facilities (1,180), far fewer than all RHUs and BHS. For coverage use FHSIS BGY & BHS counts (workforce domain); this list shows licensing progress.
       - Sheets not loaded - SUMMARY 2026, Regional and Provincial Distribution, Closed PCF as of March 31, 2026 (keep for a later history load if needed).
       - Header cells were very long multi-line labels; names are set in the layouts above. Private swaps the order of the two clinical lab columns (handled by the layout).
       - nhfr_code is blank for 696 of 1,180 rows. Match to NHFR by name and municipality in silver.
@@ -548,7 +515,7 @@ sources:
         - {label: "2023 Philippines BHS", column: philippines, expected: 24327, where: "trim(year) = '2023'"}
         - {label: "2018 Philippines BHS", column: philippines, expected: 21546, where: "trim(year) = '2018'"}
     notes:
-      - Use for 2006-2017 history. 2018-2023 equal the FHSIS BGY & BHS national totals (21,546 in 2018, 24,327 in 2023).
+      - Use for 2006-2017 history. 2018-2023 match the FHSIS BGY & BHS national totals (21,546 in 2018, 24,327 in 2023) from the workforce domain.
       - "- = no report (2009 has many). Values have thousands separators and trailing spaces."
       - NCR is 12-20 before 2009, ~470 for 2009-2018, then ~30 from 2019. Definition changes; do not trend NCR.
       - Region I 2014 (3,267) is an outlier.
@@ -561,7 +528,7 @@ sources:
     agency: CONFIRM (source of the file not recorded)
     obtained_via: CONFIRM
     original_file: bed_occupancy_rate_2025_1.xlsx
-    path: facilities/restricted/bed_occupancy
+    path: facilities/restricted
     header_mode: single
     skip_rows: 0
     files:
@@ -587,54 +554,3 @@ sources:
       - 2020-2024 sheets are PRIVATE hospitals only (123-184 rows). 2025 has 418 Government and 744 Private. Government BOR exists for 2025 only.
       - Do not trend counts across years; the 2020-2024 sample is not the same set of hospitals.
 
-  # ---------------------------------------------------------------------------
-  # 13. DOH FHSIS primary care facilities: region/province/city x year, 2018-2025  (PUBLIC)
-  #     Same workbooks as the workforce entry; this reads the BGY & BHS tab.
-  # ---------------------------------------------------------------------------
-  doh_fhsis_demographic:
-    description: Number and ratio of barangays, health centers (MHC, CHC, RHU) and barangay health stations by area
-    agency: Department of Health
-    obtained_via: FHSIS annual report, Demographic Profile workbook (one per year)
-    path: workforce/doh_fhsis_demographic      # landed once under workforce/
-    header_mode: names
-    files:
-      - {name: doh_fhsis_demographic_province_annual_2018.xlsx, sheet: Table 3A.1, data_start_row: 8, columns: *bgy_2018}
-      - {name: doh_fhsis_demographic_province_annual_2019.xlsx, sheet: "BGY & BHS", data_start_row: 8, columns: *bgy_2019_2024}
-      - {name: doh_fhsis_demographic_province_annual_2020.xlsx, sheet: "BGY & BHS", data_start_row: 8, columns: *bgy_2019_2024}
-      - {name: doh_fhsis_demographic_province_annual_2021.xlsx, sheet: "BGY & BHS", data_start_row: 7, columns: *bgy_2019_2024}
-      - {name: doh_fhsis_demographic_province_annual_2022.xlsx, sheet: "BGY & BHS", data_start_row: 7, columns: *bgy_2019_2024}
-      - {name: doh_fhsis_demographic_province_annual_2023.xlsx, sheet: "BGY & BHS", data_start_row: 8, columns: *bgy_2019_2024}
-      - {name: doh_fhsis_demographic_province_annual_2024.xlsx, sheet: "BGY & BHS", data_start_row: 7, columns: *bgy_2019_2024}
-      - {name: doh_fhsis_demographic_municipality_annual_2025.xlsx, sheet: "BGY & BHS", data_start_row: 7, columns: *bgy_2025}
-    bronze_table: "public_health.bronze.facilities_fhsis_primary_care_bronze"
-    as_of_date: 2026-10-05                 # download date; CONFIRM
-    load_mode: upsert
-    merge_keys: [area_name, year]          # year from _source_file
-    sharing: public
-    coverage: 2018-2025 annual; national, region, province and city (no municipality rows, even in 2025)
-    qc:
-      expected_rows:                       # local test 2026-10-05
-        doh_fhsis_demographic_province_annual_2018.xlsx: 215
-        doh_fhsis_demographic_province_annual_2019.xlsx: 197
-        doh_fhsis_demographic_province_annual_2020.xlsx: 198
-        doh_fhsis_demographic_province_annual_2021.xlsx: 197
-        doh_fhsis_demographic_province_annual_2022.xlsx: 197
-        doh_fhsis_demographic_province_annual_2023.xlsx: 144
-        doh_fhsis_demographic_province_annual_2024.xlsx: 142
-        doh_fhsis_demographic_municipality_annual_2025.xlsx: 146
-      numeric_columns: [population, barangays_no, bhs_no]
-      null_tokens: ["*", "#DIV/0!"]
-      max_non_numeric_rows_per_file: 6     # legend and source lines at the bottom
-      control_values:
-        - {label: "2018 Philippines BHS", column: bhs_no, expected: 21546, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2018.%'"}
-        - {label: "2024 Philippines BHS", column: bhs_no, expected: 25532, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'"}
-        - {label: "2025 Philippines BHS", column: bhs_no, expected: 26944, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2025.%'"}
-        - {label: "2024 Philippines barangays", column: barangays_no, expected: 41590, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'"}
-    notes:
-      - Layout changes by year. 2018 has barangays and BHS only. 2019-2024 split health centers into MHC, CHC and RHU plus a total. 2025 has barangays, RHU and BHS only.
-      - 2025 "Rural Health Units" (2,612 nationally) is close to the 2024 total of all health centers (2,720), not 2024 RHUs (1,777). Treat 2025 rhu_no as all health centers; CONFIRM with DOH.
-      - Barangay counts move between years (41,539 in 2023 to 43,253 in 2025). Use PSGC barangay counts from the geography domain as the reference.
-      - Ratios are population per unit. Recompute in gold.
-      - No PSGC in any year, including 2025 on this tab. Match area_name to geography in silver.
-      - The 2025 file is named "municipality" after its finest tab (Health Workers); this tab stops at province and city.
-      - 2020 has an empty spacer column that loads as col_14.
