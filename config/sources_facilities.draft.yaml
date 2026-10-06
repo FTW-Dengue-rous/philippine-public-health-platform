@@ -39,3 +39,602 @@ groups:
   # No sources are listed until providers are confirmed in the project docs.
   services: {}
   capacity: {}
+
+
+
+# =============================================================================
+# sources_facilities.yaml — facilities domain
+# Philippine Public Health Platform (FTW Capstone)
+#
+# Same structure and conventions as sources_diseases.yaml and sources_workforce.yaml.
+#   - Entry name = source_key = folder name (nested folders joined by "_":
+#     doh_hfsrb/hospitals -> doh_hfsrb_hospitals). Never change a key once in use.
+#   - Every data column is STRING in bronze. Lineage columns are added by the loader.
+#   - Bronze keeps ORIGINAL column names (header_mode: single) unless the header is
+#     unusable (multi-row, very long, or inconsistent between sheets of the same
+#     table); then names are listed here (header_mode: names).
+#   - A file in `files:` can override: sheet, data_start_row, skip_rows, encoding,
+#     delimiter, as_of_date, header_mode, columns.
+#   - path is relative to landing_root, so an entry may read a folder owned by
+#     another domain (doh_fhsis_demographic lives under workforce/).
+#   - Bronze tables: public_health.bronze.facilities_<source>_<content>_bronze
+#   - load_mode: upsert -> keep latest _as_of_date per merge key (registries);
+#     latest_file -> silver keeps only the newest snapshot of a list (licensed lists,
+#     where a facility that drops out of the list is no longer licensed).
+#
+# File naming
+#   Tables by area and period:   {source}_{content}_{geo}_{grain}_{years}.{ext}
+#   Facility lists (snapshots):  {source}_{content}_facility_asof_{yyyymmdd}.{ext}
+#   A newer snapshot is a new file in the same folder, added to `files:`.
+#
+# Landing layout (under landing_root):
+#   facilities/
+#     doh_nhfr/                      doh_nhfr_hospitals_facility_asof_20260929.csv
+#     doh_hfsrb/hospitals/           doh_hfsrb_hospitals_facility_asof_20260630.xlsx
+#     doh_hfsrb/infirmaries/         doh_hfsrb_infirmaries_facility_asof_20260630.xlsx
+#     doh_hfsrb/primary_care/        doh_hfsrb_primary_care_facility_asof_20260630.xlsx
+#     doh_hfsrb/dialysis_clinics/    doh_hfsrb_dialysis_clinics_facility_asof_20260630.xlsx
+#     doh_hfsrb/blood_service/       doh_hfsrb_blood_service_facility_asof_20260630.xlsx
+#     psa_hospitals/region_annual/   psa_hospitals_region_annual_2020_2024.csv
+#     psa_hospitals/national_annual/ psa_hospitals_national_annual_2006_2015.csv
+#     psa_beds/region_annual/        psa_beds_region_annual_2020_2024.csv
+#     psa_bhs/region_annual/         psa_bhs_region_annual_2006_2023.csv
+#     hdx_healthsites/               hdx_healthsites_facility_asof_20260929.csv
+#     restricted/bed_occupancy/      bed_occupancy_hospital_annual_2020_2025.xlsx
+#   workforce/doh_fhsis_demographic/ (BGY & BHS tab, read by the last entry)
+#
+# Items marked CONFIRM were not verified against the actual file.
+# =============================================================================
+
+version: 1
+
+landing_root: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing
+
+defaults:
+  domain: facilities
+  all_columns_as_string: true
+  load_mode: upsert
+  silver_enabled: true
+  metadata_table: "public_health.bronze.ingestion_metadata"   # CONFIRM columns match the team table
+  qc_results_table: "public_health.bronze.qc_results"         # CONFIRM name with the team
+
+# -----------------------------------------------------------------------------
+# Column layouts (YAML anchors, referenced below; not read by the loader directly).
+# -----------------------------------------------------------------------------
+layouts:
+  # DOH HFSRB licensed hospitals. Private has no dialysis_provider column.
+  hfsrb_hospitals_gov: &hfsrb_hospitals_gov
+    [row_no, nhfr_code, region, province, city_municipality, address, facility_name,
+     ownership, ownership_class, hospital_class, service_capability, abc, add_on_services,
+     blood_service_facility, rhiv_confirmatory_lab, ambulance_details, ambulance_type1_count,
+     ambulance_type2_count, ambulance_total, ambulance_provider, dialysis_stations,
+     dialysis_provider, ctf_classification, clinical_lab_class, head_of_facility,
+     contact_nos, email, validity_from, validity_until, license_no,
+     application_status, application_status_changes, remarks]
+  hfsrb_hospitals_pvt: &hfsrb_hospitals_pvt
+    [row_no, nhfr_code, region, province, city_municipality, address, facility_name,
+     ownership, ownership_class, hospital_class, service_capability, abc, add_on_services,
+     blood_service_facility, rhiv_confirmatory_lab, ambulance_details, ambulance_type1_count,
+     ambulance_type2_count, ambulance_total, ambulance_provider, dialysis_stations,
+     ctf_classification, clinical_lab_class, head_of_facility,
+     contact_nos, email, validity_from, validity_until, license_no,
+     application_status, application_status_changes, remarks]
+  # DOH HFSRB licensed infirmaries (same for Government and Private).
+  hfsrb_infirmaries: &hfsrb_infirmaries
+    [row_no, nhfr_code, region, province, city_municipality, address, facility_name,
+     ownership, ownership_class, abc, add_on_services, clinical_lab_class, head_of_facility,
+     contact_nos, email, ambulance_details, ambulance_provider, validity_from, validity_until,
+     license_no, application_status, application_status_changes, remarks]
+  # DOH HFSRB primary care facilities. _arrangement = one-stop shop or MOA/MOU.
+  # Private swaps the two clinical lab columns and adds the last two.
+  hfsrb_primary_care_gov: &hfsrb_primary_care_gov
+    [row_no, nhfr_code, region, province, city_municipality, address, facility_name,
+     ownership, head_of_facility,
+     ambulance_arrangement, ambulance_provider, ambulance_class,
+     birthing_home_arrangement, birthing_home_abc, birthing_home_provider,
+     clinical_lab_arrangement, clinical_lab_capability, clinical_lab_provider,
+     dental_arrangement, dental_provider, pharmacy_arrangement, pharmacy_provider,
+     xray_arrangement, xray_provider, ancillary_services,
+     contact_nos, email, validity_from, validity_until, license_no, application_status]
+  hfsrb_primary_care_pvt: &hfsrb_primary_care_pvt
+    [row_no, nhfr_code, region, province, city_municipality, address, facility_name,
+     ownership, head_of_facility,
+     ambulance_arrangement, ambulance_provider, ambulance_class,
+     birthing_home_arrangement, birthing_home_abc, birthing_home_provider,
+     clinical_lab_arrangement, clinical_lab_provider, clinical_lab_capability,
+     dental_arrangement, dental_provider, pharmacy_arrangement, pharmacy_provider,
+     xray_arrangement, xray_provider, ancillary_services,
+     contact_nos, email, validity_from, validity_until, license_no, application_status,
+     application_status_changes, remarks]
+  # DOH HFSRB free-standing dialysis clinics (same for Government and Private).
+  hfsrb_dialysis: &hfsrb_dialysis
+    [row_no, nhfr_code, region, chd, province, city_municipality, address, facility_name,
+     ownership, institutional_character, stations, head_of_facility, contact_nos, email,
+     validity_from, validity_until, license_no, remarks]
+  # DOH HFSRB free-standing blood service facilities (same for Government and Private).
+  hfsrb_blood_service: &hfsrb_blood_service
+    [row_no, nhfr_code, region, province, city_municipality, address, facility_name,
+     ownership, service_capability, institutional_character, head_of_laboratory,
+     contact_nos, email, validity_from, validity_until, license_no,
+     application_status, application_status_changes, remarks, dmu_reference]
+  # PSA Table 9.19 barangay health stations, one column per region.
+  psa_bhs_region: &psa_bhs_region
+    [year, philippines, ncr, car, region_01, region_02, region_03, region_04a, mimaropa,
+     region_05, region_06, region_07, region_08, region_09, region_10, region_11, region_12,
+     caraga, barmm]
+  # FHSIS BGY & BHS tab (see the last entry).
+  bgy_2018: &bgy_2018
+    [area_name, population, barangays_no, barangays_ratio, bhs_no, bhs_ratio]
+  bgy_2019_2024: &bgy_2019_2024
+    [area_name, population, barangays_no, barangays_ratio,
+     mhc_no, mhc_ratio, chc_no, chc_ratio, rhu_no, rhu_ratio,
+     health_centers_total, health_centers_ratio, bhs_no, bhs_ratio]
+  bgy_2025: &bgy_2025
+    [area_name, population, barangays_no, barangays_ratio, rhu_no, rhu_ratio, bhs_no, bhs_ratio]
+
+sources:
+
+  # ===========================================================================
+  # Facility registries and licensed lists (one row per facility)
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # 1. DOH NHFR: active hospitals, with PSGC codes  (PUBLIC)
+  # ---------------------------------------------------------------------------
+  doh_nhfr:
+    description: National Health Facility Registry export of active hospitals (level, bed capacity, ownership, PSGC)
+    agency: Department of Health
+    obtained_via: NHFR website export (nhfr.doh.gov.ph)   # CONFIRM
+    original_file: nhfr_activefacilities_asof_20260929.csv
+    path: facilities/doh_nhfr
+    files:
+      - doh_nhfr_hospitals_facility_asof_20260929.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.facilities_nhfr_bronze"
+    as_of_date: 2026-09-29
+    load_mode: upsert
+    merge_keys: [Health_Facility_Code]
+    sharing: public
+    coverage: 1,359 hospitals (Health Facility Type = Hospital only); all regions
+    column_map:
+      Health Facility Code: facility_code
+      Facility Name: facility_name
+      Health Facility Type: facility_type
+      Ownership Major Classification: ownership
+      City/Municipality PSGC: municipality_psgc
+      Service Capability: service_capability
+      Bed Capacity: bed_capacity
+    qc:
+      expected_rows: 1359
+      numeric_columns: [Bed Capacity, Health Facility Code Short]
+      control_values:
+        - {label: "NHFR hospital bed capacity", column: Bed Capacity, expected: 119862, where: "1 = 1"}
+    notes:
+      - Hospitals only. Other NHFR facility types (RHU, BHS, infirmary) would be new files in this folder, same layout.
+      - Region/Province/City/Barangay PSGC codes are text with leading zeros (0400000000). Keep as string.
+      - "Province Name holds the HUC for independent cities (CITY OF LAS PIÑAS (HUC)); Province PSGC then equals the city PSGC."
+      - Licensing Status holds HTML (<b>Licensing Status:</b>...). Strip tags in silver.
+      - Some names have ? in place of Ñ (CITY OF LAS PI?AS) in the source export (59 values). Prefer PSGC codes over names.
+      - Service Capability blank for 19 hospitals.
+      - Service Capability split - Level 1 784, Level 2 431, Level 3 125, blank 19.
+
+  # ---------------------------------------------------------------------------
+  # 2-6. DOH HFSRB licensed facility lists, as of 2026-06-30  (PUBLIC)
+  #   Workbooks hold summary, lookup and closed-facility sheets too; only the
+  #   Government and Private lists are loaded. Ownership comes from the sheet
+  #   (_source_sheet) as well as the ownership column.
+  #   Contact person names, phone numbers and emails stay in bronze only.
+  # ---------------------------------------------------------------------------
+  doh_hfsrb_hospitals:
+    description: DOH-licensed hospitals (level, authorized bed capacity, ambulance, dialysis, blood service)
+    agency: Department of Health - Health Facilities and Services Regulatory Bureau
+    obtained_via: DOH HFSRB list of licensed health facilities
+    original_file: hospital_list_asof_20260630.xlsx
+    path: facilities/doh_hfsrb/hospitals
+    header_mode: names
+    files:
+      - {name: doh_hfsrb_hospitals_facility_asof_20260630.xlsx, sheet: Government, data_start_row: 1, columns: *hfsrb_hospitals_gov}
+      - {name: doh_hfsrb_hospitals_facility_asof_20260630.xlsx, sheet: Private, data_start_row: 1, columns: *hfsrb_hospitals_pvt}
+    bronze_table: "public_health.bronze.facilities_hfsrb_hospitals_bronze"
+    as_of_date: 2026-06-30
+    load_mode: latest_file
+    merge_keys: [license_no]
+    sharing: public
+    qc:
+      expected_rows: 1336                 # Government 471 + Private 865 (local test 2026-10-05)
+      numeric_columns: [abc]
+      control_values:                     # match the workbook's own Summary / Authorized Bed Capacity sheets
+        - {label: "Government hospitals ABC", column: abc, expected: 61488, where: "_source_sheet = 'Government'"}
+        - {label: "Private hospitals ABC", column: abc, expected: 59427, where: "_source_sheet = 'Private'"}
+    notes:
+      - Sheets not loaded - Summary, DOH Hospitals (subset of Government with 2025 licences), Authorized Bed Capacity and other summaries, Sheet13, Master Data (lookup lists), Metadata.
+      - Summary sheets are useful as control totals only (the two ABC totals above match them exactly).
+      - Government has 471 hospitals here vs 473 in NHFR; Private 865 vs 886. Reconcile in silver on nhfr_code.
+      - A few Government rows have values one column past REMARKS (col_33).
+      - nhfr_code is mostly 5-digit text with leading zeros (02593) but some cells are numbers (3880.0 -> 3880). Pad to 5 digits before matching NHFR Health Facility Code Short.
+      - service_capability = Level 1/2/3; abc = authorized bed capacity.
+      - BARMM province typo in source (Maguindao del Sur).
+
+  doh_hfsrb_infirmaries:
+    description: DOH-licensed infirmaries (authorized bed capacity, add-on services)
+    agency: Department of Health - Health Facilities and Services Regulatory Bureau
+    obtained_via: DOH HFSRB list of licensed health facilities
+    original_file: infirmary_asof_20260630.xlsx
+    path: facilities/doh_hfsrb/infirmaries
+    header_mode: names
+    files:
+      - {name: doh_hfsrb_infirmaries_facility_asof_20260630.xlsx, sheet: Government, data_start_row: 1, columns: *hfsrb_infirmaries}
+      - {name: doh_hfsrb_infirmaries_facility_asof_20260630.xlsx, sheet: Private, data_start_row: 1, columns: *hfsrb_infirmaries}
+    bronze_table: "public_health.bronze.facilities_hfsrb_infirmaries_bronze"
+    as_of_date: 2026-06-30
+    load_mode: latest_file
+    merge_keys: [license_no]
+    sharing: public
+    qc:
+      expected_rows: 614                  # Government 364 + Private 250
+      numeric_columns: [abc]
+      control_values:
+        - {label: "Government infirmaries ABC", column: abc, expected: 5712, where: "_source_sheet = 'Government'"}
+        - {label: "Private infirmaries ABC", column: abc, expected: 3646, where: "_source_sheet = 'Private'"}
+    notes:
+      - Sheets not loaded - summaries, Closed Facility (7 closed infirmaries), Dialysis and Blood Center (empty templates), Master Data.
+      - A marker "*" sits one or two columns past REMARKS on many rows; it loads as col_23 / col_24.
+
+  doh_hfsrb_primary_care:
+    description: DOH-licensed primary care facilities (RHUs, health centers, private primary care clinics) and their service arrangements
+    agency: Department of Health - Health Facilities and Services Regulatory Bureau
+    obtained_via: DOH HFSRB list of licensed health facilities
+    original_file: primary_care_asof20260630.xlsx
+    path: facilities/doh_hfsrb/primary_care
+    header_mode: names
+    files:
+      - {name: doh_hfsrb_primary_care_facility_asof_20260630.xlsx, sheet: Government, data_start_row: 1, columns: *hfsrb_primary_care_gov}
+      - {name: doh_hfsrb_primary_care_facility_asof_20260630.xlsx, sheet: Private, data_start_row: 1, columns: *hfsrb_primary_care_pvt}
+    bronze_table: "public_health.bronze.facilities_hfsrb_primary_care_bronze"
+    as_of_date: 2026-06-30
+    load_mode: latest_file
+    merge_keys: [license_no]
+    sharing: public
+    qc:
+      expected_rows: 1180                 # Government 1,122 + Private 58 (= SUMMARY 2026 total)
+    notes:
+      - Only licensed primary care facilities (1,180), far fewer than all RHUs and BHS. For coverage use FHSIS BGY & BHS counts; this list shows licensing progress.
+      - Sheets not loaded - SUMMARY 2026, Regional and Provincial Distribution, Closed PCF as of March 31, 2026 (keep for a later history load if needed).
+      - Header cells were very long multi-line labels; names are set in the layouts above. Private swaps the order of the two clinical lab columns (handled by the layout).
+      - nhfr_code is blank for 696 of 1,180 rows. Match to NHFR by name and municipality in silver.
+      - Some contact numbers are formatted as dates in Excel and load as error values. Not needed downstream.
+      - Licence dates mix text (04/21/2025) and Excel dates (2027-12-31T00:00:00). Parse both in silver.
+
+  doh_hfsrb_dialysis_clinics:
+    description: DOH-licensed free-standing dialysis clinics and number of stations
+    agency: Department of Health - Health Facilities and Services Regulatory Bureau
+    obtained_via: DOH HFSRB list of licensed health facilities
+    original_file: dialysis_clinics_asof_20260630.xlsx
+    path: facilities/doh_hfsrb/dialysis_clinics
+    header_mode: names
+    files:
+      - {name: doh_hfsrb_dialysis_clinics_facility_asof_20260630.xlsx, sheet: Government, data_start_row: 1, columns: *hfsrb_dialysis}
+      - {name: doh_hfsrb_dialysis_clinics_facility_asof_20260630.xlsx, sheet: " Private", data_start_row: 1, columns: *hfsrb_dialysis}
+    bronze_table: "public_health.bronze.facilities_hfsrb_dialysis_clinics_bronze"
+    as_of_date: 2026-06-30
+    load_mode: latest_file
+    merge_keys: [license_no]
+    sharing: public
+    qc:
+      expected_rows: 800                  # Government 26 + Private 774 (= SUMMARY total)
+      numeric_columns: [stations]
+      control_values:
+        - {label: "Government dialysis stations", column: stations, expected: 319, where: "_source_sheet = 'Government'"}
+        - {label: "Private dialysis stations", column: stations, expected: 10822, where: "_source_sheet = ' Private'"}
+    notes:
+      - The Private sheet name has a leading space (" Private").
+      - Stray markers past REMARKS load as col_18 .. col_21.
+      - Free-standing clinics only; hospital-based dialysis is in the hospitals list (dialysis_stations).
+      - nhfr_code mixes DOH-prefixed codes (DOH041484) and numbers (50654.0 -> 50654).
+
+  doh_hfsrb_blood_service:
+    description: DOH-licensed free-standing blood service facilities (blood centers, blood collection units, blood stations)
+    agency: Department of Health - Health Facilities and Services Regulatory Bureau
+    obtained_via: DOH HFSRB list of licensed health facilities
+    original_file: blood_service_asof_20260630.xlsx
+    path: facilities/doh_hfsrb/blood_service
+    header_mode: names
+    files:
+      - {name: doh_hfsrb_blood_service_facility_asof_20260630.xlsx, sheet: Government, data_start_row: 1, columns: *hfsrb_blood_service}
+      - {name: doh_hfsrb_blood_service_facility_asof_20260630.xlsx, sheet: Private, data_start_row: 1, columns: *hfsrb_blood_service}
+    bronze_table: "public_health.bronze.facilities_hfsrb_blood_service_bronze"
+    as_of_date: 2026-06-30
+    load_mode: latest_file
+    merge_keys: [license_no]
+    sharing: public
+    qc:
+      expected_rows: 121                  # Government 17 + Private 104 (= Summary total)
+    notes:
+      - Free-standing facilities only (121). Hospital-based blood banks are in the hospitals list (blood_service_facility).
+      - Sheets not loaded - SUMMARY3, Summary, Copy of Summary, Copy of GOVERNMENT / PRIVATE (older lists, other layout), Master Data, Sheet5, Sheet6, Masterlist.
+      - Lower priority for the business questions; loaded because it is cheap and fills the facility picture.
+
+  # ---------------------------------------------------------------------------
+  # 7. HDX / healthsites.io: OpenStreetMap health facilities with coordinates  (OPEN, ODbL)
+  # ---------------------------------------------------------------------------
+  hdx_healthsites:
+    description: Health facility points from OpenStreetMap via healthsites.io (pharmacies, clinics, hospitals, dentists, doctors)
+    agency: Healthsites.io / OpenStreetMap contributors
+    obtained_via: HDX download
+    url: https://data.humdata.org/dataset/philippines-healthsites   # CONFIRM
+    original_file: philippines_healthsites.csv
+    path: facilities/hdx_healthsites
+    files:
+      - hdx_healthsites_facility_asof_20260929.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.facilities_hdx_healthsites_bronze"
+    as_of_date: 2026-09-29                 # latest changeset in the file is 2026-09-29; CONFIRM download date
+    load_mode: latest_file
+    merge_keys: [osm_type, osm_id]
+    sharing: open
+    license: ODbL v1.0 (OpenStreetMap)
+    coverage: 16,032 points; amenity = pharmacy 6,982, clinic 2,945, hospital 1,946, dentist 1,855, doctors 1,526, blank 709, other 69
+    column_map:
+      X: longitude
+      Y: latitude
+      osm_id: osm_id
+      amenity: amenity
+      name: facility_name
+    qc:
+      expected_rows: 16032
+      numeric_columns: [X, Y]
+    notes:
+      - X = longitude, Y = latitude (WGS84).
+      - Crowd-sourced; completeness is a percentage of filled tags. beds is filled for 141 points only.
+      - No PSGC. Assign province and municipality by point-in-polygon or nearest centroid in silver.
+      - Use for distance-to-facility (B4) as a fallback where NHFR has no coordinates.
+
+  # ===========================================================================
+  # Aggregate tables (by area and period)
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # 8. PSA Table 9.18: regulated hospitals by ownership and region, 2020-2024  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_hospitals_region_annual:
+    description: Number of regulated hospitals by type (government, private) and region
+    agency: Philippine Statistics Authority (compiled from DOH HFSRB)   # CONFIRM
+    obtained_via: PSA statistical table 9.18
+    original_file: TABLE 9.18 Number of Regulated Hospitals by Type and by Region- 2020 to 2024.csv
+    path: facilities/psa_hospitals/region_annual
+    files:
+      - psa_hospitals_region_annual_2020_2024.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 1                           # row 0 is the table title
+    bronze_table: "public_health.bronze.facilities_psa_hospitals_region_annual_bronze"
+    as_of_date: 2026-09-29                 # download date; CONFIRM
+    load_mode: upsert
+    merge_keys: [region_name, ownership, year]
+    sharing: open
+    column_map:
+      Region: region_name
+    wide_columns:                          # "Total 2020" ... "Private 2024": unpivot to ownership x year in silver
+      name_pattern: "^(Total|Government|Private)_[0-9]{4}$"
+      value_name: hospitals
+    qc:
+      expected_rows: 18                    # national total + 17 regions
+      numeric_columns: [Total_2020, Total_2024]
+      control_values:
+        - {label: "2024 Philippines hospitals", column: Total_2024, expected: 1312, where: "trim(Region) = 'Total Number of Hospitals'"}
+        - {label: "2020 Philippines hospitals", column: Total_2020, expected: 1283, where: "trim(Region) = 'Total Number of Hospitals'"}
+    notes:
+      - 17 regions, old definition (no Negros Island Region).
+      - Region labels are long names (Region IV-A  CALABARZON with two spaces). Map to region codes in silver.
+
+  # ---------------------------------------------------------------------------
+  # 9. PSA Table 9.17: authorized bed capacity by ownership and region, 2020-2024  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_beds_region_annual:
+    description: Authorized bed capacity of hospitals by type (government, private) and region
+    agency: Philippine Statistics Authority (compiled from DOH HFSRB)   # CONFIRM
+    obtained_via: PSA statistical table 9.17
+    original_file: authorized_bed_capacity_2020_2024_asof_20260929.csv (TABLE 9.17)
+    path: facilities/psa_beds/region_annual
+    files:
+      - psa_beds_region_annual_2020_2024.csv
+    format: csv
+    delimiter: ";"
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 2                           # row 0 title, row 1 blank
+    bronze_table: "public_health.bronze.facilities_psa_beds_region_annual_bronze"
+    as_of_date: 2026-09-29
+    load_mode: upsert
+    merge_keys: [region_name, ownership, year]
+    sharing: open
+    column_map:
+      Regions: region_name
+    wide_columns:
+      name_pattern: "^(Total|Government|Private)_[0-9]{4}$"
+      value_name: authorized_beds
+    qc:
+      expected_rows: 18
+      numeric_columns: [Total_2020, Total_2024]
+      control_values:
+        - {label: "2024 Philippines authorized beds", column: Total_2024, expected: 114623, where: "trim(Regions) = 'Total Number of Hospitals'"}
+        - {label: "2020 Philippines authorized beds", column: Total_2020, expected: 110136, where: "trim(Regions) = 'Total Number of Hospitals'"}
+    notes:
+      - Semicolon-delimited, unlike Table 9.18.
+      - The national row is labelled "Total Number of Hospitals" but holds BEDS (110,136 in 2020). Label error in the source; treat it as the national bed total.
+      - Same region labels as Table 9.18.
+
+  # ---------------------------------------------------------------------------
+  # 10. PSA OpenSTAT: number of hospitals by ownership, national, 2006-2015  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_hospitals_national_annual:
+    description: Number of government and private hospitals, Philippines, 2006-2015
+    agency: Philippine Statistics Authority
+    obtained_via: OpenSTAT (dataset "Government and Private Hospitals - Number and Bed Capacity")
+    original_file: bed_capacity_asof_2026-09-30_20260930T113940Z.csv
+    path: facilities/psa_hospitals/national_annual
+    files:
+      - psa_hospitals_national_annual_2006_2015.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.facilities_psa_hospitals_national_annual_bronze"
+    as_of_date: 2026-09-30                 # OpenSTAT "updated" timestamp
+    load_mode: upsert
+    merge_keys: [Year]
+    sharing: open
+    license: CC BY 4.0
+    column_map:
+      Year: year
+      Total: hospitals_total
+      Government: hospitals_government
+      Private: hospitals_private
+    qc:
+      expected_rows: 10
+      numeric_columns: [Year, Total, Government, Private]
+      row_sum:
+        total: Total
+        parts: [Government, Private]
+      control_values:
+        - {label: "2006 Philippines hospitals", column: Total, expected: 1921, where: "trim(Year) = '2006'"}
+        - {label: "2015 Philippines hospitals", column: Total, expected: 1195, where: "trim(Year) = '2015'"}
+    notes:
+      - Values are numbers of hospitals, not beds, despite the dataset title.
+      - Big drop 2012 to 2013 (1,825 to 1,454). Likely a definition change (infirmaries no longer counted as hospitals). Do not join to the 2020-2024 series without a break marker.
+      - The JSON export of the same dataset (bed_capacity_asof_2026-09-30_20260930T112024Z.json) is broken (1 value of 30) and is not landed.
+
+  # ---------------------------------------------------------------------------
+  # 11. PSA Table 9.19: barangay health stations by region, 2006-2023  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_bhs_region_annual:
+    description: Number of barangay health stations by region
+    agency: Philippine Statistics Authority (compiled from DOH FHSIS)
+    obtained_via: PSA statistical table 9.19
+    original_file: number_barangay_health_station_2026_to_2023.csv (title says 2006 to 2023)
+    path: facilities/psa_bhs/region_annual
+    files:
+      - psa_bhs_region_annual_2006_2023.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: names                     # two header rows (Year/Philippines/Region, then region codes)
+    data_start_row: 5
+    columns: *psa_bhs_region
+    bronze_table: "public_health.bronze.facilities_psa_bhs_region_annual_bronze"
+    as_of_date: 2026-09-29                 # download date; CONFIRM
+    load_mode: upsert
+    merge_keys: [year, region_code]
+    sharing: open
+    wide_columns:                          # one column per region; unpivot in silver
+      value_name: bhs
+    qc:
+      expected_rows: 19                    # 18 years + the source line
+      numeric_columns: [philippines, ncr]
+      null_tokens: ["-"]
+      max_non_numeric_rows_per_file: 1     # the source line
+      control_values:
+        - {label: "2023 Philippines BHS", column: philippines, expected: 24327, where: "trim(year) = '2023'"}
+        - {label: "2018 Philippines BHS", column: philippines, expected: 21546, where: "trim(year) = '2018'"}
+    notes:
+      - Use for 2006-2017 history. 2018-2023 equal the FHSIS BGY & BHS national totals (21,546 in 2018, 24,327 in 2023).
+      - "- = no report (2009 has many). Values have thousands separators and trailing spaces."
+      - NCR is 12-20 before 2009, ~470 for 2009-2018, then ~30 from 2019. Definition changes; do not trend NCR.
+      - Region I 2014 (3,267) is an outlier.
+
+  # ---------------------------------------------------------------------------
+  # 12. Bed occupancy rate by hospital, 2020-2025  (RESTRICTED)
+  # ---------------------------------------------------------------------------
+  bed_occupancy:
+    description: Bed occupancy rate (based on authorized beds) by hospital level and ownership; 2025 adds authorized and implementing beds
+    agency: CONFIRM (source of the file not recorded)
+    obtained_via: CONFIRM
+    original_file: bed_occupancy_rate_2025_1.xlsx
+    path: facilities/restricted/bed_occupancy
+    header_mode: single
+    skip_rows: 0
+    files:
+      - {name: bed_occupancy_hospital_annual_2020_2025.xlsx, sheet: "2020"}
+      - {name: bed_occupancy_hospital_annual_2020_2025.xlsx, sheet: "2021"}
+      - {name: bed_occupancy_hospital_annual_2020_2025.xlsx, sheet: "2022"}
+      - {name: bed_occupancy_hospital_annual_2020_2025.xlsx, sheet: "2023"}
+      - {name: bed_occupancy_hospital_annual_2020_2025.xlsx, sheet: "2024"}
+      - {name: bed_occupancy_hospital_annual_2020_2025.xlsx, sheet: "2025"}
+    bronze_table: "public_health.bronze.facilities_bed_occupancy_bronze"
+    as_of_date: 2026-09-29                 # CONFIRM
+    load_mode: upsert
+    sharing: restricted                    # permission to quote still to confirm
+    qc:
+      expected_rows: 1977                  # 174 + 184 + 174 + 160 + 123 + 1,162 (one file, six sheets)
+      skip_checks: [B08]                  # no hospital id: identical rows are different hospitals (3 cases)
+      numeric_columns: [Bed_Occupancy_Rate_BOR_Based_on_Authorized_Beds]
+    notes:
+      - Year is the sheet name (_source_sheet).
+      - One row per hospital but no hospital name or code. 2020-2024 go to city/municipality; 2025 only to province (joins at province level).
+      - 2025 adds Authorized_Bed_Capacity and Implementing_Beds; City/Municipality is absent in 2025.
+      - General = hospital level (Level 1/2/3); blank on some rows. BOR above 100 is possible (more patients than authorized beds).
+      - 2020-2024 sheets are PRIVATE hospitals only (123-184 rows). 2025 has 418 Government and 744 Private. Government BOR exists for 2025 only.
+      - Do not trend counts across years; the 2020-2024 sample is not the same set of hospitals.
+
+  # ---------------------------------------------------------------------------
+  # 13. DOH FHSIS primary care facilities: region/province/city x year, 2018-2025  (PUBLIC)
+  #     Same workbooks as the workforce entry; this reads the BGY & BHS tab.
+  # ---------------------------------------------------------------------------
+  doh_fhsis_demographic:
+    description: Number and ratio of barangays, health centers (MHC, CHC, RHU) and barangay health stations by area
+    agency: Department of Health
+    obtained_via: FHSIS annual report, Demographic Profile workbook (one per year)
+    path: workforce/doh_fhsis_demographic      # landed once under workforce/
+    header_mode: names
+    files:
+      - {name: doh_fhsis_demographic_province_annual_2018.xlsx, sheet: Table 3A.1, data_start_row: 8, columns: *bgy_2018}
+      - {name: doh_fhsis_demographic_province_annual_2019.xlsx, sheet: "BGY & BHS", data_start_row: 8, columns: *bgy_2019_2024}
+      - {name: doh_fhsis_demographic_province_annual_2020.xlsx, sheet: "BGY & BHS", data_start_row: 8, columns: *bgy_2019_2024}
+      - {name: doh_fhsis_demographic_province_annual_2021.xlsx, sheet: "BGY & BHS", data_start_row: 7, columns: *bgy_2019_2024}
+      - {name: doh_fhsis_demographic_province_annual_2022.xlsx, sheet: "BGY & BHS", data_start_row: 7, columns: *bgy_2019_2024}
+      - {name: doh_fhsis_demographic_province_annual_2023.xlsx, sheet: "BGY & BHS", data_start_row: 8, columns: *bgy_2019_2024}
+      - {name: doh_fhsis_demographic_province_annual_2024.xlsx, sheet: "BGY & BHS", data_start_row: 7, columns: *bgy_2019_2024}
+      - {name: doh_fhsis_demographic_municipality_annual_2025.xlsx, sheet: "BGY & BHS", data_start_row: 7, columns: *bgy_2025}
+    bronze_table: "public_health.bronze.facilities_fhsis_primary_care_bronze"
+    as_of_date: 2026-10-05                 # download date; CONFIRM
+    load_mode: upsert
+    merge_keys: [area_name, year]          # year from _source_file
+    sharing: public
+    coverage: 2018-2025 annual; national, region, province and city (no municipality rows, even in 2025)
+    qc:
+      expected_rows:                       # local test 2026-10-05
+        doh_fhsis_demographic_province_annual_2018.xlsx: 215
+        doh_fhsis_demographic_province_annual_2019.xlsx: 197
+        doh_fhsis_demographic_province_annual_2020.xlsx: 198
+        doh_fhsis_demographic_province_annual_2021.xlsx: 197
+        doh_fhsis_demographic_province_annual_2022.xlsx: 197
+        doh_fhsis_demographic_province_annual_2023.xlsx: 144
+        doh_fhsis_demographic_province_annual_2024.xlsx: 142
+        doh_fhsis_demographic_municipality_annual_2025.xlsx: 146
+      numeric_columns: [population, barangays_no, bhs_no]
+      null_tokens: ["*", "#DIV/0!"]
+      max_non_numeric_rows_per_file: 6     # legend and source lines at the bottom
+      control_values:
+        - {label: "2018 Philippines BHS", column: bhs_no, expected: 21546, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2018.%'"}
+        - {label: "2024 Philippines BHS", column: bhs_no, expected: 25532, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'"}
+        - {label: "2025 Philippines BHS", column: bhs_no, expected: 26944, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2025.%'"}
+        - {label: "2024 Philippines barangays", column: barangays_no, expected: 41590, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'"}
+    notes:
+      - Layout changes by year. 2018 has barangays and BHS only. 2019-2024 split health centers into MHC, CHC and RHU plus a total. 2025 has barangays, RHU and BHS only.
+      - 2025 "Rural Health Units" (2,612 nationally) is close to the 2024 total of all health centers (2,720), not 2024 RHUs (1,777). Treat 2025 rhu_no as all health centers; CONFIRM with DOH.
+      - Barangay counts move between years (41,539 in 2023 to 43,253 in 2025). Use PSGC barangay counts from the geography domain as the reference.
+      - Ratios are population per unit. Recompute in gold.
+      - No PSGC in any year, including 2025 on this tab. Match area_name to geography in silver.
+      - The 2025 file is named "municipality" after its finest tab (Health Workers); this tab stops at province and city.
+      - 2020 has an empty spacer column that loads as col_14.
