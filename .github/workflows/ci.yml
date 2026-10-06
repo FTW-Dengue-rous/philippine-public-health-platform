@@ -13,14 +13,36 @@ jobs:
   lint:
     name: Python lint & format (ruff)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to push the auto-fix commit
     steps:
       - uses: actions/checkout@v4
+        with:
+          # On PRs, check out the actual branch (not the merge commit) so fixes can be pushed back
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+          # PAT lets the fix commit re-trigger CI; falls back to the default token
+          token: ${{ secrets.AUTOFIX_TOKEN || github.token }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install pre-commit
-      # Uses the same hooks + pinned versions as local commits (.pre-commit-config.yaml),
-      # so "passes locally" == "passes CI"
+
+      # Auto-fix: run the fixer hooks, then push any changes back to the PR branch
+      - name: Auto-fix and push (same-repo PRs only)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          for hook in ruff ruff-format end-of-file-fixer trailing-whitespace; do
+            pre-commit run "$hook" --all-files || true
+          done
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+            git commit -am "style: auto-fix lint (ruff, EOF, whitespace)"
+            git push
+          fi
+
+      # Uses the same hooks + pinned versions as local commits (.pre-commit-config.yaml).
+      # After auto-fix, these fail only on issues ruff can't fix itself (undefined names, etc.)
       - name: ruff lint
         run: pre-commit run ruff --all-files --show-diff-on-failure
       - name: ruff format
