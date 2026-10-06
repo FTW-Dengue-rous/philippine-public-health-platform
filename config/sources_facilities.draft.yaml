@@ -1,4 +1,4 @@
-# Draft only — catalog structure for the facilities and health-workforce sources.
+# Draft only — catalog structure for confirmed facility-registry sources.
 # This file is not wired to a loader yet. It deliberately specifies no ingestion
 # metadata or Bronze transformations; those will be agreed separately.
 
@@ -12,7 +12,7 @@ groups:
       agency: Department of Health
       sources:
         hospital_list:
-          file: facilities/hospital_list_asof20260630.xlsx
+          file: facilities/hospital_list_asof_20260630.xlsx
           format: xlsx
           bronze_table: ph_public_health.bronze.facilities_hospital_list
         infirmary:
@@ -35,15 +35,6 @@ groups:
           file: facilities/primary_care_asof20260630.xlsx
           format: xlsx
           bronze_table: ph_public_health.bronze.facilities_primary_care
-
-  health_workforce:
-    psa:
-      agency: Philippine Statistics Authority
-      sources:
-        government_medical_practitioners:
-          file: health workforce/TABLE 9.14 Number of Government Medical Practitioners by Region- 2012 to 2023.csv
-          format: csv
-          bronze_table: ph_public_health.bronze.government_medical_practitioners_by_region
 
   # No sources are listed until providers are confirmed in the project docs.
   services: {}
