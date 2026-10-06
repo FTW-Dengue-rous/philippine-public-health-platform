@@ -11,8 +11,7 @@
 #   - Bronze keeps the ORIGINAL column names from the file. Only characters
 #     Delta does not allow (space , ; { } ( ) = tab newline) and "." become "_".
 #     Renaming to standard names (column_map) happens in silver.
-#   - path is relative to landing_root. Use `files:` to list files explicitly,
-#     or a glob in `path`.
+#   - path is relative to landing_root.
 #   - as_of_date = date the file was downloaded or released (NOT load time).
 #     A file in `files:` can override it: {name: x.csv, as_of_date: 2026-11-01}
 #   - header_mode:

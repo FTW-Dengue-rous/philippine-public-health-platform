@@ -197,11 +197,8 @@ def resolve_files(cfg, entry):
 # -----------------------------------------------------------------------------
 # File readers (return raw rows as lists of strings)
 # -----------------------------------------------------------------------------
-
-
 def _require(package):
     # Import a package; if it is missing, install it for this run and import again.
-    # Better long term: add it to the cluster or job libraries.
     import importlib
     try:
         return importlib.import_module(package)
