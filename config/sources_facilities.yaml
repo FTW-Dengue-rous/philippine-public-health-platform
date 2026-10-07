@@ -362,7 +362,7 @@ sources:
     description: Health facility points from OpenStreetMap via healthsites.io (pharmacies, clinics, hospitals, dentists, doctors)
     agency: Healthsites.io / OpenStreetMap contributors
     obtained_via: HDX download
-    url: https://data.humdata.org/dataset/philippines-healthsites   # CONFIRM
+    url: https://data.humdata.org/dataset/philippines-healthsites   
     original_file: philippines_healthsites.csv
     path: facilities/hdx_healthsites
     files:
