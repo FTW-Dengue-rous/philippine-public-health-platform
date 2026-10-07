@@ -1,8 +1,8 @@
 -- =============================================================================
--- Data quality schema (public_health.quality) shared by all layers.
+-- Data quality schema (public_health.quality) shared by all layers
 -- Keeps QC output out of the bronze / silver / gold schemas.
--- RUN once only to setup QC tables.
---
+-- Run this file once to create the QC tables and views.
+
 -- Tables
 --   quality.check_registry    one row per check code (B01, S03, ...). Created empty now,
 --                             filled at the end (section 10) from the checks actually used
@@ -52,7 +52,7 @@ USING DELTA
 COMMENT 'One row per data quality check code, all layers';
 
 -- The table starts EMPTY. It is filled at the end (section 10), once the checks
---  are settled. QC scripts work without it until then.
+-- the team actually uses are settled. QC scripts work without it until then.
 
 
 -- -----------------------------------------------------------------------------
@@ -220,10 +220,78 @@ FROM public_health.quality.v_latest_results
 WHERE status <> 'PASS';
 
 
+-- -----------------------------------------------------------------------------
+-- 8. Move the old results from public_health.bronze.qc_results (run once)
+-- -----------------------------------------------------------------------------
+-- First check which format the old table has:
+DESCRIBE public_health.bronze.qc_results;
+
+-- Option A: OLD script format (columns checked_at, details; 11 columns).
+--   The old RUN_ID was one per QC execution, so it becomes validation_id too.
+--   check_type is left null here and filled from the registry in section 10.
+--   severity: WARN/FAIL rows keep their status; for PASS rows it is unknown (null).
+INSERT INTO public_health.quality.qc_results
+SELECT
+  o.run_id                        AS run_id,
+  o.run_id                        AS validation_id,
+  CAST(NULL AS STRING)            AS batch_id,
+  o.source_key,
+  o.table_name,
+  o.layer,
+  o.checked_at                    AS executed_at,
+  o.check_id,
+  o.check_name,
+  CAST(NULL AS STRING)            AS check_type,
+  CAST(NULL AS STRING)            AS column_name,
+  CAST(NULL AS INT)               AS admin_level,
+  o.status,
+  CASE WHEN o.status IN ('WARN', 'FAIL') THEN o.status END AS severity,
+  CAST(NULL AS BIGINT)            AS fail_count,
+  CAST(NULL AS BIGINT)            AS total_count,
+  CAST(NULL AS DOUBLE)            AS fail_pct,
+  CAST(0 AS DOUBLE)               AS threshold,
+  o.observed,
+  o.expected,
+  left(o.details, 500)            AS detail
+FROM public_health.bronze.qc_results o;
+
+-- Option B: the table ALREADY has the new 21-column format. Use this instead of A.
+-- INSERT INTO public_health.quality.qc_results
+-- SELECT * FROM public_health.bronze.qc_results;
+
+-- Backfill run_log from the moved results (domain taken from the table name prefix).
+INSERT INTO public_health.quality.run_log
+SELECT
+  validation_id,
+  max(run_id)                                               AS run_id,
+  max(layer)                                                AS layer,
+  regexp_extract(max(table_name), '([a-z]+)_[^.]*$', 1)     AS domain,
+  CAST(NULL AS STRING)                                      AS script_name,
+  concat_ws(',', sort_array(collect_set(source_key)))       AS source_keys,
+  min(executed_at)                                          AS started_at,
+  max(executed_at)                                          AS ended_at,
+  CASE WHEN count_if(status = 'FAIL') > 0 THEN 'FAIL'
+       WHEN count_if(status = 'WARN') > 0 THEN 'WARN'
+       ELSE 'PASS' END                                      AS status,
+  CAST(count(*) AS INT)                                     AS checks_total,
+  CAST(count_if(status = 'PASS') AS INT)                    AS checks_pass,
+  CAST(count_if(status = 'WARN') AS INT)                    AS checks_warn,
+  CAST(count_if(status = 'FAIL') AS INT)                    AS checks_fail,
+  CAST(count(DISTINCT table_name) AS INT)                   AS tables_checked,
+  'migrated from bronze.qc_results'                         AS code_version,
+  CAST(NULL AS STRING)                                      AS error_message
+FROM public_health.quality.qc_results
+WHERE validation_id NOT IN (SELECT validation_id FROM public_health.quality.run_log)
+GROUP BY validation_id;
+
+-- Check, then drop the old table when satisfied.
+SELECT layer, status, count(*) FROM public_health.quality.qc_results GROUP BY layer, status ORDER BY 1, 2;
+SELECT * FROM public_health.quality.v_table_health ORDER BY overall_status, table_name;
+-- DROP TABLE public_health.bronze.qc_results;
 
 
 -- -----------------------------------------------------------------------------
--- 8. After setup
+-- 9. After setup
 -- -----------------------------------------------------------------------------
 -- * QC scripts write through dq_utils.DQRun (same folder as the QC scripts).
 -- * In each sources_*.yaml, point defaults.qc_results_table to public_health.quality.qc_results
