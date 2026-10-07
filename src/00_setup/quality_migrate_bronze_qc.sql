@@ -27,18 +27,22 @@ DESCRIBE public_health.bronze.qc_results;
 --     (diseases_x_bronze -> public_health.bronze.diseases_x_bronze). Compare with
 --     the "migrated_as" column; it must match what the QC scripts write today.
 SELECT DISTINCT
-  layer,
-  table_name,
-  CASE WHEN table_name LIKE '%.%.%' THEN table_name
-       WHEN table_name LIKE '%.%'   THEN concat('public_health.', table_name)
-       ELSE concat('public_health.', layer, '.', table_name) END AS migrated_as
+    layer,
+    table_name,
+    CASE
+        WHEN table_name LIKE '%.%.%' THEN table_name
+        WHEN table_name LIKE '%.%' THEN concat('public_health.', table_name)
+        ELSE concat('public_health.', layer, '.', table_name)
+    END AS migrated_as
 FROM public_health.bronze.qc_results
-ORDER BY 1, 2;
+ORDER BY layer, table_name;
 
 -- 1c. Status values. Anything other than PASS / WARN / FAIL (ERROR, SKIP, lower case)
 --     is shown here. The migration upper-cases and trims it; other values are kept
 --     and the views treat them as FAIL.
-SELECT status, count(*) AS n
+SELECT
+    status,
+    count(*) AS n
 FROM public_health.bronze.qc_results
 GROUP BY status
 ORDER BY status;
@@ -46,18 +50,22 @@ ORDER BY status;
 -- 1d. Domain that the run_log backfill (Step 3) will assign to each table.
 --     Edit the domain list in Step 3 if a row shows the wrong domain.
 SELECT DISTINCT
-  table_name,
-  CASE
-    WHEN lower(table_name) RLIKE 'psgc|hdx' AND lower(table_name) NOT RLIKE
-         'geography|population|facilities|workforce|diseases|socioeconomic|vaccination'
-      THEN 'geography'
-    ELSE coalesce(
-      nullif(regexp_extract(lower(table_name),
-        '(geography|population|facilities|workforce|diseases|socioeconomic|vaccination)', 1), ''),
-      regexp_extract(lower(table_name), '([a-z0-9]+)_[^.]*$', 1))
-  END AS domain
+    table_name,
+    CASE
+        WHEN
+            lower(table_name) RLIKE 'psgc|hdx' AND lower(table_name) NOT RLIKE
+            'geography|population|facilities|workforce|diseases|socioeconomic|vaccination'
+            THEN 'geography'
+        ELSE coalesce(
+            nullif(regexp_extract(
+                lower(table_name),
+                '(geography|population|facilities|workforce|diseases|socioeconomic|vaccination)', 1
+            ), ''),
+            regexp_extract(lower(table_name), '([a-z0-9]+)_[^.]*$', 1)
+        )
+    END AS `domain`
 FROM public_health.bronze.qc_results
-ORDER BY 1;
+ORDER BY table_name;
 
 -- 1e. Rows with no run id. They cannot be guarded against re-runs and get no run_log row.
 SELECT count(*) AS rows_without_run_id
@@ -77,34 +85,34 @@ WHERE run_id IS NULL;
 /*
 INSERT INTO public_health.quality.qc_results
 SELECT
-  CAST(o.run_id AS STRING)                                    AS run_id,
-  CAST(o.run_id AS STRING)                                    AS validation_id,
-  CAST(NULL AS STRING)                                        AS batch_id,
-  CAST(o.source_key AS STRING)                                AS source_key,
+  cast(o.run_id AS STRING)                                    AS run_id,
+  cast(o.run_id AS STRING)                                    AS validation_id,
+  cast(NULL AS STRING)                                        AS batch_id,
+  cast(o.source_key AS STRING)                                AS source_key,
   CASE WHEN o.table_name LIKE '%.%.%' THEN o.table_name
        WHEN o.table_name LIKE '%.%'   THEN concat('public_health.', o.table_name)
        ELSE concat('public_health.', o.layer, '.', o.table_name) END AS table_name,
-  CAST(o.layer AS STRING)                                     AS layer,
-  CAST(o.checked_at AS TIMESTAMP)                             AS executed_at,
-  CAST(o.check_id AS STRING)                                  AS check_id,
-  CAST(o.check_name AS STRING)                                AS check_name,
-  CAST(NULL AS STRING)                                        AS check_type,
-  CAST(NULL AS STRING)                                        AS column_name,
-  CAST(NULL AS INT)                                           AS admin_level,
-  upper(trim(CAST(o.status AS STRING)))                       AS status,
-  CASE WHEN upper(trim(CAST(o.status AS STRING))) IN ('WARN', 'FAIL')
-       THEN upper(trim(CAST(o.status AS STRING))) END         AS severity,
-  CAST(NULL AS BIGINT)                                        AS fail_count,
-  CAST(NULL AS BIGINT)                                        AS total_count,
-  CAST(NULL AS DOUBLE)                                        AS fail_pct,
-  CAST(0 AS DOUBLE)                                           AS threshold,
-  CAST(o.observed AS STRING)                                  AS observed,
-  CAST(o.expected AS STRING)                                  AS expected,
-  left(CAST(o.details AS STRING), 500)                        AS detail
+  cast(o.layer AS STRING)                                     AS layer,
+  cast(o.checked_at AS TIMESTAMP)                             AS executed_at,
+  cast(o.check_id AS STRING)                                  AS check_id,
+  cast(o.check_name AS STRING)                                AS check_name,
+  cast(NULL AS STRING)                                        AS check_type,
+  cast(NULL AS STRING)                                        AS column_name,
+  cast(NULL AS INT)                                           AS admin_level,
+  upper(trim(cast(o.status AS STRING)))                       AS status,
+  CASE WHEN upper(trim(cast(o.status AS STRING))) IN ('WARN', 'FAIL')
+       THEN upper(trim(cast(o.status AS STRING))) END         AS severity,
+  cast(NULL AS BIGINT)                                        AS fail_count,
+  cast(NULL AS BIGINT)                                        AS total_count,
+  cast(NULL AS DOUBLE)                                        AS fail_pct,
+  cast(0 AS DOUBLE)                                           AS threshold,
+  cast(o.observed AS STRING)                                  AS observed,
+  cast(o.expected AS STRING)                                  AS expected,
+  left(cast(o.details AS STRING), 500)                        AS detail
 FROM public_health.bronze.qc_results o
 WHERE o.run_id IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM public_health.quality.qc_results q
-                  WHERE q.validation_id = CAST(o.run_id AS STRING));
+                  WHERE q.validation_id = cast(o.run_id AS STRING));
 */
 
 -- Option B: the old table ALREADY has the 21-column format.
@@ -133,38 +141,49 @@ WHERE coalesce(o.validation_id, o.run_id) IS NOT NULL
 -- without a run_log row yet. script_name = 'migration' marks these rows.
 INSERT INTO public_health.quality.run_log
 SELECT
-  r.validation_id,
-  max(r.run_id)                                               AS run_id,
-  max(r.layer)                                                AS layer,
-  CASE
-    WHEN lower(max(r.table_name)) RLIKE 'psgc|hdx' AND lower(max(r.table_name)) NOT RLIKE
-         'geography|population|facilities|workforce|diseases|socioeconomic|vaccination'
-      THEN 'geography'
-    ELSE coalesce(
-      nullif(regexp_extract(lower(max(r.table_name)),
-        '(geography|population|facilities|workforce|diseases|socioeconomic|vaccination)', 1), ''),
-      regexp_extract(lower(max(r.table_name)), '([a-z0-9]+)_[^.]*$', 1))
-  END                                                         AS domain,
-  'migration'                                                 AS script_name,
-  concat_ws(',', sort_array(collect_set(r.source_key)))       AS source_keys,
-  min(r.executed_at)                                          AS started_at,
-  max(r.executed_at)                                          AS ended_at,
-  CASE WHEN count_if(coalesce(r.status, '') NOT IN ('PASS', 'WARN')) > 0 THEN 'FAIL'
-       WHEN count_if(r.status = 'WARN') > 0 THEN 'WARN'
-       ELSE 'PASS' END                                        AS status,
-  CAST(count(*) AS INT)                                       AS checks_total,
-  CAST(count_if(r.status = 'PASS') AS INT)                    AS checks_pass,
-  CAST(count_if(r.status = 'WARN') AS INT)                    AS checks_warn,
-  CAST(count_if(r.status = 'FAIL') AS INT)                    AS checks_fail,
-  CAST(count(DISTINCT r.table_name) AS INT)                   AS tables_checked,
-  CAST(NULL AS STRING)                                        AS code_version,
-  CAST(NULL AS STRING)                                        AS error_message
-FROM public_health.quality.qc_results r
-WHERE r.validation_id IS NOT NULL
-  AND EXISTS (SELECT 1 FROM public_health.bronze.qc_results o
-              WHERE CAST(o.run_id AS STRING) = r.run_id)
-  AND NOT EXISTS (SELECT 1 FROM public_health.quality.run_log l
-                  WHERE l.validation_id = r.validation_id)
+    r.validation_id,
+    max(r.run_id) AS run_id,
+    max(r.layer) AS layer,
+    CASE
+        WHEN
+            lower(max(r.table_name)) RLIKE 'psgc|hdx' AND lower(max(r.table_name)) NOT RLIKE
+            'geography|population|facilities|workforce|diseases|socioeconomic|vaccination'
+            THEN 'geography'
+        ELSE coalesce(
+            nullif(regexp_extract(
+                lower(max(r.table_name)),
+                '(geography|population|facilities|workforce|diseases|socioeconomic|vaccination)', 1
+            ), ''),
+            regexp_extract(lower(max(r.table_name)), '([a-z0-9]+)_[^.]*$', 1)
+        )
+    END AS `domain`,
+    'migration' AS script_name,
+    concat_ws(',', sort_array(collect_set(r.source_key))) AS source_keys,
+    min(r.executed_at) AS started_at,
+    max(r.executed_at) AS ended_at,
+    CASE
+        WHEN count_if(coalesce(r.status, '') NOT IN ('PASS', 'WARN')) > 0 THEN 'FAIL'
+        WHEN count_if(r.status = 'WARN') > 0 THEN 'WARN'
+        ELSE 'PASS'
+    END AS status,
+    cast(count(*) AS INT) AS checks_total,
+    cast(count_if(r.status = 'PASS') AS INT) AS checks_pass,
+    cast(count_if(r.status = 'WARN') AS INT) AS checks_warn,
+    cast(count_if(r.status = 'FAIL') AS INT) AS checks_fail,
+    cast(count(DISTINCT r.table_name) AS INT) AS tables_checked,
+    cast(NULL AS STRING) AS code_version,
+    cast(NULL AS STRING) AS error_message
+FROM public_health.quality.qc_results AS r
+WHERE
+    r.validation_id IS NOT NULL
+    AND EXISTS (
+        SELECT 1 FROM public_health.bronze.qc_results AS o
+        WHERE cast(o.run_id AS STRING) = r.run_id
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM public_health.quality.run_log AS l
+        WHERE l.validation_id = r.validation_id
+    )
 GROUP BY r.validation_id;
 
 
@@ -174,16 +193,27 @@ GROUP BY r.validation_id;
 
 -- Row counts should match (old rows without a run id are not copied, see 1e).
 SELECT
-  (SELECT count(*) FROM public_health.bronze.qc_results WHERE run_id IS NOT NULL) AS old_rows,
-  (SELECT count(*) FROM public_health.quality.qc_results q
-   WHERE EXISTS (SELECT 1 FROM public_health.bronze.qc_results o
-                 WHERE CAST(o.run_id AS STRING) = q.run_id))                      AS migrated_rows;
+    (
+        SELECT count(*) FROM public_health.bronze.qc_results
+        WHERE run_id IS NOT NULL
+    ) AS old_rows,
+    (
+        SELECT count(*) FROM public_health.quality.qc_results AS q
+        WHERE EXISTS (
+            SELECT 1 FROM public_health.bronze.qc_results AS o
+            WHERE cast(o.run_id AS STRING) = q.run_id
+        )
+    ) AS migrated_rows;
 
 -- Each table should appear once (no short-name / full-name duplicates).
-SELECT * FROM public_health.quality.v_table_health ORDER BY overall_status, table_name;
+SELECT * FROM public_health.quality.v_table_health
+ORDER BY overall_status, table_name;
 
 -- Migrated sessions in run_log.
-SELECT domain, status, count(*) AS runs
+SELECT
+    domain,
+    status,
+    count(*) AS runs
 FROM public_health.quality.run_log
 WHERE script_name = 'migration'
 GROUP BY domain, status
