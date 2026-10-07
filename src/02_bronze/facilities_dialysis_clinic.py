@@ -1,104 +1,94 @@
--- Databricks notebook source
--- MAGIC %python
--- MAGIC %pip install openpyxl
+# Databricks notebook source
+# MAGIC %pip install openpyxl
 
--- COMMAND ----------
+# COMMAND ----------
 
--- MAGIC %python
--- MAGIC import pandas as pd
--- MAGIC
--- MAGIC file_path = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/dialysis_clinics_asof_20260630.xlsx"
--- MAGIC
--- MAGIC # Read both sheets (note: ' Private' has a leading space in the sheet name)
--- MAGIC gov_df = pd.read_excel(file_path, sheet_name='Government', header=0)
--- MAGIC priv_df = pd.read_excel(file_path, sheet_name=' Private', header=0)
--- MAGIC
--- MAGIC print(f"Government sheet: {gov_df.shape[0]} rows, {gov_df.shape[1]} columns")
--- MAGIC print(f"Private sheet:   {priv_df.shape[0]} rows, {priv_df.shape[1]} columns")
--- MAGIC
+import pandas as pd
 
--- COMMAND ----------
+file_path = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/dialysis_clinics_asof_20260630.xlsx"
 
--- MAGIC %python
--- MAGIC # Drop trailing 'Unnamed' artifact columns from both sheets
--- MAGIC gov_df = gov_df.loc[:, ~gov_df.columns.str.contains('^Unnamed')]
--- MAGIC priv_df = priv_df.loc[:, ~priv_df.columns.str.contains('^Unnamed')]
--- MAGIC
--- MAGIC # Merge into one DataFrame
--- MAGIC merged_df = pd.concat([gov_df, priv_df], ignore_index=True)
--- MAGIC print(f"Merged shape: {merged_df.shape}")
--- MAGIC print(f"OWNERSHIP value counts:\n{merged_df['OWNERSHIP'].value_counts()}")
--- MAGIC
--- MAGIC # Convert date columns to consistent string format
--- MAGIC date_cols = ['VALIDITY FROM', 'VALIDITY UNTIL']
--- MAGIC for col in date_cols:
--- MAGIC     merged_df[col] = pd.to_datetime(merged_df[col], errors='coerce').dt.strftime('%Y-%m-%d')
--- MAGIC
--- MAGIC # Convert all object columns to nullable string for Arrow compatibility
--- MAGIC for col in merged_df.columns:
--- MAGIC     if merged_df[col].dtype == 'object':
--- MAGIC         merged_df[col] = merged_df[col].astype('string')
--- MAGIC
--- MAGIC # Convert '#' to string (row number — not meaningful for analysis)
--- MAGIC merged_df['#'] = merged_df['#'].astype('string')
--- MAGIC
--- MAGIC # Rename columns: '#' -> 'row_num', and snake_case all others for Delta compatibility
--- MAGIC col_map = {
--- MAGIC     '#': 'row_num',
--- MAGIC     'NHFR CODE': 'nhfr_code',
--- MAGIC     'REGION': 'region',
--- MAGIC     'CHD': 'chd',
--- MAGIC     'PROVINCE': 'province',
--- MAGIC     'CITY/ MUNICIPALITY': 'city_municipality',
--- MAGIC     'BLDG OR HOUSE NO., STREET, BRGY (as applicable)': 'bldg_house_no_street_brgy',
--- MAGIC     'NAME OF CLINIC': 'name_of_clinic',
--- MAGIC     'OWNERSHIP': 'ownership',
--- MAGIC     'INSTITUTIONAL CHARACTER': 'institutional_character',
--- MAGIC     'NO. OF STATION': 'no_of_station',
--- MAGIC     'HEAD OF THE FACILITY': 'head_of_facility',
--- MAGIC     'CONTACT NUMBER': 'contact_number',
--- MAGIC     'EMAIL ADDRESS': 'email_address',
--- MAGIC     'VALIDITY FROM': 'validity_from',
--- MAGIC     'VALIDITY UNTIL': 'validity_until',
--- MAGIC     'LICENSED NO.': 'licensed_no',
--- MAGIC     'REMARKS': 'remarks',
--- MAGIC }
--- MAGIC merged_df = merged_df.rename(columns=col_map)
--- MAGIC
--- MAGIC # Convert no_of_station to string (currently int64)
--- MAGIC merged_df['no_of_station'] = merged_df['no_of_station'].astype('string')
--- MAGIC
--- MAGIC print(f"\nFinal columns: {list(merged_df.columns)}")
--- MAGIC print(f"Final dtypes:\n{merged_df.dtypes}")
--- MAGIC
+# Read both sheets (note: ' Private' has a leading space in the sheet name)
+gov_df = pd.read_excel(file_path, sheet_name="Government", header=0)
+priv_df = pd.read_excel(file_path, sheet_name=" Private", header=0)
 
--- COMMAND ----------
+print(f"Government sheet: {gov_df.shape[0]} rows, {gov_df.shape[1]} columns")
+print(f"Private sheet:   {priv_df.shape[0]} rows, {priv_df.shape[1]} columns")
 
--- MAGIC %python
--- MAGIC # Write merged DataFrame to Delta table
--- MAGIC spark_df = spark.createDataFrame(merged_df)
--- MAGIC spark_df.write.mode("overwrite") \
--- MAGIC     .option("columnMapping.mode", "name") \
--- MAGIC     .option("overwriteSchema", "true") \
--- MAGIC     .saveAsTable("public_health.bronze.facilities_dialysis_clinics")
--- MAGIC
--- MAGIC print(f"Wrote {merged_df.shape[0]} rows to public_health.bronze.facilities_dialysis_clinics")
--- MAGIC
+# COMMAND ----------
 
--- COMMAND ----------
+# Drop trailing 'Unnamed' artifact columns from both sheets
+gov_df = gov_df.loc[:, ~gov_df.columns.str.contains("^Unnamed")]
+priv_df = priv_df.loc[:, ~priv_df.columns.str.contains("^Unnamed")]
 
--- MAGIC %python
--- MAGIC # Verify the written table
--- MAGIC print("Table schema:")
--- MAGIC spark.sql("DESCRIBE TABLE public_health.bronze.facilities_dialysis_clinics").show(truncate=False)
--- MAGIC
--- MAGIC print("\nRow count and OWNERSHIP breakdown:")
--- MAGIC spark.sql("""
--- MAGIC     SELECT OWNERSHIP, COUNT(*) as cnt
--- MAGIC     FROM public_health.bronze.facilities_dialysis_clinics
--- MAGIC     GROUP BY OWNERSHIP
--- MAGIC """).show()
--- MAGIC
--- MAGIC print("Sample rows:")
--- MAGIC display(spark.sql("SELECT * FROM public_health.bronze.facilities_dialysis_clinics LIMIT 5"))
--- MAGIC
+# Merge into one DataFrame
+merged_df = pd.concat([gov_df, priv_df], ignore_index=True)
+print(f"Merged shape: {merged_df.shape}")
+print(f"OWNERSHIP value counts:\n{merged_df['OWNERSHIP'].value_counts()}")
+
+# Convert date columns to consistent string format
+date_cols = ["VALIDITY FROM", "VALIDITY UNTIL"]
+for col in date_cols:
+    merged_df[col] = pd.to_datetime(merged_df[col], errors="coerce").dt.strftime("%Y-%m-%d")
+
+# Convert all object columns to nullable string for Arrow compatibility
+for col in merged_df.columns:
+    if merged_df[col].dtype == "object":
+        merged_df[col] = merged_df[col].astype("string")
+
+# Convert '#' to string (row number — not meaningful for analysis)
+merged_df["#"] = merged_df["#"].astype("string")
+
+# Rename columns: '#' -> 'row_num', and snake_case all others for Delta compatibility
+col_map = {
+    "#": "row_num",
+    "NHFR CODE": "nhfr_code",
+    "REGION": "region",
+    "CHD": "chd",
+    "PROVINCE": "province",
+    "CITY/ MUNICIPALITY": "city_municipality",
+    "BLDG OR HOUSE NO., STREET, BRGY (as applicable)": "bldg_house_no_street_brgy",
+    "NAME OF CLINIC": "name_of_clinic",
+    "OWNERSHIP": "ownership",
+    "INSTITUTIONAL CHARACTER": "institutional_character",
+    "NO. OF STATION": "no_of_station",
+    "HEAD OF THE FACILITY": "head_of_facility",
+    "CONTACT NUMBER": "contact_number",
+    "EMAIL ADDRESS": "email_address",
+    "VALIDITY FROM": "validity_from",
+    "VALIDITY UNTIL": "validity_until",
+    "LICENSED NO.": "licensed_no",
+    "REMARKS": "remarks",
+}
+merged_df = merged_df.rename(columns=col_map)
+
+# Convert no_of_station to string (currently int64)
+merged_df["no_of_station"] = merged_df["no_of_station"].astype("string")
+
+print(f"\nFinal columns: {list(merged_df.columns)}")
+print(f"Final dtypes:\n{merged_df.dtypes}")
+
+# COMMAND ----------
+
+# Write merged DataFrame to Delta table
+spark_df = spark.createDataFrame(merged_df)
+spark_df.write.mode("overwrite").option("columnMapping.mode", "name").option(
+    "overwriteSchema", "true"
+).saveAsTable("public_health.bronze.facilities_dialysis_clinics")
+
+print(f"Wrote {merged_df.shape[0]} rows to public_health.bronze.facilities_dialysis_clinics")
+
+# COMMAND ----------
+
+# Verify the written table
+print("Table schema:")
+spark.sql("DESCRIBE TABLE public_health.bronze.facilities_dialysis_clinics").show(truncate=False)
+
+print("\nRow count and OWNERSHIP breakdown:")
+spark.sql("""
+    SELECT OWNERSHIP, COUNT(*) as cnt
+    FROM public_health.bronze.facilities_dialysis_clinics
+    GROUP BY OWNERSHIP
+""").show()
+
+print("Sample rows:")
+display(spark.sql("SELECT * FROM public_health.bronze.facilities_dialysis_clinics LIMIT 5"))
