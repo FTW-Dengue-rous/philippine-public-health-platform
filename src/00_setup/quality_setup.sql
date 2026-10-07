@@ -14,6 +14,7 @@
 --   quality.v_latest_results  results of the latest QC execution per table
 --   quality.v_table_health    one status per table (worst status of its latest checks)
 --   quality.v_open_issues     latest results that are not PASS
+--   quality.v_run_errors      QC scripts whose latest run crashed (status ERROR)
 --
 -- How to run
 --   This file only CREATEs objects (IF NOT EXISTS / OR REPLACE VIEW), so "Run All"
@@ -221,6 +222,22 @@ SELECT layer, table_name, source_key, check_id, check_name, check_type, column_n
        status, fail_count, total_count, fail_pct, threshold, observed, expected, detail, executed_at
 FROM public_health.quality.v_latest_results
 WHERE coalesce(status, '') <> 'PASS';
+
+-- QC scripts whose latest run crashed. A crash row (B00 / S00 / G00) has no table_name,
+-- so it never shows in the views above; this view reads run_log instead.
+CREATE OR REPLACE VIEW public_health.quality.v_run_errors
+COMMENT 'QC scripts whose latest run crashed (run_log status = ERROR)'
+AS
+WITH latest AS (
+  SELECT layer, domain, script_name, max_by(validation_id, started_at) AS validation_id
+  FROM public_health.quality.run_log
+  GROUP BY layer, domain, script_name
+)
+SELECT r.validation_id, r.run_id, r.layer, r.domain, r.script_name, r.source_keys,
+       r.started_at, r.ended_at, r.error_message
+FROM public_health.quality.run_log r
+JOIN latest l ON r.validation_id = l.validation_id
+WHERE r.status = 'ERROR';
 
 
 -- -----------------------------------------------------------------------------
