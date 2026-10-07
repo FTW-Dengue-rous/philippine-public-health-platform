@@ -217,8 +217,6 @@ def resolve_files(cfg, entry):
 
 
 def _require(package):
-    # Import a package; if it is missing, install it for this run and import again.
-    # Better long term: add it to the cluster or job libraries.
     import importlib
 
     try:
@@ -435,8 +433,7 @@ def rows_in_table(table, source_key, rel_paths):
     }
 
 
-# Ingestion metadata: the team's documented columns first (shared with the API ingestion),
-# then the file-load extras (null for API rows). One row per file, or per sheet.
+# Ingestion metadata:
 METADATA_SCHEMA = [
     ("batch_id", "string"),  # one id per loader run, shared by all its files
     ("source_name", "string"),  # YAML source key
