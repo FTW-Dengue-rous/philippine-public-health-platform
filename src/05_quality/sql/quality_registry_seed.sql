@@ -97,6 +97,10 @@ USING (
         'B15', 'bronze', 'ALL', 'data columns are STRING', 'SCHEMA', 'FAIL', 0,
         'Bronze contract: every data column is STRING'
     ),
+    (
+        'B16', 'bronze', 'ALL', 'nested JSON payload parses', 'VALIDITY', 'WARN', 0,
+        'Non-null raw JSON string values parse into the expected nested schema'
+    ),
     -- silver (business rules; starter set, edit thresholds as the team decides)
     (
         'S00', 'silver', 'ALL', 'QC ran without error', 'EXECUTION', 'FAIL', 0,
