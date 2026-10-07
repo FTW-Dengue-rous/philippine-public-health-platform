@@ -627,13 +627,11 @@ def run_checks(dq, entry, profile=True):
 
             WHERE batch_id = {sql_str(batch_id)}
 
-              AND source_name = {sql_str(source_name)}
+            AND source_name = {sql_str(source_name)}
 
-              AND source_version = {sql_str(source_version)}
+            AND source_version = {sql_str(source_version)}
 
-              AND bronze_table = {sql_str(table_name)}
-
-              AND lower(status) = 'processed'
+            AND lower(status) = 'processed'
 
             ORDER BY retrieved_at DESC
 
