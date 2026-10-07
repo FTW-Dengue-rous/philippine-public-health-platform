@@ -80,23 +80,23 @@ print(f"Final dtypes:\n{merged_df.dtypes}")
 spark_df = spark.createDataFrame(merged_df)
 spark_df.write.mode("overwrite").option("columnMapping.mode", "name").option(
     "overwriteSchema", "true"
-).saveAsTable("ph_public_health.bronze.facilities_blood_services")
+).saveAsTable("public_health.bronze.facilities_blood_services")
 
-print(f"Wrote {merged_df.shape[0]} rows to ph_public_health.bronze.facilities_blood_services")
+print(f"Wrote {merged_df.shape[0]} rows to public_health.bronze.facilities_blood_services")
 
 # COMMAND ----------
 
 # DBTITLE 1,Verify
 # Verify the written table
 print("Table schema:")
-spark.sql("DESCRIBE TABLE ph_public_health.bronze.facilities_blood_services").show(truncate=False)
+spark.sql("DESCRIBE TABLE public_health.bronze.facilities_blood_services").show(truncate=False)
 
 print("\nRow count and OWNERSHIP breakdown:")
 spark.sql("""
     SELECT ownership, COUNT(*) as cnt
-    FROM ph_public_health.bronze.facilities_blood_services
+    FROM public_health.bronze.facilities_blood_services
     GROUP BY ownership
 """).show()
 
 print("Sample rows:")
-display(spark.sql("SELECT * FROM ph_public_health.bronze.facilities_blood_services LIMIT 5"))
+display(spark.sql("SELECT * FROM public_health.bronze.facilities_blood_services LIMIT 5"))

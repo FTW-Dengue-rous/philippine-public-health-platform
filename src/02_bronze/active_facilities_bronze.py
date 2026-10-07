@@ -17,5 +17,5 @@ nhfr_df = spark.read.option("header", True).option("inferSchema", True).csv(nhfr
     .option("delta.columnMapping.mode", "name")
     .option("delta.minReaderVersion", "2")
     .option("delta.minWriterVersion", "5")
-    .saveAsTable("ph_public_health.bronze.active_facilities")
+    .saveAsTable("public_health.bronze.active_facilities")
 )

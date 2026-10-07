@@ -49,11 +49,11 @@ infirmary_df = spark.createDataFrame(infirmary_pdf)
     .option("delta.minReaderVersion", "2")
     .option("delta.minWriterVersion", "5")
     .option("overwriteSchema", "true")
-    .saveAsTable("ph_public_health.bronze.facilities_infirmary")
+    .saveAsTable("public_health.bronze.facilities_infirmary")
 )
 
 # COMMAND ----------
 
 # DBTITLE 1,Preview infirmary data
 # MAGIC %sql
-# MAGIC SELECT * FROM ph_public_health.bronze.facilities_infirmary
+# MAGIC SELECT * FROM public_health.bronze.facilities_infirmary

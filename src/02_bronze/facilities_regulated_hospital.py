@@ -18,7 +18,7 @@ for col in df.columns:
     df[col] = df[col].astype("string")
 
 # --- Write to Delta table ---
-table_name = "ph_public_health.bronze.facilities_regulated_hospital"
+table_name = "public_health.bronze.facilities_regulated_hospital"
 spark_df = spark.createDataFrame(df)
 (
     spark_df.write.format("delta")

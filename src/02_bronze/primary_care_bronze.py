@@ -20,5 +20,5 @@ df = spark.createDataFrame(pdf)
 
 # Write to bronze Delta table (full refresh)
 df.write.format("delta").mode("overwrite").saveAsTable(
-    "ph_public_health.bronze.facilities_primary_care"
+    "public_health.bronze.facilities_primary_care"
 )
