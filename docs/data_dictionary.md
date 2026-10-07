@@ -13,6 +13,10 @@ This ingests raw health-facility and health-workforce source files from the land
 5. [`facilities_hospital_list`](#ph_public_healthbronzefacilities_hospital_list) — Regional Distribution of Hospitals
 6. [`facilities_infirmary`](#ph_public_healthbronzefacilities_infirmary) — Regional Distribution of Regulated Infirmaries
 7. [`government_medical_practitioners_by_region`](#ph_public_healthbronzegovernment_medical_practitioners_by_region) — Government Medical Practitioners by Region, 2012–2023
+8. [`psmo_oncologists`](#public_healthbronzepsmo_oncologists) — PSMO Oncologist Count by Region/Province
+9. [`globocan_2024_statistics_at_glance`](#public_healthbronzeglobocan_2024_statistics_at_glance) — GLOBOCAN 2024 Summary Cancer Statistics
+10. [`globocan_2024_cancer_site_metrics`](#public_healthbronzeglobocan_2024_cancer_site_metrics) — GLOBOCAN 2024 Cancer Site Metrics
+11. [`neoplasm_prevalence`](#public_healthbronzeneoplasm_prevalence) — IHME GBD Neoplasm Prevalence by Province
 
 ---
 
@@ -21,7 +25,7 @@ This ingests raw health-facility and health-workforce source files from the land
 * **Catalog:** `ph_public_health`
 * **Schema:** `bronze`
 * **Storage format:** Delta
-* **Load strategy:** Full refresh (overwrite)
+* **Load strategy:** Full refresh (overwrite) or idempotent MERGE (upsert), depending on the table — see individual table entries
 * **Excel dependency:** `openpyxl` is required when using Serverless compute.
 * **Column preservation:** Tables with spaces or special characters in column names require Delta column mapping.
 
@@ -36,6 +40,10 @@ This ingests raw health-facility and health-workforce source files from the land
 | `facilities_hospital_list` | `hospital_list_asof20260630.xlsx` | DOH | 40 | 14 | Active |
 | `facilities_infirmary` | `infirmary_asof20260630.xlsx` | DOH | 58 | 12 | Active |
 | `government_medical_practitioners_by_region` | `TABLE 9.14 …2012 to 2023.csv` | PSA | 72 | 14 | Active |
+| `psmo_oncologists` | `psmo_oncologists.csv` | PSMO | 52 | 6 | Active |
+| `globocan_2024_statistics_at_glance` | `globocan_2024.xlsx` | GLOBOCAN / IARC | 8 | 10 | Active |
+| `globocan_2024_cancer_site_metrics` | `globocan_2024.xlsx` | GLOBOCAN / IARC | 34 | 14 | Active |
+| `neoplasm_prevalence` | `neoplasm_prevalence.csv` | IHME | 8,364 | 11 | Active |
 
 > Row and column counts reflect the state at the time of writing and may change after a refresh.
 
@@ -272,6 +280,180 @@ Apply an explicit 14-column Spark schema. Schema inference alone can misread the
 #### Intended Analytical Use
 
 This table supports analysis of public-health workforce trends, profession mix, and regional workforce distribution from 2012 through 2023. Treat zero counts cautiously, as they may represent missing or unreported values in the source.
+
+---
+
+### `public_health.bronze.psmo_oncologists`
+
+**Description:** Philippine Society of Medical Oncologists (PSMO) oncologist count by region and province/area.
+
+| Property | Value |
+|---|---|
+| Source file | `psmo_oncologists.csv` |
+| Landing location | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/workforce/psmo_oncologists/` |
+| Provider | Philippine Society of Medical Oncologists (PSMO) |
+| Bronze table | `public_health.bronze.psmo_oncologists` |
+| Refresh mode | Idempotent MERGE (upsert) |
+| Merge key | `(region, province_area, as_of_date)` |
+| Expected coverage | 52 rows per snapshot (regions and provinces nationwide) |
+
+#### Data Structure
+
+| Column | Type | Description |
+|---|---|---|
+| `region` | STRING | Philippine region (e.g. `NCR`, `CAR`, `Region 1`). |
+| `province_area` | STRING | Province, city, or district within the region. Some values contain commas and are quoted in the source CSV. |
+| `doctor_count` | INT | Number of PSMO oncologists in the region/province. |
+| `source_file` | STRING | Filename of the source CSV (metadata column). |
+| `as_of_date` | DATE | Data snapshot date, passed as a widget parameter (metadata column). |
+| `ingested_at` | TIMESTAMP | Load timestamp via `current_timestamp()` (metadata column). |
+
+#### Source-specific Handling
+
+The CSV is clean with a standard header row (no title-row issues). An explicit Spark schema (3 fields) is applied instead of `inferSchema` to avoid an extra file scan and enforce correct types.
+
+Three metadata columns are added during ingestion: `source_file` (basename of the source path), `as_of_date` (widget parameter, validated as `YYYY-MM-DD`), and `ingested_at` (current timestamp).
+
+Unlike other bronze tables that use full overwrite, this table uses an idempotent MERGE on `(region, province_area, as_of_date)`. Re-running with the same `as_of_date` upserts matching rows; data from other snapshot dates is preserved.
+
+#### Notebook Parameters (Widgets)
+
+| Widget | Default | Description |
+|---|---|---|
+| `as_of_date` | `2026-06-30` | Data snapshot date in `YYYY-MM-DD` format. |
+| `source_file_path` | `/Volumes/.../psmo_oncologists.csv` | Full path to the source CSV in the landing zone. |
+
+Both parameters can be overridden when running as a job task via `--as_of_date` and `--source_file_path`.
+
+---
+
+### `public_health.bronze.globocan_2024_statistics_at_glance`
+
+**Description:** GLOBOCAN 2024 summary cancer statistics for the Philippines, split by sex.
+
+| Property | Value |
+|---|---|
+| Source file | `globocan_2024.xlsx` (sheet: `statistics_at_glance`) |
+| Landing location | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/diseases/neoplasm/globocan/` |
+| Provider | GLOBOCAN 2024 / IARC (WHO) |
+| Bronze table | `public_health.bronze.globocan_2024_statistics_at_glance` |
+| Refresh mode | Idempotent (`CREATE OR REPLACE TABLE`) |
+
+#### Data Structure
+
+| Column | Type | Description |
+|---|---|---|
+| `metric_category` | STRING | Category: `population`, `incidence`, `mortality`, or `prevalence`. |
+| `metric` | STRING | Specific metric name (e.g. `Population`, `Number of new cancer cases`). |
+| `males` | DOUBLE | Value for males. |
+| `females` | DOUBLE | Value for females. |
+| `both_sexes` | DOUBLE | Value for both sexes combined. |
+| `unit` | STRING | Unit: `persons`, `cases`, `rate`, `percent`, or `deaths`. |
+| `source_page` | LONG | Page reference in the GLOBOCAN source document. |
+| `source_file` | STRING | Basename of the source Excel file (metadata). |
+| `source_sheet` | STRING | Sheet name (metadata). |
+| `ingestion_date` | TIMESTAMP | Ingestion run timestamp (metadata). |
+
+#### Source-specific Handling
+
+Headers are clean at row 0. Object columns are cast to string for Arrow compatibility before conversion to Spark DataFrame.
+
+---
+
+### `public_health.bronze.globocan_2024_cancer_site_metrics`
+
+**Description:** GLOBOCAN 2024 per-cancer-site metrics for the Philippines, including new cases, deaths, and prevalence.
+
+| Property | Value |
+|---|---|
+| Source file | `globocan_2024.xlsx` (sheet: `cancer_site_metrics`) |
+| Landing location | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/diseases/neoplasm/globocan/` |
+| Provider | GLOBOCAN 2024 / IARC (WHO) |
+| Bronze table | `public_health.bronze.globocan_2024_cancer_site_metrics` |
+| Refresh mode | Idempotent (`CREATE OR REPLACE TABLE`) |
+
+#### Data Structure
+
+| Column | Type | Description |
+|---|---|---|
+| `cancer_site` | STRING | Cancer site (e.g. `Breast`, `Lung`). Last two rows are `All cancers` and `All cancers excl. NMSC` totals. |
+| `new_cases_number` | LONG | Number of new cancer cases. |
+| `new_cases_rank` | DOUBLE | Rank by new case count. NULL for total rows. |
+| `new_cases_percent` | DOUBLE | Percentage of all new cases. NULL for total rows. |
+| `new_cases_cum_risk` | DOUBLE | Cumulative risk of developing this cancer before age 75. NULL for total rows. |
+| `deaths_number` | LONG | Number of cancer deaths. |
+| `deaths_rank` | DOUBLE | Rank by death count. NULL for total rows. |
+| `deaths_percent` | DOUBLE | Percentage of all cancer deaths. NULL for total rows. |
+| `deaths_cum_risk` | DOUBLE | Cumulative risk of dying from this cancer before age 75. NULL for total rows. |
+| `prevalence_5yr_number` | LONG | 5-year prevalent case count. |
+| `prevalence_prop_per_100k` | DOUBLE | 5-year prevalence proportion per 100k population. NULL for total rows. |
+| `source_file` | STRING | Basename of the source Excel file (metadata). |
+| `source_sheet` | STRING | Sheet name (metadata). |
+| `ingestion_date` | TIMESTAMP | Ingestion run timestamp (metadata). |
+
+#### Source-specific Handling
+
+Headers are clean at row 0. The last two rows are summary totals with NULL rank and percentage values. Preserved in Bronze without filtering; Silver should exclude or flag them.
+
+---
+
+### `public_health.bronze.neoplasm_prevalence`
+
+**Description:** IHME Global Burden of Disease (GBD) neoplasm prevalence estimates by Philippine province and cancer type (2021–2023).
+
+| Property | Value |
+|---|---|
+| Source file | `neoplasm_prevalence.csv` |
+| Landing location | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/diseases/neoplasm/IHME VizHub – GBD Results Tool/` |
+| Provider | Institute for Health Metrics and Evaluation (IHME) |
+| Bronze table | `public_health.bronze.neoplasm_prevalence` |
+| Refresh mode | Idempotent MERGE (upsert) |
+| Merge key | `(measure, location, cause, metric, year)` |
+| Expected coverage | 82 provinces × 34 cancer causes × 3 years = 8,364 rows |
+
+#### Data Structure
+
+| Column | Type | Description |
+|---|---|---|
+| `measure` | STRING | Measure type — always `Prevalence` in the current dataset. |
+| `location` | STRING | Philippine province (e.g. `Camarines Norte`, `Cebu`). 82 distinct values. |
+| `cause` | STRING | Cancer type (e.g. `Breast cancer`, `Liver cancer`). 34 distinct values, including `Tracheal, bronchus, and lung cancer` which contains commas and is quoted in the source CSV. |
+| `metric` | STRING | Metric type — always `Number` in the current dataset. |
+| `year` | INT | Estimate year: 2021, 2022, or 2023. |
+| `val` | DOUBLE | Point estimate of prevalence count. |
+| `upper` | DOUBLE | Upper uncertainty bound. |
+| `lower` | DOUBLE | Lower uncertainty bound. |
+| `source_file` | STRING | Full UC volume path of the source CSV (metadata column). |
+| `source_system` | STRING | Source system name: `IHME GBD Results Tool` (metadata column). |
+| `ingestion_date` | TIMESTAMP | Load timestamp via `current_timestamp()` (metadata column). |
+
+#### Source-specific Handling
+
+The CSV uses a standard single-row header with no title-row issues. An explicit Spark `StructType` schema (8 fields) is applied instead of `inferSchema` to avoid an extra file scan and enforce correct types. The `cause` field `Tracheal, bronchus, and lung cancer` contains embedded commas and is quoted in the source CSV (246 lines); Spark's CSV reader handles this natively.
+
+Source columns are trimmed and cast to their target types. Null `year` rows are filtered out as a defensive measure. `dropDuplicates` on the natural key `(measure, location, cause, metric, year)` removes any duplicate source rows before writing.
+
+Three metadata columns are added: `source_file` (full source path), `source_system` (`IHME GBD Results Tool`), and `ingestion_date` (current timestamp).
+
+#### Idempotent Load Strategy
+
+Unlike bronze tables that use full overwrite, this table uses an idempotent MERGE on `(measure, location, cause, metric, year)`:
+
+* **First run:** Creates the table with full overwrite and Delta column mapping.
+* **Subsequent runs:** Upserts matching rows via Delta `MERGE`. Only rows where `val`, `upper`, or `lower` have changed are updated (conditional `whenMatchedUpdate`), avoiding unnecessary writes. Unmatched rows are inserted.
+
+Re-running the notebook any number of times produces the same result with no duplicate rows.
+
+#### Error Handling
+
+The write step is wrapped in `try/except` blocks. Both the initial `saveAsTable` action and the MERGE `execute` action are isolated as triggering actions inside the `try` block so that exceptions are caught and re-raised with a descriptive error message.
+
+#### Debug Mode
+
+A `DEBUG` flag in the config cell gates an exploratory schema-inspection cell. When `DEBUG = False` (default), the inspection cell is skipped to avoid unnecessary full scans in production.
+
+---
+
 ## Bronze Layer
 
 ### `public_health.bronze.geography_bronze`
