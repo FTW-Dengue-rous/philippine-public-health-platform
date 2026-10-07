@@ -3,7 +3,7 @@
 #
 # What it does
 #   Runs after diseases_bronze.py. Reads the bronze tables as stored and checks
-#   that each load is complete and faithful to the source file. 
+#   that each load is complete and faithful to the source file.
 #
 # Output (public_health.quality, written through dq_utils.DQRun)
 #   qc_results    one row per check result, status PASS, WARN or FAIL
@@ -60,6 +60,7 @@ import sys
 import yaml
 from pyspark.sql import SparkSession
 
+
 def _add_dq_utils_to_path():
     # Find dq_utils.py and put its folder on sys.path. Looks in this file's folder and the
     # working directory, up to five levels above each, and in any *quality* folder there
@@ -74,10 +75,16 @@ def _add_dq_utils_to_path():
         folder = start
         for _ in range(6):
             candidates = [folder]
-            for base in (folder, os.path.join(folder, "src")):   # <folder>/05_quality or <folder>/src/05_quality
+            for base in (
+                folder,
+                os.path.join(folder, "src"),
+            ):  # <folder>/05_quality or <folder>/src/05_quality
                 try:
-                    candidates += [os.path.join(base, d) for d in sorted(os.listdir(base))
-                                   if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))]
+                    candidates += [
+                        os.path.join(base, d)
+                        for d in sorted(os.listdir(base))
+                        if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))
+                    ]
                 except OSError:
                     pass
             for c in candidates:
@@ -92,40 +99,47 @@ def _add_dq_utils_to_path():
             folder = parent
     raise ModuleNotFoundError(
         "dq_utils.py not found. It must be a Python FILE named dq_utils.py (not a notebook) in "
-        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched)))
+        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 _add_dq_utils_to_path()
 from dq_utils import DQRun  # noqa: E402
 
-
 spark = SparkSession.builder.getOrCreate()
 
-LINEAGE_COLS = ["_rescued_data", "_source_key", "_source_file", "_source_sheet",
-                "_source_row_num", "_as_of_date", "_ingested_at"]
+LINEAGE_COLS = [
+    "_rescued_data",
+    "_source_key",
+    "_source_file",
+    "_source_sheet",
+    "_source_row_num",
+    "_as_of_date",
+    "_ingested_at",
+]
 
-CONFIG_NAMES = ("sources_diseases.yaml",)                      # config file for this domain
-DOMAIN = "diseases"                                            # this file only checks entries of this domain
+CONFIG_NAMES = ("sources_diseases.yaml",)  # config file for this domain
+DOMAIN = "diseases"  # this file only checks entries of this domain
 SCRIPT_NAME = "diseases_bronze_qc.py"
 
 # check_id: (check_name, check_type, severity). Same values as quality_registry_seed.sql.
 CHECKS = {
-    "B00": ("QC ran without error",                "EXECUTION",      "FAIL"),
-    "B01": ("table exists and has rows",           "COMPLETENESS",   "FAIL"),
-    "B02": ("all listed files loaded",             "COMPLETENESS",   "FAIL"),
-    "B03": ("row count matches expected",          "RECONCILIATION", "FAIL"),
-    "B04": ("required columns present",            "SCHEMA",         "FAIL"),
-    "B05": ("lineage columns not null",            "COMPLETENESS",   "FAIL"),
-    "B06": ("row number unique per file",          "UNIQUENESS",     "FAIL"),
-    "B07": ("no fully empty rows",                 "COMPLETENESS",   "WARN"),
-    "B08": ("no exact duplicate rows",             "UNIQUENESS",     "WARN"),
-    "B09": ("no rescued values",                   "SCHEMA",         "WARN"),
-    "B10": ("numeric column parses",               "VALIDITY",       "WARN"),
-    "B11": ("control totals / values match",       "RECONCILIATION", "FAIL"),
-    "B12": ("total equals sum of parts",           "CONSISTENCY",    "WARN"),
-    "B13": ("rows match ingestion metadata",       "RECONCILIATION", "FAIL"),
-    "B14": ("no files outside the YAML",           "CONSISTENCY",    "WARN"),
-    "B15": ("data columns are STRING",             "SCHEMA",         "FAIL"),
+    "B00": ("QC ran without error", "EXECUTION", "FAIL"),
+    "B01": ("table exists and has rows", "COMPLETENESS", "FAIL"),
+    "B02": ("all listed files loaded", "COMPLETENESS", "FAIL"),
+    "B03": ("row count matches expected", "RECONCILIATION", "FAIL"),
+    "B04": ("required columns present", "SCHEMA", "FAIL"),
+    "B05": ("lineage columns not null", "COMPLETENESS", "FAIL"),
+    "B06": ("row number unique per file", "UNIQUENESS", "FAIL"),
+    "B07": ("no fully empty rows", "COMPLETENESS", "WARN"),
+    "B08": ("no exact duplicate rows", "UNIQUENESS", "WARN"),
+    "B09": ("no rescued values", "SCHEMA", "WARN"),
+    "B10": ("numeric column parses", "VALIDITY", "WARN"),
+    "B11": ("control totals / values match", "RECONCILIATION", "FAIL"),
+    "B12": ("total equals sum of parts", "CONSISTENCY", "WARN"),
+    "B13": ("rows match ingestion metadata", "RECONCILIATION", "FAIL"),
+    "B14": ("no files outside the YAML", "CONSISTENCY", "WARN"),
+    "B15": ("data columns are STRING", "SCHEMA", "FAIL"),
 }
 
 
@@ -157,16 +171,18 @@ def find_config(explicit=None):
             folder = parent
     raise FileNotFoundError(
         f"None of {CONFIG_NAMES} found. Pass --config_path with its full path. Looked in:\n  "
-        + "\n  ".join(dict.fromkeys(searched)))
+        + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 
+
 def load_config(path):
     # Read the YAML and merge `defaults` into every source entry.
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     for required in ("landing_root", "sources"):
         if required not in cfg:
@@ -183,8 +199,12 @@ def load_config(path):
 
 def loadable(entry):
     # True for enabled file sources of this domain (entries with `path` and `bronze_table`).
-    return (entry.get("domain") == DOMAIN and bool(entry.get("path"))
-            and bool(entry.get("bronze_table")) and entry.get("enabled", True))
+    return (
+        entry.get("domain") == DOMAIN
+        and bool(entry.get("path"))
+        and bool(entry.get("bronze_table"))
+        and entry.get("enabled", True)
+    )
 
 
 def bronze_name(raw):
@@ -218,7 +238,10 @@ def expected_files(entry):
     # Distinct files listed in the YAML (one file may be listed once per sheet).
     # Returned as paths relative to landing_root, the same text the loader stores in _source_file.
     if entry.get("files"):
-        names = [os.path.join(entry["path"], f["name"] if isinstance(f, dict) else f) for f in entry["files"]]
+        names = [
+            os.path.join(entry["path"], f["name"] if isinstance(f, dict) else f)
+            for f in entry["files"]
+        ]
         return list(dict.fromkeys(names))
     return None if any(ch in entry["path"] for ch in "*?[") else [entry["path"]]
 
@@ -256,8 +279,8 @@ def latest_metadata(cfg, entry):
         WITH ok AS (
           SELECT batch_id, raw_file_path, content_checksum, record_count, retrieved_at
           FROM {table}
-          WHERE source_name = {sql_str(entry['source_key'])}
-            AND bronze_table = {sql_str(entry['bronze_table'])}
+          WHERE source_name = {sql_str(entry["source_key"])}
+            AND bronze_table = {sql_str(entry["bronze_table"])}
             AND lower(status) = 'processed'),
         last AS (
           SELECT raw_file_path, max_by(batch_id, retrieved_at) AS batch_id
@@ -269,9 +292,16 @@ def latest_metadata(cfg, entry):
     root = cfg["landing_root"].rstrip("/") + "/"
     out = {}
     for r in rows:
-        rel = r["raw_file_path"][len(root):] if r["raw_file_path"].startswith(root) else r["raw_file_path"]
-        out[rel] = {"rows": r["n"], "loaded_at": r["loaded_at"],
-                    "batch_id": f"{entry['source_key']}:{r['checksum']}" if r["checksum"] else None}
+        rel = (
+            r["raw_file_path"][len(root) :]
+            if r["raw_file_path"].startswith(root)
+            else r["raw_file_path"]
+        )
+        out[rel] = {
+            "rows": r["n"],
+            "loaded_at": r["loaded_at"],
+            "batch_id": f"{entry['source_key']}:{r['checksum']}" if r["checksum"] else None,
+        }
     return out
 
 
@@ -279,12 +309,13 @@ def latest_metadata(cfg, entry):
 # Checks for one source
 # -----------------------------------------------------------------------------
 
+
 def run_checks(dq, cfg, entry, profile):
     t = entry["bronze_table"]
     key = entry["source_key"]
     qc = entry.get("qc", {}) or {}
     skip = qc.get("skip_checks") or []
-    overrides = qc.get("severity") or {}                       # e.g. severity: {B03: WARN}
+    overrides = qc.get("severity") or {}  # e.g. severity: {B03: WARN}
 
     def rec(check_id, ok=None, **kw):
         # One result row. Name and type come from CHECKS; severity from CHECKS or qc.severity.
@@ -294,8 +325,16 @@ def run_checks(dq, cfg, entry, profile):
         severity = str(overrides.get(check_id, severity)).upper()
         if ok is not None:
             kw["status"] = "PASS" if ok else severity
-        return dq.record(check_id, table_name=t, source_key=key, check_name=name,
-                         check_type=ctype, severity=severity, skip=skip, **kw)
+        return dq.record(
+            check_id,
+            table_name=t,
+            source_key=key,
+            check_name=name,
+            check_type=ctype,
+            severity=severity,
+            skip=skip,
+            **kw,
+        )
 
     # B01 table exists and has rows for this source
     if not spark.catalog.tableExists(t):
@@ -309,7 +348,7 @@ def run_checks(dq, cfg, entry, profile):
     df.where(f"_source_key = {sql_str(key)}").createOrReplaceTempView(v)
     total = scalar(f"SELECT count(*) FROM {v}")
     rec("B01", ok=total > 0, observed=total, expected="> 0")
-    try:                                                       # stats are extra; an error here must not stop the checks
+    try:  # stats are extra; an error here must not stop the checks
         dq.capture_table_stats(t)
     except Exception as e:
         print(f"  note: table stats skipped ({str(e)[:150]})")
@@ -319,31 +358,46 @@ def run_checks(dq, cfg, entry, profile):
     columns = df.columns
     lower_cols = {c.lower() for c in columns}
     data_cols = [c for c in columns if c not in LINEAGE_COLS]
-    loaded = {r["_source_file"]: (r["n"], r["loaded_at"]) for r in spark.sql(
-        f"SELECT _source_file, count(*) AS n, max(_ingested_at) AS loaded_at FROM {v} "
-        "GROUP BY _source_file").collect()}
+    loaded = {
+        r["_source_file"]: (r["n"], r["loaded_at"])
+        for r in spark.sql(
+            f"SELECT _source_file, count(*) AS n, max(_ingested_at) AS loaded_at FROM {v} "
+            "GROUP BY _source_file"
+        ).collect()
+    }
     per_file = {f: n for f, (n, _) in loaded.items()}
-    meta = latest_metadata(cfg, entry)                         # None if the log cannot be read
+    meta = latest_metadata(cfg, entry)  # None if the log cannot be read
     batch = {f: m["batch_id"] for f, m in (meta or {}).items()}
 
     # B02 every file in the YAML was loaded
     files = expected_files(entry)
     if files is not None:
         missing = [f for f in files if f not in per_file]
-        rec("B02", ok=not missing, observed=len(files) - len(missing), expected=len(files),
-            detail=f"missing: {missing}" if missing else None)
+        rec(
+            "B02",
+            ok=not missing,
+            observed=len(files) - len(missing),
+            expected=len(files),
+            detail=f"missing: {missing}" if missing else None,
+        )
 
     # B03 row count per file (all sheets of a file together). expected_rows is the count of
     #     the file version that was verified; a revised file needs the YAML updated.
     #     A loaded file with no expected count is a WARN, so a new file cannot pass unverified.
     exp = qc.get("expected_rows")
     for f, n in sorted(per_file.items()):
-        if files is not None and f not in files:               # files outside the YAML are reported by B14
+        if files is not None and f not in files:  # files outside the YAML are reported by B14
             continue
         want = exp.get(os.path.basename(f)) if isinstance(exp, dict) else exp
         if want is None:
-            rec("B03", status="WARN", observed=n, expected="not set", batch_id=batch.get(f),
-                detail=f"{f}: no qc.expected_rows for this file; verify the count and add it to the YAML")
+            rec(
+                "B03",
+                status="WARN",
+                observed=n,
+                expected="not set",
+                batch_id=batch.get(f),
+                detail=f"{f}: no qc.expected_rows for this file; verify the count and add it to the YAML",
+            )
         else:
             rec("B03", ok=n == want, observed=n, expected=want, detail=f, batch_id=batch.get(f))
 
@@ -351,8 +405,13 @@ def run_checks(dq, cfg, entry, profile):
     required = required_columns(entry)
     if required:
         missing_cols = [c for c in required if c.lower() not in lower_cols]
-        rec("B04", ok=not missing_cols, observed=len(required) - len(missing_cols), expected=len(required),
-            detail=f"missing: {missing_cols}; table has: {data_cols}" if missing_cols else None)
+        rec(
+            "B04",
+            ok=not missing_cols,
+            observed=len(required) - len(missing_cols),
+            expected=len(required),
+            detail=f"missing: {missing_cols}; table has: {data_cols}" if missing_cols else None,
+        )
 
     # B05 lineage columns never null (_rescued_data and _source_sheet may be null)
     must = ["_source_file", "_source_row_num", "_as_of_date", "_ingested_at"]
@@ -369,8 +428,10 @@ def run_checks(dq, cfg, entry, profile):
     rec("B06", fail_count=dup_rownum, total_count=total)
 
     # B07 rows with every data column empty
-    blank = scalar(f"SELECT count(*) FROM {v} WHERE "
-                   + " AND ".join(f"coalesce(trim({q(c)}), '') = ''" for c in data_cols))
+    blank = scalar(
+        f"SELECT count(*) FROM {v} WHERE "
+        + " AND ".join(f"coalesce(trim({q(c)}), '') = ''" for c in data_cols)
+    )
     rec("B07", fail_count=blank, total_count=total)
 
     # B08 exact duplicate rows within a file and sheet (legend lines repeat across sheets)
@@ -392,18 +453,30 @@ def run_checks(dq, cfg, entry, profile):
     for raw in qc.get("numeric_columns", []):
         c = bronze_name(raw)
         if c.lower() not in lower_cols:
-            rec("B10", ok=False, column_name=c, observed="missing", expected="column exists",
-                detail="column listed in qc.numeric_columns is not in the table")
+            rec(
+                "B10",
+                ok=False,
+                column_name=c,
+                observed="missing",
+                expected="column exists",
+                detail="column listed in qc.numeric_columns is not in the table",
+            )
             continue
         rows = spark.sql(f"""
             SELECT _source_file, count(*) AS n FROM {v}
             WHERE {q(c)} IS NOT NULL AND trim({q(c)}) NOT IN ({tokens}) AND {num(c)} IS NULL
             GROUP BY _source_file""").collect()
         worst = max([r["n"] for r in rows], default=0)
-        rec("B10", ok=worst <= allowed, column_name=c,
-            fail_count=sum(r["n"] for r in rows), total_count=total,
-            observed=worst, expected=f"<= {allowed} per file",
-            detail="; ".join(f"{r['_source_file']}: {r['n']}" for r in rows) or None)
+        rec(
+            "B10",
+            ok=worst <= allowed,
+            column_name=c,
+            fail_count=sum(r["n"] for r in rows),
+            total_count=total,
+            observed=worst,
+            expected=f"<= {allowed} per file",
+            detail="; ".join(f"{r['_source_file']}: {r['n']}" for r in rows) or None,
+        )
 
     # B11a control totals by group. Use only numbers verified against the published source.
     #      Summed over all files of the source, or over one file when control_totals.file is set
@@ -413,38 +486,67 @@ def run_checks(dq, cfg, entry, profile):
         g, c = bronze_name(ct["group_by"]), bronze_name(ct["sum"])
         one_file = ct.get("file")
         scope = f"WHERE _source_file LIKE {sql_str('%' + one_file)}" if one_file else ""
-        actual = {str(r[0]): r[1] for r in spark.sql(
-            f"SELECT {q(g)}, sum({num(c)}) FROM {v} {scope} GROUP BY {q(g)}").collect()}
+        actual = {
+            str(r[0]): r[1]
+            for r in spark.sql(
+                f"SELECT {q(g)}, sum({num(c)}) FROM {v} {scope} GROUP BY {q(g)}"
+            ).collect()
+        }
         batch_of = next((b for f, b in batch.items() if one_file and f.endswith(one_file)), None)
         for group, want in ct["expected"].items():
             got = actual.get(str(group))
-            rec("B11", ok=same_number(got, want), column_name=c, observed=got, expected=want,
+            rec(
+                "B11",
+                ok=same_number(got, want),
+                column_name=c,
+                observed=got,
+                expected=want,
                 detail=f"control total: {g} = {group}" + (f" ({one_file})" if one_file else ""),
-                batch_id=batch_of)
+                batch_id=batch_of,
+            )
 
     # B11b control values: one known number picked out by a filter (name the file in `where`)
     for cv in qc.get("control_values", []):
         c = bronze_name(cv["column"])
         got = scalar(f"SELECT sum({num(c)}) FROM {v} WHERE ({cv['where']})")
-        rec("B11", ok=same_number(got, cv["expected"]), column_name=c,
-            observed=got, expected=cv["expected"], detail=f"control value: {cv['label']}")
+        rec(
+            "B11",
+            ok=same_number(got, cv["expected"]),
+            column_name=c,
+            observed=got,
+            expected=cv["expected"],
+            detail=f"control value: {cv['label']}",
+        )
 
     # B12 total column equals the sum of its parts, on rows where every value is a number.
     #     A mismatch can be the source's own inconsistency, so bronze only flags it (WARN).
     rs = qc.get("row_sum")
     if rs:
         tot, parts = bronze_name(rs["total"]), [bronze_name(x) for x in rs["parts"]]
-        all_numeric = f"{num(tot)} IS NOT NULL AND " + " AND ".join(num(x) + " IS NOT NULL" for x in parts)
+        all_numeric = f"{num(tot)} IS NOT NULL AND " + " AND ".join(
+            num(x) + " IS NOT NULL" for x in parts
+        )
         r = spark.sql(f"""
             SELECT count(*) AS n,
                    count_if(abs({num(tot)} - ({" + ".join(num(x) for x in parts)})) > 0.5) AS bad
             FROM {v} WHERE {all_numeric}""").collect()[0]
-        if r["n"] == 0:                                        # nothing compared is not a pass
-            rec("B12", status="WARN", column_name=tot, fail_count=0, total_count=0,
-                detail="no comparable rows: no row has numbers in the total and every part")
+        if r["n"] == 0:  # nothing compared is not a pass
+            rec(
+                "B12",
+                status="WARN",
+                column_name=tot,
+                fail_count=0,
+                total_count=0,
+                detail="no comparable rows: no row has numbers in the total and every part",
+            )
         else:
-            rec("B12", fail_count=r["bad"], total_count=r["n"], column_name=tot,
-                detail=f"{tot} vs sum of {len(parts)} columns; rows with a non-numeric value are not compared")
+            rec(
+                "B12",
+                fail_count=r["bad"],
+                total_count=r["n"],
+                column_name=tot,
+                detail=f"{tot} vs sum of {len(parts)} columns; rows with a non-numeric value are not compared",
+            )
 
     # B13 rows per file equal what the loader logged for the SAME load. The load is matched on
     #     _ingested_at = retrieved_at; if table and log come from different loads, the counts
@@ -457,31 +559,71 @@ def run_checks(dq, cfg, entry, profile):
                 continue
             m = meta.get(f)
             if m is None:
-                rec("B13", status="WARN", observed=n, expected="a processed row in the log", detail=f)
+                rec(
+                    "B13",
+                    status="WARN",
+                    observed=n,
+                    expected="a processed row in the log",
+                    detail=f,
+                )
             elif m["loaded_at"] != loaded_at:
-                rec("B13", status="WARN", observed=n, expected=m["rows"], batch_id=m["batch_id"],
-                    detail=f"{f}: table load {loaded_at} and latest log row {m['loaded_at']} are different loads; rerun the load")
+                rec(
+                    "B13",
+                    status="WARN",
+                    observed=n,
+                    expected=m["rows"],
+                    batch_id=m["batch_id"],
+                    detail=f"{f}: table load {loaded_at} and latest log row {m['loaded_at']} are different loads; rerun the load",
+                )
             else:
-                rec("B13", ok=n == m["rows"], observed=n, expected=m["rows"], detail=f, batch_id=m["batch_id"])
+                rec(
+                    "B13",
+                    ok=n == m["rows"],
+                    observed=n,
+                    expected=m["rows"],
+                    detail=f,
+                    batch_id=m["batch_id"],
+                )
 
     # B14 nothing in the table that the YAML does not list (old file names, other sources)
     if files is not None:
         stray = sorted(f for f in per_file if f not in files)
         shared = {e["source_key"] for e in cfg["_sources"].values() if e.get("bronze_table") == t}
-        other = [r for r in spark.sql(f"SELECT _source_key, count(*) AS n FROM {t} "
-                                      f"WHERE _source_key <> {sql_str(key)} GROUP BY 1").collect()
-                 if r["_source_key"] not in shared]
+        other = [
+            r
+            for r in spark.sql(
+                f"SELECT _source_key, count(*) AS n FROM {t} "
+                f"WHERE _source_key <> {sql_str(key)} GROUP BY 1"
+            ).collect()
+            if r["_source_key"] not in shared
+        ]
         n_stray = sum(per_file[f] for f in stray) + sum(r["n"] for r in other)
-        rec("B14", fail_count=n_stray, total_count=total + sum(r["n"] for r in other),
-            detail=("; ".join([f"file not in YAML: {f} ({per_file[f]} rows)" for f in stray]
-                              + [f"other source_key: {r['_source_key']} ({r['n']} rows)" for r in other])
-                    or None))
+        rec(
+            "B14",
+            fail_count=n_stray,
+            total_count=total + sum(r["n"] for r in other),
+            detail=(
+                "; ".join(
+                    [f"file not in YAML: {f} ({per_file[f]} rows)" for f in stray]
+                    + [f"other source_key: {r['_source_key']} ({r['n']} rows)" for r in other]
+                )
+                or None
+            ),
+        )
 
     # B15 bronze contract: every data column is STRING
-    not_string = [f"{f.name} {f.dataType.simpleString()}" for f in df.schema.fields
-                  if f.name not in LINEAGE_COLS and f.dataType.simpleString() != "string"]
-    rec("B15", ok=not not_string, observed=len(data_cols) - len(not_string),
-        expected=len(data_cols), detail=f"not string: {not_string}" if not_string else None)
+    not_string = [
+        f"{f.name} {f.dataType.simpleString()}"
+        for f in df.schema.fields
+        if f.name not in LINEAGE_COLS and f.dataType.simpleString() != "string"
+    ]
+    rec(
+        "B15",
+        ok=not not_string,
+        observed=len(data_cols) - len(not_string),
+        expected=len(data_cols),
+        detail=f"not string: {not_string}" if not_string else None,
+    )
 
     # Column profile last, so a profiling error cannot stop the checks above.
     # Skipped for restricted sources: min / max would copy real values into quality.profile.
@@ -496,18 +638,36 @@ def run_checks(dq, cfg, entry, profile):
 # Run
 # -----------------------------------------------------------------------------
 
+
 def parse_args():
     p = argparse.ArgumentParser(description="Bronze QC for the diseases domain")
-    p.add_argument("--config_path", default=None,
-                   help="Full path to the sources YAML (found automatically if omitted)")
-    p.add_argument("--source_keys", default="ALL",
-                   help="Comma-separated source keys, or ALL for every enabled source")
-    p.add_argument("--fail_on_error", default="true", choices=["true", "false"],
-                   help="Raise an error if any check is FAIL")
-    p.add_argument("--profile", default="true", choices=["true", "false"],
-                   help="Also write a column profile of every table to quality.profile")
-    p.add_argument("--job_run_id", default=None,
-                   help="Databricks job run id ({{job.run_id}}); a new id is made if omitted")
+    p.add_argument(
+        "--config_path",
+        default=None,
+        help="Full path to the sources YAML (found automatically if omitted)",
+    )
+    p.add_argument(
+        "--source_keys",
+        default="ALL",
+        help="Comma-separated source keys, or ALL for every enabled source",
+    )
+    p.add_argument(
+        "--fail_on_error",
+        default="true",
+        choices=["true", "false"],
+        help="Raise an error if any check is FAIL",
+    )
+    p.add_argument(
+        "--profile",
+        default="true",
+        choices=["true", "false"],
+        help="Also write a column profile of every table to quality.profile",
+    )
+    p.add_argument(
+        "--job_run_id",
+        default=None,
+        help="Databricks job run id ({{job.run_id}}); a new id is made if omitted",
+    )
     p.add_argument("--code_version", default=None, help="Git commit or tag of this code")
     args, _ = p.parse_known_args()
     return args
@@ -532,9 +692,15 @@ def main():
         raise KeyError(f"Not in {config_path}: {unknown}. Available: {list(sources)}")
 
     # DQRun writes qc_results, table_stats, profile and run_log on exit, then raises if any FAIL.
-    with DQRun(layer="bronze", domain=DOMAIN, script_name=SCRIPT_NAME, job_run_id=args.job_run_id,
-               source_keys=args.source_keys, fail_on_error=args.fail_on_error == "true",
-               code_version=args.code_version) as dq:
+    with DQRun(
+        layer="bronze",
+        domain=DOMAIN,
+        script_name=SCRIPT_NAME,
+        job_run_id=args.job_run_id,
+        source_keys=args.source_keys,
+        fail_on_error=args.fail_on_error == "true",
+        code_version=args.code_version,
+    ) as dq:
         for key in keys:
             entry = sources[key]
             print(f"[{key}]")
@@ -543,9 +709,16 @@ def main():
             except Exception as e:
                 # One source erroring is recorded as a failed check; the others still run.
                 name, ctype, severity = CHECKS["B00"]
-                dq.record("B00", table_name=entry.get("bronze_table"), source_key=entry["source_key"],
-                          status="FAIL", check_name=name, check_type=ctype, severity=severity,
-                          detail=f"{type(e).__name__}: {e}")
+                dq.record(
+                    "B00",
+                    table_name=entry.get("bronze_table"),
+                    source_key=entry["source_key"],
+                    status="FAIL",
+                    check_name=name,
+                    check_type=ctype,
+                    severity=severity,
+                    detail=f"{type(e).__name__}: {e}",
+                )
 
 
 if __name__ == "__main__":
