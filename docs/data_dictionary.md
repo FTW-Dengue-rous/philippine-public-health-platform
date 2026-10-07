@@ -2,17 +2,17 @@
 
 ## Bronze Ingestion: Health Facilities and Medical Practitioners Data
 
-This ingests raw health-facility and health-workforce source files from the landing zone into the `ph_public_health.bronze` schema. Bronze tables preserve the source structure as closely as possible and are refreshed in full on each run.
+This ingests raw health-facility and health-workforce source files from the landing zone into the `public_health.bronze` schema. Bronze tables preserve the source structure as closely as possible and are refreshed in full on each run.
 
 ### Table of Contents
 
 1. [Shared Conventions](#shared-conventions)
 2. [Tables at a Glance](#tables-at-a-glance)
-3. [`facilities_primary_care`](#ph_public_healthbronzefacilities_primary_care) — Regional Distribution of Primary Care Facilities
-4. [`active_facilities`](#ph_public_healthbronzeactive_facilities) — NHFR Active Facilities
-5. [`facilities_hospital_list`](#ph_public_healthbronzefacilities_hospital_list) — Regional Distribution of Hospitals
-6. [`facilities_infirmary`](#ph_public_healthbronzefacilities_infirmary) — Regional Distribution of Regulated Infirmaries
-7. [`government_medical_practitioners_by_region`](#ph_public_healthbronzegovernment_medical_practitioners_by_region) — Government Medical Practitioners by Region, 2012–2023
+3. [`facilities_primary_care`](#public_healthbronzefacilities_primary_care) — Regional Distribution of Primary Care Facilities
+4. [`active_facilities`](#public_healthbronzeactive_facilities) — NHFR Active Facilities
+5. [`facilities_hospital_list`](#public_healthbronzefacilities_hospital_list) — Regional Distribution of Hospitals
+6. [`facilities_infirmary`](#public_healthbronzefacilities_infirmary) — Regional Distribution of Regulated Infirmaries
+7. [`government_medical_practitioners_by_region`](#public_healthbronzegovernment_medical_practitioners_by_region) — Government Medical Practitioners by Region, 2012–2023
 8. [`psmo_oncologists`](#public_healthbronzepsmo_oncologists) — PSMO Oncologist Count by Region/Province
 9. [`globocan_2024_statistics_at_glance`](#public_healthbronzeglobocan_2024_statistics_at_glance) — GLOBOCAN 2024 Summary Cancer Statistics
 10. [`globocan_2024_cancer_site_metrics`](#public_healthbronzeglobocan_2024_cancer_site_metrics) — GLOBOCAN 2024 Cancer Site Metrics
@@ -22,7 +22,7 @@ This ingests raw health-facility and health-workforce source files from the land
 
 ### Shared Conventions
 
-* **Catalog:** `ph_public_health`
+* **Catalog:** `public_health`
 * **Schema:** `bronze`
 * **Storage format:** Delta
 * **Load strategy:** Full refresh (overwrite) or idempotent MERGE (upsert), depending on the table — see individual table entries
@@ -49,7 +49,7 @@ This ingests raw health-facility and health-workforce source files from the land
 
 ---
 
-### `ph_public_health.bronze.facilities_primary_care`
+### `public_health.bronze.facilities_primary_care`
 
 **Description:** Regional Distribution of Primary Care Facilities.
 
@@ -58,7 +58,7 @@ This ingests raw health-facility and health-workforce source files from the land
 | Source file | `primary_care_asof20260630.xlsx` |
 | Landing location | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/` |
 | Provider | Philippine Statistics Authority (PSA) |
-| Bronze table | `ph_public_health.bronze.facilities_primary_care` |
+| Bronze table | `public_health.bronze.facilities_primary_care` |
 | Refresh mode | Overwrite |
 | Status | Active |
 
@@ -79,7 +79,7 @@ The first row contains a report title rather than field names. Read the Excel fi
 
 ---
 
-### `ph_public_health.bronze.active_facilities`
+### `public_health.bronze.active_facilities`
 
 **Description:** National Health Facility Registry active-facilities extract.
 
@@ -88,7 +88,7 @@ The first row contains a report title rather than field names. Read the Excel fi
 | Source file | `nhfr_activefacilities_asof_20260929.csv` |
 | Landing location | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/` |
 | Provider | National Health Facility Registry (NHFR) |
-| Bronze table | `ph_public_health.bronze.active_facilities` |
+| Bronze table | `public_health.bronze.active_facilities` |
 | Refresh mode | Overwrite |
 
 #### Data Structure
@@ -140,7 +140,7 @@ Infer the schema from the CSV header during ingestion.
 
 ---
 
-### `ph_public_health.bronze.facilities_hospital_list`
+### `public_health.bronze.facilities_hospital_list`
 
 **Description:** Regional Distribution of Hospitals in the Philippines.
 
@@ -149,7 +149,7 @@ Infer the schema from the CSV header during ingestion.
 | Source file | `hospital_list_asof20260630.xlsx` |
 | Landing location | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/` |
 | Provider | Philippine Department of Health (DOH) |
-| Bronze table | `ph_public_health.bronze.facilities_hospital_list` |
+| Bronze table | `public_health.bronze.facilities_hospital_list` |
 | Refresh mode | Overwrite |
 
 #### Data Structure
@@ -189,7 +189,7 @@ Unnamed source columns are retained as:
 
 ---
 
-### `ph_public_health.bronze.facilities_infirmary`
+### `public_health.bronze.facilities_infirmary`
 
 **Description:** Regional Distribution of Regulated Infirmaries.
 
@@ -198,7 +198,7 @@ Unnamed source columns are retained as:
 | Source file | `infirmary_asof20260630.xlsx` |
 | Landing location | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/` |
 | Provider | Philippine Department of Health (DOH) |
-| Bronze table | `ph_public_health.bronze.facilities_infirmary` |
+| Bronze table | `public_health.bronze.facilities_infirmary` |
 | Refresh mode | Overwrite |
 
 #### Data Structure
@@ -236,7 +236,7 @@ Unnamed source columns are retained as:
 
 ---
 
-### `ph_public_health.bronze.government_medical_practitioners_by_region`
+### `public_health.bronze.government_medical_practitioners_by_region`
 
 **Description:** Annual number of government-employed medical practitioners by Philippine region and profession (2012–2023).
 
@@ -245,7 +245,7 @@ Unnamed source columns are retained as:
 | Source file | `TABLE 9.14 Number of Government Medical Practitioners by Region- 2012 to 2023.csv` |
 | Landing location | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/health workforce/` |
 | Provider | Philippine Statistics Authority (PSA) |
-| Bronze table | `ph_public_health.bronze.government_medical_practitioners_by_region` |
+| Bronze table | `public_health.bronze.government_medical_practitioners_by_region` |
 | Refresh mode | Overwrite |
 | Expected coverage | 17 regions × 4 professional categories |
 
