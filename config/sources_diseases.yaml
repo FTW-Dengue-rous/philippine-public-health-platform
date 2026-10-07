@@ -11,7 +11,8 @@
 #   - Bronze keeps the ORIGINAL column names from the file. Only characters
 #     Delta does not allow (space , ; { } ( ) = tab newline) and "." become "_".
 #     Renaming to standard names (column_map) happens in silver.
-#   - path is relative to landing_root.
+#   - path is relative to landing_root. Use `files:` to list files explicitly,
+#     or a glob in `path`.
 #   - as_of_date = date the file was downloaded or released (NOT load time).
 #     A file in `files:` can override it: {name: x.csv, as_of_date: 2026-11-01}
 #   - header_mode:
@@ -30,7 +31,9 @@
 #     matches its geography level and grain, and is added to that entry's `files:` list.
 #   - load_mode (used by silver): upsert -> per merge key keep the row with the
 #     latest _as_of_date. Bronze always keeps every file.
-#   - qc: settings used by the bronze QC script.
+#   - qc: settings used by the bronze QC script. expected_rows and control numbers must be
+#     verified against the file / published source. skip_checks: [B08] switches a check off;
+#     severity: {B03: WARN} changes what a failed check produces for that source.
 #
 # Ingestion-contract checks (run by the loader BEFORE anything is written)
 #   - header_check: the physical title/header rows must contain the expected text at
@@ -58,7 +61,7 @@ defaults:
   silver_enabled: true
   encoding_errors: strict
   metadata_table: "public_health.bronze.ingestion_metadata"
-  qc_results_table: "public_health.quality.qc_results"
+  qc_results_table: "public_health.quality.qc_results"        # written through dq_utils.DQRun (quality_setup.sql)
   silver_target: "public_health.silver.diseases_metric_silver"
 
 sources:
@@ -80,7 +83,7 @@ sources:
     skip_rows: 0
     bronze_table: "public_health.bronze.diseases_doh_foi_dengue_bronze"
     required_columns: [Year, Month, Region, Cases, Deaths]
-    as_of_date: 2025-09-30
+    as_of_date: 2025-09-30                 # data extracted around Sept 2025;
     load_mode: upsert
     merge_keys: [region_name, year, month]
     sharing: restricted
@@ -212,6 +215,7 @@ sources:
     notes:
       - Use the original download. Excel reinterprets dates with day <= 12.
       - Check every province has dates exactly 7 days apart.
+      - "hdx_dengue_province_weekly_2021.csv repeats the 252 rows of 2021 already in the 2016-2021 file (same cases and deaths), and writes dates as dd/MM/yyyy (03/01/2021 = 3 January). The big file uses M/d/yyyy. Silver must use the 2016-2021 file only for these weeks, or parse dates per file."
       - Expect older province names (Compostela Valley, undivided Maguindanao).
       - Assign region from the province via the geography table.
       - Derive year and week from the parsed date, not from the source year column.
@@ -244,7 +248,7 @@ sources:
       - {row: 116, expect: {0: "disaggregated by Age and Sex"}}
       - {row: 117, expect: {0: "Age/Sex", 1: "2020", 11: "2025"}}
       - {row: 118, expect: {1: "Male", 2: "Female", 11: "Male", 12: "Female"}}
-    as_of_date: 2026-10-01     # CONFIRM date received
+    as_of_date: 2026-10-01  # confirm
     load_mode: latest_file
     silver_enabled: false
     sharing: restricted
@@ -297,7 +301,7 @@ sources:
     delimiter: ","
     encoding: utf-8
     bronze_table: "public_health.bronze.diseases_psa_deaths_national_monthly_bronze"
-    as_of_date: 2026-10-04
+    as_of_date: 2026-10-04                 # download date
     load_mode: upsert
     merge_keys: [cause_code, year, month]
     sharing: open
@@ -351,7 +355,7 @@ sources:
     delimiter: ";"
     encoding: cp1252
     bronze_table: "public_health.bronze.diseases_psa_deaths_region_annual_bronze"
-    as_of_date: 2026-10-01
+    as_of_date: 2026-10-02                 # download date
     load_mode: upsert
     merge_keys: [region_name, cause_code, year]
     sharing: open
@@ -437,7 +441,7 @@ sources:
       - {row: 2, expect: {0: "Cause of Death and Usual Residence", 2: "2006", 4: "2007", 10: "2010", 20: "2015"}}
       - {row: 3, expect: {2: "Male", 3: "Female", 20: "Male", 21: "Female"}}
       - {row: 5, expect: {0: "PHILIPPINES"}}
-    as_of_date: 2026-10-01
+    as_of_date: 2026-10-04                 # download date;
     load_mode: upsert
     merge_keys: [area_name, cause_name, year]
     sharing: open
@@ -471,7 +475,7 @@ sources:
     description: FHSIS TB case notification (all forms and drug-resistant), by area
     agency: Department of Health
     obtained_via: FHSIS annual report tables
-    path: diseases/doh_fhsis                          # original Excel workbooks
+    path: diseases/doh_fhsis                          # original Excel workbooks, not CSV exports
     header_mode: names
     columns: {0: psgc_code, 1: area_name, 2: population, 3: cases_male, 4: cases_female,
               5: cases_total, 6: case_notification_rate, 7: dr_cases_male, 8: dr_cases_female,
@@ -666,7 +670,7 @@ sources:
       - {row: 3, expect: {0: "Year", 1: "Total", 3: "NCR", 19: "Region VI"}}
       - {row: 4, expect: {1: "Number", 2: "Rate"}}
       - {row: 41, expect: {0: "Year", 1: "Region VII", 15: "BARMM", 17: "Foreign"}}
-    as_of_date: 2026-10-05
+    as_of_date: 2026-10-05                 # download date;
     load_mode: upsert
     merge_keys: [region_name, year]
     sharing: open
@@ -678,6 +682,11 @@ sources:
       metrics: [deaths]
     qc:
       expected_rows: 79                   # 64 year rows + block titles, headers, notes and source lines
+      numeric_columns: [col_1]
+      max_non_numeric_rows_per_file: 5    # subtitle and the two block header rows have text in col_1
+      control_values:                     # block 1 (rows < 40) holds the national Total; same numbers as the PSA monthly files
+        - {label: "2020 Philippines all causes", column: col_1, expected: 613936, where: "trim(col_0) = '2020' AND _source_row_num < 40"}
+        - {label: "2023 Philippines all causes", column: col_1, expected: 694821, where: "trim(col_0) = '2023' AND _source_row_num < 40"}
     notes:
       - Block 1 rows 6-37 (Total, NCR..Region VI), block 2 rows 44-75 (Region VII..BARMM, Foreign). Region names come from rows 3 and 41; each region has a Number and a Rate column.
       - "… (cp1252 byte 0x85) = region did not exist yet (MIMAROPA before 2003, Caraga before 1996, BARMM before 1993). Null, not zero."
@@ -704,7 +713,7 @@ sources:
     header_check:
       - {row: 0, expect: {0: "Notifiable Diseases Reported Cases by Cause"}}
     bronze_table: "public_health.bronze.diseases_psa_notifiable_national_annual_bronze"
-    as_of_date: 2026-10-05
+    as_of_date: 2026-10-05                 # download date;
     load_mode: upsert
     merge_keys: [disease_name, year]
     sharing: open
@@ -748,7 +757,7 @@ sources:
       - {row: 0, expect: {0: "Leading Causes of Morbidity"}}
       - {row: 3, expect: {0: "of Morbidity"}}
       - {row: 4, expect: {1: "Number of Cases", 3: "Rate"}}
-    as_of_date: 2026-10-05
+    as_of_date: 2026-10-05                 # download date;
     load_mode: upsert
     merge_keys: [cause_name, year]
     sharing: open
@@ -795,7 +804,7 @@ sources:
     skip_rows: 0
     required_columns: [measure_id, location_id, cause_id, year, val, upper, lower]
     bronze_table: "public_health.bronze.diseases_ihme_gbd_bronze"
-    as_of_date: 2026-10-05
+    as_of_date: 2026-10-05                 # download date
     load_mode: upsert
     merge_keys: [measure_id, location_id, sex_id, age_id, cause_id, metric_id, year]
     sharing: restricted                    # non-commercial use only; no redistribution of the data

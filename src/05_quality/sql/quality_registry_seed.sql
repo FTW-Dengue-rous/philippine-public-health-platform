@@ -51,7 +51,7 @@ USING (
     ),
     (
         'B04', 'bronze', 'ALL', 'required columns present', 'SCHEMA', 'FAIL', 0,
-        'Columns from columns / column_map exist in the table'
+        'Columns from required_columns / columns / column_map exist in the table'
     ),
     (
         'B05', 'bronze', 'ALL', 'lineage columns not null', 'COMPLETENESS', 'FAIL', 0,
@@ -79,11 +79,23 @@ USING (
     ),
     (
         'B11', 'bronze', 'ALL', 'control totals / values match', 'RECONCILIATION', 'FAIL', 0,
-        'Sums or known values match the published source (latest version)'
+        'Sums or known values match numbers verified against the published source'
     ),
     (
-        'B12', 'bronze', 'ALL', 'total equals sum of parts', 'CONSISTENCY', 'FAIL', 0,
-        'qc.row_sum total column equals the sum of its parts'
+        'B12', 'bronze', 'ALL', 'total equals sum of parts', 'CONSISTENCY', 'WARN', 0,
+        'qc.row_sum total column equals the sum of its parts; WARN because the source itself may not add up'
+    ),
+    (
+        'B13', 'bronze', 'ALL', 'rows match ingestion metadata', 'RECONCILIATION', 'FAIL', 0,
+        'Rows per file equal record_count logged in ingestion_metadata for the same load'
+    ),
+    (
+        'B14', 'bronze', 'ALL', 'no files outside the YAML', 'CONSISTENCY', 'WARN', 0,
+        'No rows from files or source keys the YAML does not list (old file names left behind)'
+    ),
+    (
+        'B15', 'bronze', 'ALL', 'data columns are STRING', 'SCHEMA', 'FAIL', 0,
+        'Bronze contract: every data column is STRING'
     ),
     -- silver (business rules; starter set, edit thresholds as the team decides)
     (
