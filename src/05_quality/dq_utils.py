@@ -109,10 +109,11 @@ class DQRun:
                 r["check_id"]: r.asDict()
                 for r in self.spark.table(f"{dq_schema}.check_registry").where("is_active").collect()
             }
-        except Exception:                                       # registry table not created yet
+        except Exception as e:                                  # registry table not created yet
             if strict_registry:
                 raise
             self.registry = {}
+            print(f"  check_registry not loaded, running without it: {str(e)[:200]}")
         print(f"DQ {layer}/{domain}: validation_id={self.validation_id} run_id={self.run_id}")
 
     # -------------------------------------------------------------------------
@@ -133,7 +134,9 @@ class DQRun:
                                "Add it there first so check codes stay consistent.")
             self.unregistered.add(check_id)
             reg = {"layer": self.layer, "check_name": check_id, "check_type": None,
-                   "default_severity": "WARN" if status == "WARN" else "FAIL",
+                   # PASS rows of unregistered codes get no severity (filled later by
+                   # quality_registry_seed.sql), so a guess never seeds the registry.
+                   "default_severity": "WARN" if status == "WARN" else (None if status == "PASS" else "FAIL"),
                    "default_threshold": 0}
         elif reg["layer"] != self.layer:
             raise ValueError(f"{check_id} is a {reg['layer']} check; this run is {self.layer}")
@@ -299,9 +302,17 @@ class DQRun:
     def __exit__(self, exc_type, exc, tb):
         if exc is not None:
             # Record the crash as an execution check, write what was collected, then re-raise.
-            self.record(f"{LAYER_PREFIX[self.layer]}00", status="FAIL", check_name="QC ran without error",
-                        check_type="EXECUTION", detail=f"{exc_type.__name__}: {exc}")
-            self.finish(error=f"{exc_type.__name__}: {exc}")
+            # Each step is guarded so a problem here never hides the original error.
+            err = f"{exc_type.__name__}: {exc}"
+            try:
+                self.record(f"{LAYER_PREFIX[self.layer]}00", status="FAIL", severity="FAIL",
+                            check_name="QC ran without error", check_type="EXECUTION", detail=err)
+            except Exception as e:
+                print(f"  could not record crash row: {e}")
+            try:
+                self.finish(error=err)
+            except Exception as e:
+                print(f"  could not write QC results: {e}")
             return False
         self.finish()
         return False
