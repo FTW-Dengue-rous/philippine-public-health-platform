@@ -96,7 +96,7 @@ def _add_dq_utils_to_path():
 
 
 _add_dq_utils_to_path()
-from dq_utils import DQRun
+from dq_utils import DQRun  # noqa: E402
 
 
 spark = SparkSession.builder.getOrCreate()
