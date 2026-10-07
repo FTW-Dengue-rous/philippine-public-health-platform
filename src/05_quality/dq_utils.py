@@ -28,7 +28,7 @@
 #       - code in quality.check_registry -> name, type, severity, threshold come from it
 #       - code not in the registry       -> pass check_name and check_type yourself;
 #         the code is listed as "unregistered" at the end of the run
-#     Build the registry at the end (quality_setup.sql section 10), then switch to
+#     Build the registry at the end (quality_registry_seed.sql), then switch to
 #     strict_registry=True so unknown codes are rejected.
 #   * Pass status yourself, or pass fail_count (+ total_count) and it is computed:
 #     PASS if fail_pct <= threshold, otherwise the check's severity (WARN or FAIL).
