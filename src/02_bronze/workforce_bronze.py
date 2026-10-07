@@ -55,6 +55,7 @@
 
 import argparse
 import csv
+import functools
 import glob
 import hashlib
 import json
@@ -411,15 +412,14 @@ def metadata_row(**values):
     return tuple(values.get(name) for name, _ in METADATA_SCHEMA)
 
 
-def file_checksum(path, _cache={}):
+@functools.cache
+def file_checksum(path):
     # sha256 of a file, read in 1 MB chunks, cached per path (a workbook listed once per sheet is hashed once).
-    if path not in _cache:
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for block in iter(lambda: f.read(1 << 20), b""):
-                h.update(block)
-        _cache[path] = h.hexdigest()
-    return _cache[path]
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def log_metadata(table, rows):
@@ -590,9 +590,12 @@ def main():
             meta_rows = ingest_source(cfg, entry)
             if not log_metadata(entry["metadata_table"], meta_rows):
                 audit_failures.append(key)
-            m = dict(zip([name for name, _ in METADATA_SCHEMA], zip(*meta_rows)))
-            results += [(key, p, n, s.upper(), None)
-                        for p, n, s in zip(m["raw_file_path"], m["record_count"], m["status"])]
+            names = [name for name, _ in METADATA_SCHEMA]
+            m = dict(zip(names, zip(*meta_rows, strict=True), strict=True))
+            results += [
+                (key, p, n, s.upper(), None)
+                for p, n, s in zip(m["raw_file_path"], m["record_count"], m["status"], strict=True)
+            ]
         except Exception as e:
             failures.append(key)
             msg = str(e)[:500]
