@@ -32,59 +32,24 @@ USING (
         cast(default_threshold AS DOUBLE) AS default_threshold,
         description
     FROM VALUES
-    -- bronze (at rest, faithful to source; no business rules)
-    (
-        'B00', 'bronze', 'ALL', 'QC ran without error', 'EXECUTION', 'FAIL', 0,
-        'Script error while checking a source; detail holds the error text'
-    ),
-    (
-        'B01', 'bronze', 'ALL', 'table exists and has rows', 'COMPLETENESS', 'FAIL', 0,
-        'Bronze table exists and row count > 0'
-    ),
-    (
-        'B02', 'bronze', 'ALL', 'all listed files loaded', 'COMPLETENESS', 'FAIL', 0,
-        'Every file listed in the YAML appears in _source_file'
-    ),
-    (
-        'B03', 'bronze', 'ALL', 'row count matches expected', 'RECONCILIATION', 'FAIL', 0,
-        'Rows per file equal qc.expected_rows'
-    ),
-    (
-        'B04', 'bronze', 'ALL', 'required columns present', 'SCHEMA', 'FAIL', 0,
-        'Columns from columns / column_map exist in the table'
-    ),
-    (
-        'B05', 'bronze', 'ALL', 'lineage columns not null', 'COMPLETENESS', 'FAIL', 0,
-        '_source_key, _source_file, _source_row_num, _as_of_date, _ingested_at never null'
-    ),
-    (
-        'B06', 'bronze', 'ALL', 'row number unique per file', 'UNIQUENESS', 'FAIL', 0,
-        'One row per file, sheet and _source_row_num (catches double loads)'
-    ),
-    (
-        'B07', 'bronze', 'ALL', 'no fully empty rows', 'COMPLETENESS', 'WARN', 0,
-        'No rows where every data column is blank'
-    ),
-    (
-        'B08', 'bronze', 'ALL', 'no exact duplicate rows', 'UNIQUENESS', 'WARN', 0,
-        'No identical data rows within a file and sheet'
-    ),
-    (
-        'B09', 'bronze', 'ALL', 'no rescued values', 'SCHEMA', 'WARN', 0,
-        '_rescued_data is null (no rows wider than the header)'
-    ),
-    (
-        'B10', 'bronze', 'ALL', 'numeric column parses', 'VALIDITY', 'WARN', 0,
-        'qc.numeric_columns can be read as numbers'
-    ),
-    (
-        'B11', 'bronze', 'ALL', 'control totals / values match', 'RECONCILIATION', 'FAIL', 0,
-        'Sums or known values match the published source (latest version)'
-    ),
-    (
-        'B12', 'bronze', 'ALL', 'total equals sum of parts', 'CONSISTENCY', 'FAIL', 0,
-        'qc.row_sum total column equals the sum of its parts'
-    ),
+        -- bronze (at rest, faithful to source; no business rules)
+    ('B00', 'bronze', 'ALL', 'QC ran without error',             'EXECUTION',      'FAIL', 0, 'Script error while checking a source; detail holds the error text'),
+    ('B01', 'bronze', 'ALL', 'table exists and has rows',        'COMPLETENESS',   'FAIL', 0, 'Bronze table exists and row count > 0'),
+    ('B02', 'bronze', 'ALL', 'all listed files loaded',          'COMPLETENESS',   'FAIL', 0, 'Every file listed in the YAML appears in _source_file'),
+    ('B03', 'bronze', 'ALL', 'row count matches expected',       'RECONCILIATION', 'FAIL', 0, 'Rows per file equal qc.expected_rows'),
+    ('B04', 'bronze', 'ALL', 'required columns present',         'SCHEMA',         'FAIL', 0, 'Columns from required_columns / columns / column_map exist in the table'),
+    ('B05', 'bronze', 'ALL', 'lineage columns not null',         'COMPLETENESS',   'FAIL', 0, '_source_key, _source_file, _source_row_num, _as_of_date, _ingested_at never null'),
+    ('B06', 'bronze', 'ALL', 'row number unique per file',       'UNIQUENESS',     'FAIL', 0, 'One row per file, sheet and _source_row_num (catches double loads)'),
+    ('B07', 'bronze', 'ALL', 'no fully empty rows',              'COMPLETENESS',   'WARN', 0, 'No rows where every data column is blank'),
+    ('B08', 'bronze', 'ALL', 'no exact duplicate rows',          'UNIQUENESS',     'WARN', 0, 'No identical data rows within a file and sheet'),
+    ('B09', 'bronze', 'ALL', 'no rescued values',                'SCHEMA',         'WARN', 0, '_rescued_data is null (no rows wider than the header)'),
+    ('B10', 'bronze', 'ALL', 'numeric column parses',            'VALIDITY',       'WARN', 0, 'qc.numeric_columns can be read as numbers'),
+    ('B11', 'bronze', 'ALL', 'control totals / values match',    'RECONCILIATION', 'FAIL', 0, 'Sums or known values match numbers verified against the published source'),
+    ('B12', 'bronze', 'ALL', 'total equals sum of parts',        'CONSISTENCY',    'WARN', 0, 'qc.row_sum total column equals the sum of its parts; WARN because the source itself may not add up'),
+    ('B13', 'bronze', 'ALL', 'rows match ingestion metadata',    'RECONCILIATION', 'FAIL', 0, 'Rows per file equal record_count logged in ingestion_metadata for the same load'),
+    ('B14', 'bronze', 'ALL', 'no files outside the YAML',        'CONSISTENCY',    'WARN', 0, 'No rows from files or source keys the YAML does not list (old file names left behind)'),
+    ('B15', 'bronze', 'ALL', 'data columns are STRING',          'SCHEMA',         'FAIL', 0, 'Bronze contract: every data column is STRING'),
+    
     -- silver (business rules; starter set, edit thresholds as the team decides)
     (
         'S00', 'silver', 'ALL', 'QC ran without error', 'EXECUTION', 'FAIL', 0,
