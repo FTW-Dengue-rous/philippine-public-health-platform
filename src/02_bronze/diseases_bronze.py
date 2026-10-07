@@ -22,7 +22,7 @@
 #     with their column position.
 #   - The landing file itself is never modified and remains the original record.
 #
-# Column names: Column names come from:
+# Column names come from:
 #     - the file header (header_mode: single),
 #     - the YAML config (names), or
 #     - generated names col_0, col_1, ... (header_mode: none).

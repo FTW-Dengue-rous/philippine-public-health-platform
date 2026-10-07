@@ -1,11 +1,14 @@
 # =============================================================================
-# socioeconomic domain
+# sources_socioeconomic.yaml — socioeconomic domain
+#
+# Structure:
 #   - Entry name = source_key = folder name (nested folders joined by "_").
 #   - Every data column is STRING in bronze. Lineage columns are added by the loader.
 #   - Original column names when the header is usable (header_mode: single);
 #     otherwise names are listed here (header_mode: names).
 #   - A file in `files:` can override: sheet, data_start_row, skip_rows, encoding,
-#     delimiter, as_of_date, header_mode, columns.
+#     encoding_errors, delimiter, as_of_date, header_mode, columns, required_columns,
+#     header_check.
 #   - Bronze tables: public_health.bronze.socioeconomic_<source>_<content>_bronze
 #
 # File naming
@@ -15,16 +18,32 @@
 # Landing layout (under landing_root):
 #   socioeconomic/
 #     psa_poverty/
-#          psa_poverty_province_biennial_2021_2025.xlsx
+#        psa_poverty_province_biennial_2021_2025.xlsx
 #     psa_health_expenditure/share_national_annual/
-#          psa_health_expenditure_share_national_annual_2016_2023.csv
+#        psa_health_expenditure_share_national_annual_2016_2023.csv
 #     psa_health_expenditure/per_capita_national_annual/
-#          psa_health_expenditure_per_capita_national_annual_2016_2023.csv
+#        psa_health_expenditure_per_capita_national_annual_2016_2023.csv
 #     psa_child_mortality/
-#          psa_child_mortality_region_survey_2017_2022.csv
+#        psa_child_mortality_region_survey_2017_2022.csv
 #   geography/
 #     psa_psgc/
-#          psa_psgc_barangay_asof_20260713.xlsx  (see entry 5)
+#       psa_psgc_barangay_asof_20260713.xlsx  (see entry 5)
+#
+# Ingestion-contract checks (run by the loader BEFORE anything is written)
+#   - header_check: the physical title/header rows must contain the expected text at
+#     the expected positions (case and spacing ignored, "contains" match). Checked on the
+#     raw rows, before YAML column names are applied, so a shifted or inserted column
+#     stops the load instead of loading values under the wrong names.
+#       header_check:
+#         - {row: 3, expect: {0: "Year", 1: "Total", 3: "NCR"}}
+#     Rows and positions are 0-based. To see the rows of a file, run
+#       python socioeconomic_bronze.py --show_headers 10 --source_keys <key>
+#   - required_columns: for header_mode: single, header names that must exist (raw
+#     names as in the file; they are cleaned the same way as the header).
+#   - encoding_errors: strict (default) stops on a byte that does not fit the encoding.
+#     Set replace on an entry to load anyway; replaced bytes are counted and logged.
+#   - Each file must give at least one data row. After the write, rows in the table
+#     per file must equal rows read. Any failure stops that source.
 # =============================================================================
 
 version: 1
@@ -36,11 +55,12 @@ defaults:
   all_columns_as_string: true
   load_mode: upsert
   silver_enabled: true
+  encoding_errors: strict
   metadata_table: "public_health.bronze.ingestion_metadata"
-  qc_results_table: "public_health.bronze.qc_results"
+  qc_results_table: "public_health.quality.qc_results"
 
 # -----------------------------------------------------------------------------
-# Column layouts (YAML anchors, referenced below).
+# Column layouts (YAML anchors, referenced below; not read by the loader directly).
 # -----------------------------------------------------------------------------
 layouts:
   # PSA official poverty statistics, Table 2: per capita poverty threshold and
@@ -66,6 +86,25 @@ layouts:
      poor_pop_ci_low_2025, poor_pop_ci_high_2025,
      notes]
 
+  # Physical header rows of the two poverty sheets (rows 0-5; data starts at row 7).
+  poverty_tab2_header: &poverty_tab2_header
+    - {row: 0, expect: {0: "Table 2.  Annual Per Capita Poverty Threshold and Poverty Incidence Among Population"}}
+    - {row: 2, expect: {0: "Region/Province", 1: "Annual Per Capita Poverty Threshold", 4: "Poverty Incidence among Population", 19: "Notes"}}
+    - {row: 3, expect: {4: "Estimates (%)", 7: "Coefficient of Variation", 10: "Standard Error", 13: "95% Confidence Interval"}}
+    - {row: 4, expect: {1: "2021", 2: "2023", 3: "2025", 4: "2021", 5: "2023", 6: "2025",
+                        7: "2021", 8: "2023", 9: "2025", 10: "2021", 11: "2023", 12: "2025",
+                        13: "2021", 15: "2023", 17: "2025"}}
+    - {row: 5, expect: {13: "Lower Limit", 14: "Upper Limit", 15: "Lower Limit", 16: "Upper Limit", 17: "Lower Limit", 18: "Upper Limit"}}
+    - {row: 7, expect: {0: "PHILIPPINES"}}
+  poverty_tab6_header: &poverty_tab6_header
+    - {row: 0, expect: {0: "Table 6.  Magnitude of Poor Population"}}
+    - {row: 2, expect: {0: "Region/Province", 1: "Magnitude of Poor Population", 16: "Notes"}}
+    - {row: 3, expect: {1: "Estimate ('000)", 4: "Coefficient of Variation", 7: "Standard Error", 10: "95% Confidence Interval"}}
+    - {row: 4, expect: {1: "2021", 2: "2023", 3: "2025", 4: "2021", 5: "2023", 6: "2025",
+                        7: "2021", 8: "2023", 9: "2025", 10: "2021", 12: "2023", 14: "2025"}}
+    - {row: 5, expect: {10: "Lower Limit", 11: "Upper Limit", 12: "Lower Limit", 13: "Upper Limit", 14: "Lower Limit", 15: "Upper Limit"}}
+    - {row: 7, expect: {0: "PHILIPPINES"}}
+
 sources:
 
   # ---------------------------------------------------------------------------
@@ -79,12 +118,20 @@ sources:
     path: socioeconomic/psa_poverty
     header_mode: names
     files:
-      - {name: psa_poverty_province_biennial_2021_2025.xlsx, sheet: tab2, data_start_row: 7, columns: *poverty_tab2}
-      - {name: psa_poverty_province_biennial_2021_2025.xlsx, sheet: tab6, data_start_row: 7, columns: *poverty_tab6}
+      - name: psa_poverty_province_biennial_2021_2025.xlsx
+        sheet: tab2
+        data_start_row: 7
+        columns: *poverty_tab2
+        header_check: *poverty_tab2_header
+      - name: psa_poverty_province_biennial_2021_2025.xlsx
+        sheet: tab6
+        data_start_row: 7
+        columns: *poverty_tab6
+        header_check: *poverty_tab6_header
     bronze_table: "public_health.bronze.socioeconomic_psa_poverty_bronze"
-    as_of_date: 2026-08-26                 # PSA release date (from the original file name)
+    as_of_date: 2026-08-26
     load_mode: upsert
-    merge_keys: [area_name, year]          # each sheet loads as its own rows; silver combines by area
+    merge_keys: [area_name, year]
     sharing: open
     coverage: Philippines, 18 regions (with NCR districts) and provinces; survey years 2021, 2023, 2025
     qc:
@@ -122,6 +169,11 @@ sources:
     columns: {0: agent_level1, 1: agent_level2,
               2: share_2016, 4: share_2017, 6: share_2018, 8: share_2019,
               10: share_2020, 12: share_2021, 13: share_2022, 14: share_2023}
+    header_check:
+      - {row: 0, expect: {0: "TABLE 9.26  Current Health Expenditure by Financing Agent: Percent Share"}}
+      - {row: 2, expect: {0: "Source of Funds", 2: "Percent Share"}}
+      - {row: 3, expect: {2: "2016", 4: "2017", 6: "2018", 8: "2019", 10: "2020", 12: "2021", 13: "2022", 14: "2023"}}
+      - {row: 5, expect: {0: "Total Current Health Expenditure"}}
     bronze_table: "public_health.bronze.socioeconomic_psa_health_expenditure_share_bronze"
     as_of_date: 2026-10-05
     load_mode: upsert
@@ -160,6 +212,15 @@ sources:
     data_start_row: 4
     columns: {0: indicator, 2: value_2016, 3: value_2017, 4: value_2018, 5: value_2019,
               6: value_2020, 7: value_2021, 8: value_2022, 9: value_2023}
+    header_check:
+      # Positions are the physical ones: in row 3 "2016" sits at col 1 (one left of its
+      # value), 2017-2023 sit above their values. Row 6 (growth periods) lines up with the values.
+      - {row: 0, expect: {0: "TABLE 9.24 Per Capita Health Expenditure"}}
+      - {row: 2, expect: {0: "Indicator", 2: "Amount  (in pesos, at current prices)"}}
+      - {row: 3, expect: {1: "2016", 3: "2017", 4: "2018", 5: "2019", 6: "2020", 7: "2021", 8: "2022", 9: "2023"}}
+      - {row: 4, expect: {0: "Per Capita Health Expenditure"}}
+      - {row: 5, expect: {2: "Growth Rate"}}
+      - {row: 6, expect: {2: "2015-16", 3: "2016-17", 4: "2017-18", 5: "2018-19", 6: "2019-20", 7: "2020-21", 8: "2021-22", 9: "2022-23"}}
     bronze_table: "public_health.bronze.socioeconomic_psa_health_expenditure_per_capita_bronze"
     as_of_date: 2026-10-05
     load_mode: upsert
@@ -193,8 +254,14 @@ sources:
     data_start_row: 5
     columns: {0: characteristic_group, 1: characteristic,
               2: imr_2022, 3: imr_2017, 4: cmr_2022, 5: cmr_2017, 6: u5mr_2022, 7: u5mr_2017}
+    header_check:
+      # 2022 comes before 2017 in every pair; the check pins that order.
+      - {row: 0, expect: {0: "TABLE 9.9  Early Childhood Mortality Rates"}}
+      - {row: 2, expect: {0: "Background Characteristic", 2: "Infant Mortality Rate", 4: "Child Mortality Rate", 6: "Under-five Mortality Rate"}}
+      - {row: 3, expect: {2: "2022", 3: "2017", 4: "2022", 5: "2017", 6: "2022", 7: "2017"}}
+      - {row: 5, expect: {0: "Region"}}
     bronze_table: "public_health.bronze.socioeconomic_psa_child_mortality_bronze"
-    as_of_date: 2026-10-02
+    as_of_date: 2026-10-05
     load_mode: upsert
     merge_keys: [characteristic_group, characteristic, survey_year]
     sharing: open
@@ -227,8 +294,14 @@ sources:
       - {name: psa_psgc_barangay_asof_20260713.xlsx, sheet: PSGC}
     header_mode: single
     skip_rows: 0
+    required_columns: ["10-digit PSGC", "Name", "Geographic Level", "2024 Population"]   # from column_map
+    header_check:
+      # Pins the position of every named header (col 9 is an unnamed empty column).
+      - {row: 0, expect: {0: "10-digit PSGC", 1: "Name", 2: "Correspondence Code", 3: "Geographic Level",
+                          4: "Old names", 5: "City Class", 6: "Income Classification (DOF DO No. 074.2024)",
+                          7: "Urban / Rural (based on 2020 CPH)", 8: "2024 Population", 10: "Status"}}
     bronze_table: "public_health.bronze.socioeconomic_psa_psgc_bronze"
-    as_of_date: 2026-07-13                 # PSA web release date (team convention)
+    as_of_date: 2026-07-13   # PSA web release date; publication date inside is 2026-06-30
     load_mode: latest_file
     merge_keys: [10-digit_PSGC]
     sharing: open
@@ -243,12 +316,12 @@ sources:
     qc:
       expected_rows: 43768
       numeric_columns: [2024 Population]
-      null_tokens: ["#N/A"]                # City of Isabela (Not a Province) has #N/A population
+      null_tokens: ["#N/A"]     # City of Isabela (Not a Province) has #N/A population
       control_values:
         - {label: "Sum of region populations 2024", column: 2024_Population, expected: 112727776, where: "Geographic_Level = 'Reg'"}
     notes:
       - Only the PSGC sheet is loaded. National Summary and Prov Sum are controls (82 provinces, 149 cities, 1,493 municipalities, 42,010 barangays as of 30 June 2026).
       - PSGC codes are 10-digit text with leading zeros. Correspondence codes are partly numbers and lose leading zeros; pad to 9 digits in silver.
       - Income class applies to Prov, City and Mun rows (1st-5th; * = see Notes sheet; - = not classified). Urban/Rural applies to barangays only.
-      - Region populations sum to 112,727,776; the National Summary shows 112,729,484. The 1,708 difference sits outside the region rows; to be CONFIRMED in silver.
+      - Region populations sum to 112,727,776; the National Summary shows 112,729,484. The 1,708 difference sits outside the region rows; CONFIRM in silver.
       - An unnamed empty column loads as col_9.

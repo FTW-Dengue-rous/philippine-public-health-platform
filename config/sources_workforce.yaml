@@ -11,7 +11,8 @@
 #   - Row numbers are 0-based, counted from the first row of the file/sheet.
 #   - Bronze tables: public_health.bronze.workforce_<source>_<content>_bronze
 #   - A file in `files:` can override: sheet, data_start_row, skip_rows, encoding,
-#     delimiter, as_of_date, header_mode, columns. Use this when the layout changes
+#     encoding_errors, delimiter, as_of_date, header_mode, columns, required_columns,
+#     header_check. Use this when the layout changes
 #     by year or by sheet; the bronze table holds the union of all columns.
 #   - qc: settings used by the bronze QC script.
 #
@@ -23,7 +24,26 @@
 #                              (the BGY & BHS tab of these workbooks is read by
 #                               sources_facilities.yaml from this same folder)
 #     psa_gov_practitioners/   psa_gov_practitioners_region_annual_2012_2023.csv
+#     psmo_oncologists/        psmo_oncologists_province_asof_{yyyymmdd}.csv   (directory snapshot)
 #
+# Ingestion-contract checks (run by the loader BEFORE anything is written)
+#   - header_check: the physical title/header rows must contain the expected text at
+#     the expected positions (case and spacing ignored, "contains" match). Checked on the
+#     raw rows, before YAML column names are applied, so a shifted or inserted column
+#     stops the load instead of loading values under the wrong names.
+#       header_check:
+#         - {row: 3, expect: {0: "Year", 1: "Total", 3: "NCR"}}
+#     Use it on every header_mode: names / none entry. To see the rows of a file, run
+#       python workforce_bronze.py --show_headers 10 --source_keys <key>
+#   - required_columns: for header_mode: single, header names that must exist (raw
+#     names as in the file; they are cleaned the same way as the header).
+#   - encoding_errors: strict (default) stops on a byte that does not fit the encoding.
+#     Set replace on an entry to load anyway; replaced bytes are counted and logged.
+#   - Each file must give at least one data row. After the write, rows in the table
+#     per file must equal rows read. Any failure stops that source.
+#
+# Items marked CONFIRM were not verified against the actual file.
+# header_check: entries 1-2 filled and verified 2026-10-07. Entry 3 relies on required_columns.
 # =============================================================================
 
 version: 1
@@ -35,8 +55,9 @@ defaults:
   all_columns_as_string: true
   load_mode: upsert
   silver_enabled: true
+  encoding_errors: strict
   metadata_table: "public_health.bronze.ingestion_metadata"
-  qc_results_table: "public_health.bronze.qc_results"
+  qc_results_table: "public_health.quality.qc_results"
   silver_target: "public_health.silver.workforce_headcount_silver"
 
 # -----------------------------------------------------------------------------
@@ -150,26 +171,135 @@ sources:
     path: workforce/doh_fhsis_demographic
     header_mode: names
     files:
-      - {name: doh_fhsis_demographic_province_annual_2018.xlsx, sheet: Table 3B.1, data_start_row: 8, columns: *hw_2018_3b1}
-      - {name: doh_fhsis_demographic_province_annual_2018.xlsx, sheet: Table 3B.2, data_start_row: 8, columns: *hw_2018_3b2}
-      - {name: doh_fhsis_demographic_province_annual_2018.xlsx, sheet: Table 3B.3, data_start_row: 8, columns: *hw_2018_3b3}
-      - {name: doh_fhsis_demographic_province_annual_2019.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 8, columns: *hw_3part_p1}
-      - {name: doh_fhsis_demographic_province_annual_2019.xlsx, sheet: Health Workers Part2, data_start_row: 8, columns: *hw_3part_p2}
-      - {name: doh_fhsis_demographic_province_annual_2019.xlsx, sheet: HEALTH WORKERS PART3, data_start_row: 8, columns: *hw_3part_p3_hh}
-      - {name: doh_fhsis_demographic_province_annual_2020.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 7, columns: *hw_3part_p1}
-      - {name: doh_fhsis_demographic_province_annual_2020.xlsx, sheet: HEALTH WORKERS PART2, data_start_row: 7, columns: *hw_3part_p2}
-      - {name: doh_fhsis_demographic_province_annual_2020.xlsx, sheet: HEALTH WORKERS PART3, data_start_row: 7, columns: *hw_3part_p3_hh}
-      - {name: doh_fhsis_demographic_province_annual_2021.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 7, columns: *hw_3part_p1}
-      - {name: doh_fhsis_demographic_province_annual_2021.xlsx, sheet: HW Part2, data_start_row: 7, columns: *hw_3part_p2}
-      - {name: doh_fhsis_demographic_province_annual_2021.xlsx, sheet: HEALTH WORKERS PART3, data_start_row: 7, columns: *hw_3part_p3}
-      - {name: doh_fhsis_demographic_province_annual_2022.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 7, columns: *hw_2part_p1}
-      - {name: doh_fhsis_demographic_province_annual_2022.xlsx, sheet: HEALTH WORKERS PART2, data_start_row: 7, columns: *hw_2part_p2_hh}
-      - {name: doh_fhsis_demographic_province_annual_2023.xlsx, sheet: HEALTH WORKERS PART1, data_start_row: 7, columns: *hw_2part_p1}
-      - {name: doh_fhsis_demographic_province_annual_2023.xlsx, sheet: HEALTH WORKERS PART2, data_start_row: 7, columns: *hw_2part_p2}
-      - {name: doh_fhsis_demographic_province_annual_2024.xlsx, sheet: Health Workers, data_start_row: 7, columns: *hw_2024}
-      - {name: doh_fhsis_demographic_municipality_annual_2025.xlsx, sheet: Health Workers, data_start_row: 7, columns: *hw_2025}
+    # header_check: row = group-label row (profession order), then the LGU/DOH or Male/Female row.
+      - name: doh_fhsis_demographic_province_annual_2018.xlsx
+        sheet: Table 3B.1
+        data_start_row: 8
+        columns: *hw_2018_3b1
+        header_check:
+          - {row: 6, expect: {0: "Area", 1: "MD", 5: "Dentist", 9: "PHN", 13: "Midwives"}}
+          - {row: 7, expect: {1: "Male", 2: "Female", 3: "Total", 16: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2018.xlsx
+        sheet: Table 3B.2
+        data_start_row: 8
+        columns: *hw_2018_3b2
+        header_check:
+          - {row: 6, expect: {0: "Area", 1: "Population", 2: "Nutritionist", 6: "Med. Technologist"}}
+          - {row: 7, expect: {2: "Male", 4: "Total", 9: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2018.xlsx
+        sheet: Table 3B.3
+        data_start_row: 8
+        columns: *hw_2018_3b3
+        header_check:
+          - {row: 6, expect: {0: "Area", 1: "Sanitary Engineer", 5: "Sanitary Inspector", 9: "Active BHW"}}
+          - {row: 7, expect: {1: "Male", 3: "Total", 12: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2019.xlsx
+        sheet: HEALTH WORKERS PART1
+        data_start_row: 8
+        columns: *hw_3part_p1
+        header_check:
+          - {row: 6, expect: {0: "Area", 1: "Population", 2: "MDs", 6: "Dentists", 10: "PHNs"}}
+          - {row: 7, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 13: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2019.xlsx
+        sheet: Health Workers Part2
+        data_start_row: 8
+        columns: *hw_3part_p2
+        header_check:
+          - {row: 6, expect: {0: "Area", 1: "Population", 2: "Midwives", 6: "Nutritionists", 10: "Medical Technologists"}}
+          - {row: 7, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 13: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2019.xlsx
+        sheet: HEALTH WORKERS PART3
+        data_start_row: 8
+        columns: *hw_3part_p3_hh
+        header_check:
+          - {row: 6, expect: {0: "Area", 2: "Sanitary Engineers", 6: "Sanitary Inspectors", 10: "Active BHWs", 15: "HH"}}
+          - {row: 7, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 13: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2020.xlsx
+        sheet: HEALTH WORKERS PART1
+        data_start_row: 7
+        columns: *hw_3part_p1
+        header_check:
+          - {row: 5, expect: {0: "Area", 1: "Population", 2: "MDs", 6: "Dentists", 10: "PHNs"}}
+          - {row: 6, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 13: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2020.xlsx
+        sheet: HEALTH WORKERS PART2
+        data_start_row: 7
+        columns: *hw_3part_p2
+        header_check:
+          - {row: 5, expect: {0: "Area", 1: "Population", 2: "Midwives", 6: "Nutritionists", 10: "Medical Technologists"}}
+          - {row: 6, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 13: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2020.xlsx
+        sheet: HEALTH WORKERS PART3
+        data_start_row: 7
+        columns: *hw_3part_p3_hh
+        header_check:
+          - {row: 5, expect: {0: "Area", 2: "Sanitary Engineers", 6: "Sanitary Inspectors", 10: "Active BHWs", 15: "Households"}}
+          - {row: 6, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 13: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2021.xlsx
+        sheet: HEALTH WORKERS PART1
+        data_start_row: 7
+        columns: *hw_3part_p1
+        header_check:
+          - {row: 4, expect: {0: "Area", 1: "Population", 2: "MDs", 6: "Dentists", 10: "PHNs"}}
+          - {row: 5, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 13: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2021.xlsx
+        sheet: HW Part2
+        data_start_row: 7
+        columns: *hw_3part_p2
+        header_check:
+          - {row: 4, expect: {0: "Area", 1: "Population", 2: "Midwives", 6: "Nutritionists", 10: "Medical Technologists"}}
+          - {row: 5, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 13: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2021.xlsx
+        sheet: HEALTH WORKERS PART3
+        data_start_row: 7
+        columns: *hw_3part_p3
+        header_check:
+          - {row: 4, expect: {0: "Area", 2: "Sanitary Engineers", 6: "Sanitary Inspectors", 10: "Active BHWs"}}
+          - {row: 5, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 13: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2022.xlsx
+        sheet: HEALTH WORKERS PART1
+        data_start_row: 7
+        columns: *hw_2part_p1
+        header_check:
+          - {row: 4, expect: {0: "Area", 2: "MDs", 6: "Dentists", 10: "PHNs", 14: "Midwives", 18: "Nutritionists"}}
+          - {row: 5, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 21: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2022.xlsx
+        sheet: HEALTH WORKERS PART2
+        data_start_row: 7
+        columns: *hw_2part_p2_hh
+        header_check:
+          - {row: 4, expect: {0: "Area", 2: "Medical Technologists", 6: "Sanitary Engineers", 10: "Sanitary Inspectors", 14: "Active BHWs", 19: "Households"}}
+          - {row: 5, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 17: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2023.xlsx
+        sheet: HEALTH WORKERS PART1
+        data_start_row: 7
+        columns: *hw_2part_p1
+        header_check:
+          - {row: 4, expect: {0: "Area", 2: "MDs", 6: "Dentists", 10: "PHNs", 14: "Midwives", 18: "Nutritionists"}}
+          - {row: 5, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 21: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2023.xlsx
+        sheet: HEALTH WORKERS PART2
+        data_start_row: 7
+        columns: *hw_2part_p2
+        header_check:
+          - {row: 4, expect: {0: "Area", 2: "Medical Technologists", 6: "Sanitary Engineers", 10: "Sanitary Inspectors", 14: "Active BHWs"}}
+          - {row: 5, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 17: "Ratio"}}
+      - name: doh_fhsis_demographic_province_annual_2024.xlsx
+        sheet: Health Workers
+        data_start_row: 7
+        columns: *hw_2024
+        header_check:
+          - {row: 4, expect: {0: "Area", 1: "Population", 2: "Doctors", 6: "Nurses", 10: "Midwives", 14: "Dentists", 18: "Medical Technologists", 22: "Nutritionists", 26: "Sanitary", 30: "Sanitary Inspectors", 34: "Households", 35: "Barangay Health Workers"}}
+          - {row: 6, expect: {2: "LGU Hired", 3: "DOH Hired", 4: "Total", 5: "Ratio", 35: "LGU Hired", 38: "Ratio"}}
+      - name: doh_fhsis_demographic_municipality_annual_2025.xlsx
+        sheet: Health Workers
+        data_start_row: 7
+        columns: *hw_2025
+        header_check:
+          - {row: 4, expect: {0: "PSGC", 1: "Area", 2: "Population", 3: "Doctors", 7: "Nurses", 11: "Midwives", 15: "Dentists", 19: "Medical Technologists", 23: "Nutr", 27: "Sanitary Engineers", 31: "Sanitary Inspectors", 35: "Household", 36: "Barangay Health Workers"}}
+          - {row: 6, expect: {3: "LGU Hired", 4: "DOH Hired", 5: "Total", 6: "Ratio", 36: "LGU Hired", 37: "Ratio"}}
     bronze_table: "public_health.bronze.workforce_fhsis_health_workers_bronze"
-    as_of_date: 2026-10-05                 # download date
+    as_of_date: 2026-10-05
     load_mode: upsert
     merge_keys: [area_name, year]          # year from _source_file; 2025 can use psgc_code
     sharing: public
@@ -180,7 +310,7 @@ sources:
       professions: [doctors, dentists, nurses, midwives, nutritionists, medtech,
                     sanitary_engineers, sanitary_inspectors, bhw]
     qc:
-      expected_rows:                       # all sheets of a file together
+      expected_rows:                       # all sheets of a file together (local test 2026-10-05)
         doh_fhsis_demographic_province_annual_2018.xlsx: 644
         doh_fhsis_demographic_province_annual_2019.xlsx: 600
         doh_fhsis_demographic_province_annual_2020.xlsx: 593
@@ -235,8 +365,12 @@ sources:
     encoding: utf-8
     header_mode: single
     skip_rows: 1                           # row 0 is the table title
+    required_columns: ["Region", "Professionals", "2012", "2023"]   # from column_map
+    header_check:
+      - {row: 0, expect: {0: "TABLE 9.14"}}
+      - {row: 1, expect: {0: "Region", 1: "Professionals", 2: "2012", 13: "2023"}}
     bronze_table: "public_health.bronze.workforce_psa_gov_practitioners_bronze"
-    as_of_date: 2026-10-05                 # download date
+    as_of_date: 2026-10-05
     load_mode: upsert
     merge_keys: [region_name, profession, year]
     sharing: open
@@ -264,3 +398,40 @@ sources:
       - Nurses jump about 2.5x in 2019 (5,975 to 15,111). Matches FHSIS PHN totals, so it is in the source (likely DOH-deployed nurses counted from 2019).
       - Suspect values: Region I 2020 drops to 51 doctors; CARAGA 2013 all zero; XI repeats 2020=2021 and 2022=2023; IX repeats 2019=2020. Flag in silver QC, do not fix.
       - Government practitioners only. Private sector is not included.
+
+  # ---------------------------------------------------------------------------
+  # 3. PSMO medical oncologists: area count, directory snapshot  (OPEN)
+  # ---------------------------------------------------------------------------
+  psmo_oncologists:
+    description: Medical oncologists by region and area (PSMO member directory count)
+    agency: Philippine Society of Medical Oncology (PSMO)
+    obtained_via: PSMO website directory
+    path: workforce/psmo_oncologists
+    files:
+      - psmo_oncologists_province_asof_20261005.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 0
+    required_columns: [region, province_area, doctor_count]
+    bronze_table: "public_health.bronze.workforce_psmo_oncologists_bronze"
+    as_of_date: 2026-10-05
+    load_mode: latest_file                 # snapshot; silver keeps the newest pull
+    merge_keys: [region, province_area]
+    sharing: open
+    coverage: 52 areas, 419 oncologists, single snapshot
+    workforce:
+      geo_level: [province]                # mixed: provinces, cities, NCR districts
+      period_grain: snapshot
+      professions: [medical_oncologists]
+    qc:
+      expected_rows: 52
+      numeric_columns: [doctor_count]
+      control_values:
+        - {label: "PSMO oncologists total", column: doctor_count, expected: 419, where: "1 = 1"}
+    notes:
+      - PSMO members only (medical oncology); excludes radiation and surgical oncologists.
+      - Mixed geography - provinces, cities (Baguio, Bacolod, Tacloban), NCR districts, and one region name used as an area (Cagayan Valley). Map to PSGC via the geo name crosswalk.
+      - NCR has "Metro Manila" (63) plus 4 districts (117); CONFIRM whether Metro Manila overlaps the districts before summing NCR.
+      - A newer pull is a new file in this folder, added to `files:`.

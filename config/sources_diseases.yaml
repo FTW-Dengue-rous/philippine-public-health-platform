@@ -58,7 +58,7 @@ defaults:
   silver_enabled: true
   encoding_errors: strict
   metadata_table: "public_health.bronze.ingestion_metadata"
-  qc_results_table: "public_health.bronze.qc_results"
+  qc_results_table: "public_health.quality.qc_results"
   silver_target: "public_health.silver.diseases_metric_silver"
 
 sources:
