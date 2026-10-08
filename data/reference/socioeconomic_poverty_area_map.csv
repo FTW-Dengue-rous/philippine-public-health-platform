@@ -1,0 +1,109 @@
+area_key,geo_name_source,geo_level,psgc_code,parent_geo_name_source,geo_coverage_basis,coverage_confirmed,first_estimate_year,is_superseded_area,comparison_eligible,exclusion_reason,source_order
+ph,PHILIPPINES,country,,,country,true,2021,false,true,,1
+psgc:1300000000,National Capital Region (NCR),region,1300000000,,region,true,2021,false,true,,2
+ncr-district:1,1st District,ncr_district,,National Capital Region (NCR),ncr_district,true,2021,false,false,no_psgc_equivalent,3
+ncr-district:2,2nd District,ncr_district,,National Capital Region (NCR),ncr_district,true,2021,false,false,no_psgc_equivalent,4
+ncr-district:3,3rd District,ncr_district,,National Capital Region (NCR),ncr_district,true,2021,false,false,no_psgc_equivalent,5
+ncr-district:4,4th District,ncr_district,,National Capital Region (NCR),ncr_district,true,2021,false,false,no_psgc_equivalent,6
+psgc:1400000000,Cordillera Administrative Region (CAR),region,1400000000,,region,true,2021,false,true,,7
+psgc:1400100000,Abra,province,1400100000,Cordillera Administrative Region (CAR),province,false,2021,false,true,,8
+psgc:1408100000,Apayao,province,1408100000,Cordillera Administrative Region (CAR),province,false,2021,false,true,,9
+psgc:1401100000,Benguet,province,1401100000,Cordillera Administrative Region (CAR),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,10
+psgc:1402700000,Ifugao,province,1402700000,Cordillera Administrative Region (CAR),province,false,2021,false,true,,11
+psgc:1403200000,Kalinga,province,1403200000,Cordillera Administrative Region (CAR),province,false,2021,false,true,,12
+psgc:1404400000,Mt. Province,province,1404400000,Cordillera Administrative Region (CAR),province,false,2021,false,true,,13
+psgc:0100000000,Region I (Ilocos Region),region,0100000000,,region,true,2021,false,true,,14
+psgc:0102800000,Ilocos Norte,province,0102800000,Region I (Ilocos Region),province,false,2021,false,true,,15
+psgc:0102900000,Ilocos Sur,province,0102900000,Region I (Ilocos Region),province,false,2021,false,true,,16
+psgc:0103300000,La Union,province,0103300000,Region I (Ilocos Region),province,false,2021,false,true,,17
+psgc:0105500000,Pangasinan,province,0105500000,Region I (Ilocos Region),province,false,2021,false,true,,18
+psgc:0200000000,Region II (Cagayan Valley),region,0200000000,,region,true,2021,false,true,,19
+psgc:0200900000,Batanes,province,0200900000,Region II (Cagayan Valley),province,false,2021,false,true,,20
+psgc:0201500000,Cagayan,province,0201500000,Region II (Cagayan Valley),province,false,2021,false,true,,21
+psgc:0203100000,Isabela,province,0203100000,Region II (Cagayan Valley),province,false,2021,false,true,,22
+psgc:0205000000,Nueva Vizcaya,province,0205000000,Region II (Cagayan Valley),province,false,2021,false,true,,23
+psgc:0205700000,Quirino,province,0205700000,Region II (Cagayan Valley),province,false,2021,false,true,,24
+psgc:0300000000,Region III (Central Luzon),region,0300000000,,region,true,2021,false,true,,25
+psgc:0307700000,Aurora,province,0307700000,Region III (Central Luzon),province,false,2021,false,true,,26
+psgc:0300800000,Bataan,province,0300800000,Region III (Central Luzon),province,false,2021,false,true,,27
+psgc:0301400000,Bulacan,province,0301400000,Region III (Central Luzon),province,false,2021,false,true,,28
+psgc:0304900000,Nueva Ecija,province,0304900000,Region III (Central Luzon),province,false,2021,false,true,,29
+psgc:0305400000,Pampanga,province,0305400000,Region III (Central Luzon),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,30
+psgc:0306900000,Tarlac,province,0306900000,Region III (Central Luzon),province,false,2021,false,true,,31
+psgc:0307100000,Zambales,province,0307100000,Region III (Central Luzon),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,32
+psgc:0400000000,Region IV-A (CALABARZON),region,0400000000,,region,true,2021,false,true,,33
+psgc:0401000000,Batangas,province,0401000000,Region IV-A (CALABARZON),province,false,2021,false,true,,34
+psgc:0402100000,Cavite,province,0402100000,Region IV-A (CALABARZON),province,false,2021,false,true,,35
+psgc:0403400000,Laguna,province,0403400000,Region IV-A (CALABARZON),province,false,2021,false,true,,36
+psgc:0405600000,Quezon,province,0405600000,Region IV-A (CALABARZON),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,37
+psgc:0405800000,Rizal,province,0405800000,Region IV-A (CALABARZON),province,false,2021,false,true,,38
+psgc:1700000000,MIMAROPA Region,region,1700000000,,region,true,2021,false,true,,39
+psgc:1704000000,Marinduque,province,1704000000,MIMAROPA Region,province,false,2021,false,true,,40
+psgc:1705100000,Occidental Mindoro,province,1705100000,MIMAROPA Region,province,false,2021,false,true,,41
+psgc:1705200000,Oriental Mindoro,province,1705200000,MIMAROPA Region,province,false,2021,false,true,,42
+psgc:1705300000,Palawan,province,1705300000,MIMAROPA Region,province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,43
+psgc:1705900000,Romblon,province,1705900000,MIMAROPA Region,province,false,2021,false,true,,44
+psgc:0500000000,Region V (Bicol Region),region,0500000000,,region,true,2021,false,true,,45
+psgc:0500500000,Albay,province,0500500000,Region V (Bicol Region),province,false,2021,false,true,,46
+psgc:0501600000,Camarines Norte,province,0501600000,Region V (Bicol Region),province,false,2021,false,true,,47
+psgc:0501700000,Camarines Sur,province,0501700000,Region V (Bicol Region),province,false,2021,false,true,,48
+psgc:0502000000,Catanduanes,province,0502000000,Region V (Bicol Region),province,false,2021,false,true,,49
+psgc:0504100000,Masbate,province,0504100000,Region V (Bicol Region),province,false,2021,false,true,,50
+psgc:0506200000,Sorsogon,province,0506200000,Region V (Bicol Region),province,false,2021,false,true,,51
+psgc:0600000000,Region VI (Western Visayas),region,0600000000,,region,true,2021,false,true,,52
+psgc:0600400000,Aklan,province,0600400000,Region VI (Western Visayas),province,false,2021,false,true,,53
+psgc:0600600000,Antique,province,0600600000,Region VI (Western Visayas),province,false,2021,false,true,,54
+psgc:0601900000,Capiz,province,0601900000,Region VI (Western Visayas),province,false,2021,false,true,,55
+psgc:0607900000,Guimaras,province,0607900000,Region VI (Western Visayas),province,false,2021,false,true,,56
+psgc:0603000000,Iloilo,province,0603000000,Region VI (Western Visayas),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,57
+psgc:1800000000,Negros Island Region (NIR),region,1800000000,,region,true,2021,false,true,,58
+psgc:1804500000,Negros Occidental,province,1804500000,Negros Island Region (NIR),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,59
+psgc:1804600000,Negros Oriental,province,1804600000,Negros Island Region (NIR),province,false,2021,false,true,,60
+psgc:1806100000,Siquijor,province,1806100000,Negros Island Region (NIR),province,false,2021,false,true,,61
+psgc:0700000000,Region VII (Central Visayas),region,0700000000,,region,true,2021,false,true,,62
+psgc:0701200000,Bohol,province,0701200000,Region VII (Central Visayas),province,false,2021,false,true,,63
+psgc:0702200000,Cebu,province,0702200000,Region VII (Central Visayas),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,64
+psgc:0800000000,Region VIII (Eastern Visayas),region,0800000000,,region,true,2021,false,true,,65
+psgc:0807800000,Biliran,province,0807800000,Region VIII (Eastern Visayas),province,false,2021,false,true,,66
+psgc:0802600000,Eastern Samar,province,0802600000,Region VIII (Eastern Visayas),province,false,2021,false,true,,67
+psgc:0803700000,Leyte,province,0803700000,Region VIII (Eastern Visayas),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,68
+psgc:0804800000,Northern Samar,province,0804800000,Region VIII (Eastern Visayas),province,false,2021,false,true,,69
+psgc:0806400000,Southern Leyte,province,0806400000,Region VIII (Eastern Visayas),province,false,2021,false,true,,70
+psgc:0806000000,Samar,province,0806000000,Region VIII (Eastern Visayas),province,false,2021,false,true,,71
+psgc:0900000000,Region IX (Zamboanga Peninsula),region,0900000000,,region,true,2021,false,true,,72
+psgc:0907200000,Zamboanga del Norte,province,0907200000,Region IX (Zamboanga Peninsula),province,false,2021,false,true,,73
+psgc:0907300000,Zamboanga del Sur,province,0907300000,Region IX (Zamboanga Peninsula),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,74
+psgc:0908300000,Zamboanga Sibugay,province,0908300000,Region IX (Zamboanga Peninsula),province,false,2021,false,true,,75
+psgc:0990100000,Isabela City,city,0990100000,Region IX (Zamboanga Peninsula),city_listed_separately,true,2021,false,true,,76
+psgc:0906600000,Sulu,province,0906600000,Region IX (Zamboanga Peninsula),province,false,2021,false,true,,77
+psgc:1000000000,Region X (Northern Mindanao),region,1000000000,,region,true,2021,false,true,,78
+psgc:1001300000,Bukidnon,province,1001300000,Region X (Northern Mindanao),province,false,2021,false,true,,79
+psgc:1001800000,Camiguin,province,1001800000,Region X (Northern Mindanao),province,false,2021,false,true,,80
+psgc:1003500000,Lanao del Norte,province,1003500000,Region X (Northern Mindanao),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,81
+psgc:1004200000,Misamis Occidental,province,1004200000,Region X (Northern Mindanao),province,false,2021,false,true,,82
+psgc:1004300000,Misamis Oriental,province,1004300000,Region X (Northern Mindanao),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,83
+psgc:1100000000,Region XI (Davao Region),region,1100000000,,region,true,2021,false,true,,84
+psgc:1102300000,Davao del Norte,province,1102300000,Region XI (Davao Region),province,false,2021,false,true,,85
+psgc:1102400000,Davao del Sur,province,1102400000,Region XI (Davao Region),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,86
+psgc:1102500000,Davao Oriental,province,1102500000,Region XI (Davao Region),province,false,2021,false,true,,87
+psgc:1108200000,Davao de Oro,province,1108200000,Region XI (Davao Region),province,false,2021,false,true,,88
+psgc:1108600000,Davao Occidental,province,1108600000,Region XI (Davao Region),province,false,2021,false,true,,89
+psgc:1200000000,Region XII (SOCCSKSARGEN),region,1200000000,,region,true,2021,false,true,,90
+psgc:1204700000,Cotabato,province,1204700000,Region XII (SOCCSKSARGEN),province,false,2021,false,true,,91
+psgc:1208000000,Sarangani,province,1208000000,Region XII (SOCCSKSARGEN),province,false,2021,false,true,,92
+psgc:1206300000,South Cotabato,province,1206300000,Region XII (SOCCSKSARGEN),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,93
+psgc:1206500000,Sultan Kudarat,province,1206500000,Region XII (SOCCSKSARGEN),province,false,2021,false,true,,94
+psgc:1600000000,Region XIII (Caraga),region,1600000000,,region,true,2021,false,true,,95
+psgc:1600200000,Agusan del Norte,province,1600200000,Region XIII (Caraga),province_incl_huc,false,2021,false,false,poverty_includes_huc_psgc_population_excludes,96
+psgc:1600300000,Agusan del Sur,province,1600300000,Region XIII (Caraga),province,false,2021,false,true,,97
+psgc:1606700000,Surigao del Norte,province,1606700000,Region XIII (Caraga),province,false,2021,false,true,,98
+psgc:1606800000,Surigao del Sur,province,1606800000,Region XIII (Caraga),province,false,2021,false,true,,99
+psgc:1608500000,Dinagat Islands,province,1608500000,Region XIII (Caraga),province,false,2021,false,true,,100
+psgc:1900000000,Bangsamoro Autonomous Region in Muslim Mindanao (BARMM),region,1900000000,,region,true,2021,false,true,,101
+psgc:1900700000,Basilan,province,1900700000,Bangsamoro Autonomous Region in Muslim Mindanao (BARMM),province_excl_listed_city,false,2021,false,false,coverage_unconfirmed,102
+psgc:1903600000,Lanao del Sur,province,1903600000,Bangsamoro Autonomous Region in Muslim Mindanao (BARMM),province,false,2021,false,true,,103
+hist:maguindanao,Maguindanao,province,,Bangsamoro Autonomous Region in Muslim Mindanao (BARMM),superseded_province,false,2021,true,false,superseded_area,104
+psgc:1908700000,Maguindanao del Norte,province,1908700000,Bangsamoro Autonomous Region in Muslim Mindanao (BARMM),province,false,2023,false,true,,105
+psgc:1908800000,Maguindanao del Sur,province,1908800000,Bangsamoro Autonomous Region in Muslim Mindanao (BARMM),province,false,2023,false,true,,106
+psgc:1907000000,Tawi-tawi,province,1907000000,Bangsamoro Autonomous Region in Muslim Mindanao (BARMM),province,false,2021,false,true,,107
+psgc:1908703000,Cotabato City,city,1908703000,Bangsamoro Autonomous Region in Muslim Mindanao (BARMM),city_listed_separately,true,2021,false,true,,108

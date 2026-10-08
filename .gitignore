@@ -5,7 +5,7 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 
-# Environment / secrets — never commit
+# Environment / secrets â€” never commit
 .env
 *.env
 secrets/
@@ -13,9 +13,12 @@ secrets/
 *.key
 config/*.local.*
 
-# Data — keep full datasets out of Git (only data/sample/ is tracked)
+# Data â€” keep full datasets out of Git (only data/sample/ is tracked)
 data/*
 !data/sample/
+!data/reference/
+data/reference/*
+!data/reference/socioeconomic_poverty_area_map.csv
 *.parquet
 *.zip
 *.gz
