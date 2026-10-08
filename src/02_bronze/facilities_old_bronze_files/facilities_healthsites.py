@@ -3,7 +3,9 @@
 import pandas as pd
 
 # --- Read source CSV from landing zone ---
-src_path = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/philippines_healthsites.csv"
+src_path = (
+    "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/philippines_healthsites.csv"
+)
 df = pd.read_csv(src_path, sep=",", header=0)
 
 # Convert all columns to nullable string for Arrow compatibility

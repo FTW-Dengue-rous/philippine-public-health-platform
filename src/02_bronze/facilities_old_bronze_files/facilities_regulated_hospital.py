@@ -11,12 +11,7 @@ drop_cols = [c for c in df.columns if c.startswith("Total")]
 df = df.drop(columns=drop_cols)
 
 # Convert column names to snake_case for Delta compatibility (e.g. "Government 2020" -> "government_2020")
-df.columns = (
-    df.columns
-    .str.strip()
-    .str.lower()
-    .str.replace(r"\s+", "_", regex=True)
-)
+df.columns = df.columns.str.strip().str.lower().str.replace(r"\s+", "_", regex=True)
 
 # Convert all columns to nullable string for Arrow compatibility
 for col in df.columns:

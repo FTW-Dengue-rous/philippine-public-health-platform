@@ -19,6 +19,6 @@ pdf = pd.read_excel(source_path, header=1)
 df = spark.createDataFrame(pdf)
 
 # Write to bronze Delta table (full refresh)
-df.write.format("delta") \
-  .mode("overwrite") \
-  .saveAsTable("ph_public_health.bronze.facilities_primary_care")
+df.write.format("delta").mode("overwrite").saveAsTable(
+    "ph_public_health.bronze.facilities_primary_care"
+)
