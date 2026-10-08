@@ -1,6 +1,8 @@
 # Databricks notebook source
 # openpyxl is required on Serverless compute for .xlsx parsing
-%pip install openpyxl
+# MAGIC %pip install openpyxl
+
+# COMMAND ----------
 
 import pandas as pd
 
@@ -13,7 +15,7 @@ hospital_source_path = (
 # header=3 skips the title, sub-header, and blank rows;
 # row 4 has the actual column names (LEVEL 1, LEVEL 2, LEVEL 3, etc.)
 hospital_pdf = pd.read_excel(hospital_source_path, header=3)
-hospital_pdf = hospital_pdf.dropna(how='all')
+hospital_pdf = hospital_pdf.dropna(how="all")
 
 # Handle NaN/Unnamed column names and duplicates for Spark compatibility.
 # Columns without headers in the Excel file get named col_0, col_1, etc.
@@ -21,10 +23,10 @@ hospital_pdf = hospital_pdf.dropna(how='all')
 _cols = []
 _seen = {}
 for i, c in enumerate(hospital_pdf.columns):
-    name = f'col_{i}' if (pd.isna(c) or str(c).startswith('Unnamed:')) else str(c).strip()
+    name = f"col_{i}" if (pd.isna(c) or str(c).startswith("Unnamed:")) else str(c).strip()
     if name in _seen:
         _seen[name] += 1
-        name = f'{name}_{_seen[name]}'
+        name = f"{name}_{_seen[name]}"
     else:
         _seen[name] = 0
     _cols.append(name)
@@ -32,8 +34,8 @@ hospital_pdf.columns = _cols
 
 # Convert object columns to nullable string type for Arrow compatibility
 # (Spark can't convert mixed object columns to Arrow)
-for col in hospital_pdf.select_dtypes(include=['object']).columns:
-    hospital_pdf[col] = hospital_pdf[col].astype('string')
+for col in hospital_pdf.select_dtypes(include=["object"]).columns:
+    hospital_pdf[col] = hospital_pdf[col].astype("string")
 
 hospital_df = spark.createDataFrame(hospital_pdf)
 
@@ -41,14 +43,13 @@ hospital_df = spark.createDataFrame(hospital_pdf)
 # Column mapping preserves column names with spaces (e.g., "LEVEL 1")
 # overwriteSchema allows schema changes between runs
 (
-    hospital_df.write
-               .format("delta")
-               .mode("overwrite")
-               .option("delta.columnMapping.mode", "name")
-               .option("delta.minReaderVersion", "2")
-               .option("delta.minWriterVersion", "5")
-               .option("overwriteSchema", "true")
-               .saveAsTable("ph_public_health.bronze.facilities_hospital_list")
+    hospital_df.write.format("delta")
+    .mode("overwrite")
+    .option("delta.columnMapping.mode", "name")
+    .option("delta.minReaderVersion", "2")
+    .option("delta.minWriterVersion", "5")
+    .option("overwriteSchema", "true")
+    .saveAsTable("ph_public_health.bronze.facilities_hospital_list")
 )
 
 # COMMAND ----------
