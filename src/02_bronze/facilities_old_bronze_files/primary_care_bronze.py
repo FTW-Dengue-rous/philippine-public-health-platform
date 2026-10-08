@@ -1,6 +1,8 @@
 # Databricks notebook source
 # openpyxl is required on Serverless compute for .xlsx parsing
-%pip install openpyxl
+# MAGIC %pip install openpyxl
+
+# COMMAND ----------
 
 import pandas as pd
 
@@ -17,6 +19,6 @@ pdf = pd.read_excel(source_path, header=1)
 df = spark.createDataFrame(pdf)
 
 # Write to bronze Delta table (full refresh)
-df.write.format("delta") \
-  .mode("overwrite") \
-  .saveAsTable("ph_public_health.bronze.facilities_primary_care")
+df.write.format("delta").mode("overwrite").saveAsTable(
+    "ph_public_health.bronze.facilities_primary_care"
+)
