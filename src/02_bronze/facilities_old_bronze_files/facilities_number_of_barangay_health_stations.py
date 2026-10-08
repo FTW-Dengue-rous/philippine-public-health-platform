@@ -1,63 +1,62 @@
--- Databricks notebook source
--- DBTITLE 1,Ingest and reshape barangay health station data
--- MAGIC %python
--- MAGIC import pandas as pd
--- MAGIC
--- MAGIC # --- Read source CSV from landing zone ---
--- MAGIC src_path = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/number_barangay_health_station_2026_to_2023.csv"
--- MAGIC df = pd.read_csv(src_path, sep=",", header=None)
--- MAGIC
--- MAGIC # Region names from row 3 (columns 2–18), cleaning "MIMA-\nROPA" -> "MIMAROPA"
--- MAGIC regions = ['NCR', 'CAR', 'I', 'II', 'III', 'IV-A', 'MIMAROPA', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'Caraga', 'BARMM']
--- MAGIC
--- MAGIC # Assign column names: col 0 = Year, col 1 = Philippines (national total), cols 2–18 = regions
--- MAGIC df.columns = ['Year', 'Philippines'] + regions + [f'col_{i}' for i in range(19, df.shape[1])]
--- MAGIC
--- MAGIC # Keep only data rows (where Year is a 4-digit year string)
--- MAGIC df = df[df['Year'].astype(str).str.match(r'^\d{4}$', na=False)].copy()
--- MAGIC
--- MAGIC # Select relevant columns
--- MAGIC cols_to_keep = ['Year', 'Philippines'] + regions
--- MAGIC df = df[cols_to_keep]
--- MAGIC
--- MAGIC # --- Unpivot wide format to long format ---
--- MAGIC melted = df.melt(
--- MAGIC     id_vars=['Year'],
--- MAGIC     var_name='region',
--- MAGIC     value_name='number_of_barangay_health_stations',
--- MAGIC )
--- MAGIC melted = melted.rename(columns={'Year': 'year'})
--- MAGIC
--- MAGIC # Clean values: strip whitespace, remove commas, handle "-" as null
--- MAGIC melted['number_of_barangay_health_stations'] = (
--- MAGIC     melted['number_of_barangay_health_stations']
--- MAGIC     .astype(str)
--- MAGIC     .str.strip()
--- MAGIC     .str.replace(',', '', regex=False)
--- MAGIC     .str.replace('-', '', regex=False)
--- MAGIC     .str.strip()
--- MAGIC )
--- MAGIC melted['number_of_barangay_health_stations'] = melted['number_of_barangay_health_stations'].replace('', None)
--- MAGIC melted['region'] = melted['region'].astype(str).str.strip()
--- MAGIC
--- MAGIC # Select and sort final columns
--- MAGIC melted = melted[['region', 'year', 'number_of_barangay_health_stations']]
--- MAGIC melted = melted.sort_values(['region', 'year']).reset_index(drop=True)
--- MAGIC
--- MAGIC # Convert all columns to nullable string for Arrow compatibility
--- MAGIC for col in melted.columns:
--- MAGIC     melted[col] = melted[col].astype('string')
--- MAGIC
--- MAGIC # --- Write to Delta table ---
--- MAGIC table_name = "public_health.bronze.facilities_number_of_barangay_health_stations"
--- MAGIC spark_df = spark.createDataFrame(melted)
--- MAGIC (
--- MAGIC     spark_df.write.format('delta')
--- MAGIC     .mode('overwrite')
--- MAGIC     .option('columnMapping.mode', 'name')
--- MAGIC     .option('overwriteSchema', 'true')
--- MAGIC     .saveAsTable(table_name)
--- MAGIC )
--- MAGIC
--- MAGIC print(f"Wrote {melted.shape[0]} rows to {table_name}")
--- MAGIC display(spark.table(table_name).limit(20))
+# Databricks notebook source
+# DBTITLE 1,Ingest and reshape barangay health station data
+import pandas as pd
+
+# --- Read source CSV from landing zone ---
+src_path = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/number_barangay_health_station_2026_to_2023.csv"
+df = pd.read_csv(src_path, sep=",", header=None)
+
+# Region names from row 3 (columns 2–18), cleaning "MIMA-\nROPA" -> "MIMAROPA"
+regions = ['NCR', 'CAR', 'I', 'II', 'III', 'IV-A', 'MIMAROPA', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'Caraga', 'BARMM']
+
+# Assign column names: col 0 = Year, col 1 = Philippines (national total), cols 2–18 = regions
+df.columns = ['Year', 'Philippines'] + regions + [f'col_{i}' for i in range(19, df.shape[1])]
+
+# Keep only data rows (where Year is a 4-digit year string)
+df = df[df['Year'].astype(str).str.match(r'^\d{4}$', na=False)].copy()
+
+# Select relevant columns
+cols_to_keep = ['Year', 'Philippines'] + regions
+df = df[cols_to_keep]
+
+# --- Unpivot wide format to long format ---
+melted = df.melt(
+    id_vars=['Year'],
+    var_name='region',
+    value_name='number_of_barangay_health_stations',
+)
+melted = melted.rename(columns={'Year': 'year'})
+
+# Clean values: strip whitespace, remove commas, handle "-" as null
+melted['number_of_barangay_health_stations'] = (
+    melted['number_of_barangay_health_stations']
+    .astype(str)
+    .str.strip()
+    .str.replace(',', '', regex=False)
+    .str.replace('-', '', regex=False)
+    .str.strip()
+)
+melted['number_of_barangay_health_stations'] = melted['number_of_barangay_health_stations'].replace('', None)
+melted['region'] = melted['region'].astype(str).str.strip()
+
+# Select and sort final columns
+melted = melted[['region', 'year', 'number_of_barangay_health_stations']]
+melted = melted.sort_values(['region', 'year']).reset_index(drop=True)
+
+# Convert all columns to nullable string for Arrow compatibility
+for col in melted.columns:
+    melted[col] = melted[col].astype('string')
+
+# --- Write to Delta table ---
+table_name = "public_health.bronze.facilities_number_of_barangay_health_stations"
+spark_df = spark.createDataFrame(melted)
+(
+    spark_df.write.format('delta')
+    .mode('overwrite')
+    .option('columnMapping.mode', 'name')
+    .option('overwriteSchema', 'true')
+    .saveAsTable(table_name)
+)
+
+print(f"Wrote {melted.shape[0]} rows to {table_name}")
+display(spark.table(table_name).limit(20))
