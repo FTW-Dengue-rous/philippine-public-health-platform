@@ -271,13 +271,16 @@ def latest_metadata(cfg, entry):
     # Returns {relative_file: {"rows", "batch_id", "loaded_at"}}, or None if the log cannot be read.
     # The latest load is picked by its loader batch_id (not by timestamp alone), and the rows
     # of that one load are summed (a workbook has one log row per sheet).
-    # batch_id for QC = source_key:sha256 of the file, i.e. the exact file version checked.
+    # Per the lineage and QC contract: qc_results.batch_id is the loader's load id
+    # (ingestion_metadata.batch_id; _load_batch_id in silver lineage) — WHICH LOAD was checked.
+    # Which bytes were checked stays separate: source_key (qc_results.source_key) plus
+    # content_checksum (ingestion_metadata). The identities are never merged into one string.
     table = entry.get("metadata_table")
     if not table or not spark.catalog.tableExists(table):
         return None
     rows = spark.sql(f"""
         WITH ok AS (
-          SELECT batch_id, raw_file_path, content_checksum, record_count, retrieved_at
+          SELECT batch_id, raw_file_path, record_count, retrieved_at
           FROM {table}
           WHERE source_name = {sql_str(entry["source_key"])}
             AND bronze_table = {sql_str(entry["bronze_table"])}
@@ -285,7 +288,7 @@ def latest_metadata(cfg, entry):
         last AS (
           SELECT raw_file_path, max_by(batch_id, retrieved_at) AS batch_id
           FROM ok GROUP BY raw_file_path)
-        SELECT o.raw_file_path, max(o.content_checksum) AS checksum, sum(o.record_count) AS n,
+        SELECT o.raw_file_path, max(o.batch_id) AS load_batch_id, sum(o.record_count) AS n,
                max(o.retrieved_at) AS loaded_at
         FROM ok o JOIN last l ON o.raw_file_path = l.raw_file_path AND o.batch_id <=> l.batch_id
         GROUP BY o.raw_file_path""").collect()
@@ -300,7 +303,7 @@ def latest_metadata(cfg, entry):
         out[rel] = {
             "rows": r["n"],
             "loaded_at": r["loaded_at"],
-            "batch_id": f"{entry['source_key']}:{r['checksum']}" if r["checksum"] else None,
+            "batch_id": r["load_batch_id"],
         }
     return out
 
