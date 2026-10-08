@@ -1,26 +1,25 @@
--- Databricks notebook source
--- DBTITLE 1,Ingest healthsites data as-is
--- MAGIC %python
--- MAGIC import pandas as pd
--- MAGIC
--- MAGIC # --- Read source CSV from landing zone ---
--- MAGIC src_path = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/philippines_healthsites.csv"
--- MAGIC df = pd.read_csv(src_path, sep=",", header=0)
--- MAGIC
--- MAGIC # Convert all columns to nullable string for Arrow compatibility
--- MAGIC for col in df.columns:
--- MAGIC     df[col] = df[col].astype("string")
--- MAGIC
--- MAGIC # --- Write to Delta table ---
--- MAGIC table_name = "ph_public_health.bronze.facilities_healthsites"
--- MAGIC spark_df = spark.createDataFrame(df)
--- MAGIC (
--- MAGIC     spark_df.write.format("delta")
--- MAGIC     .mode("overwrite")
--- MAGIC     .option("columnMapping.mode", "name")
--- MAGIC     .option("overwriteSchema", "true")
--- MAGIC     .saveAsTable(table_name)
--- MAGIC )
--- MAGIC
--- MAGIC print(f"Wrote {df.shape[0]} rows to {table_name}")
--- MAGIC display(spark.table(table_name).limit(20))
+# Databricks notebook source
+# DBTITLE 1,Ingest healthsites data as-is
+import pandas as pd
+
+# --- Read source CSV from landing zone ---
+src_path = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/philippines_healthsites.csv"
+df = pd.read_csv(src_path, sep=",", header=0)
+
+# Convert all columns to nullable string for Arrow compatibility
+for col in df.columns:
+    df[col] = df[col].astype("string")
+
+# --- Write to Delta table ---
+table_name = "ph_public_health.bronze.facilities_healthsites"
+spark_df = spark.createDataFrame(df)
+(
+    spark_df.write.format("delta")
+    .mode("overwrite")
+    .option("columnMapping.mode", "name")
+    .option("overwriteSchema", "true")
+    .saveAsTable(table_name)
+)
+
+print(f"Wrote {df.shape[0]} rows to {table_name}")
+display(spark.table(table_name).limit(20))
