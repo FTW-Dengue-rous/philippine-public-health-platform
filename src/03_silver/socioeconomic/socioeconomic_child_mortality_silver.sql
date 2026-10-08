@@ -168,4 +168,3 @@ validation_gates AS (
 SELECT gate, failures,
        CASE WHEN failures=0 THEN 'PASS' ELSE 'FAIL' END AS status
 FROM validation_gates ORDER BY gate;
-

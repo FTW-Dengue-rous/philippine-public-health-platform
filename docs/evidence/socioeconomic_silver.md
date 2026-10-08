@@ -421,4 +421,3 @@ Limitations:
 - Search for row_disposition and build_inputs in origin/dev src/ and docs/: no matches.
 - Decision: Defer publication of these two tables until the shared integration requirements are confirmed.
 - Published tables remain unchanged.
-
