@@ -1,5 +1,4 @@
 # Databricks notebook source
-# Databricks notebook source
 # Run this file as a Databricks notebook after the Silver load.
 # dq_utils.py must be a Python file in the same quality folder.
 # quality_setup.sql must already have been run.
@@ -8,6 +7,7 @@
 import sys
 from pathlib import Path
 
+import yaml
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
@@ -29,7 +29,6 @@ BATCH_ID = "6281db6c-127e-40f5-90db-47574d710430"
 CONFIG_PATH = Path(
     "/Workspace/Users/shiena.arico@ftwfoundation.org/philippine-public-health-platform/config/sources_geography.yaml"
 )
-import yaml
 
 with CONFIG_PATH.open(encoding="utf-8") as file:
     config = yaml.safe_load(file)
