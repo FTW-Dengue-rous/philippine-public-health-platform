@@ -5,9 +5,11 @@
 # quality_setup.sql must already have been run.
 # These checks only read Bronze/Silver and write quality audit results.
 
-from pathlib import Path
 import sys
-from pyspark.sql import SparkSession, functions as F
+from pathlib import Path
+
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 # Make the script folder available for importing dq_utils.py.
 if "__file__" in globals():
@@ -37,6 +39,7 @@ def read_snapshot(table_name):
 def count_sql(query):
     return int(spark.sql(query).first()[0])
 
+
 # =============================================================================
 # 2. READ THE PERSISTED SNAPSHOTS.
 # =============================================================================
@@ -52,14 +55,26 @@ print(f"Bronze rows: {bronze_rows}; Silver rows: {silver_rows}")
 # =============================================================================
 # 3. CHECKS: DQRun saves the results, then raises if any check is FAIL.
 # =============================================================================
-with DQRun(layer="silver", domain="admin_boundaries", script_name="admin_boundaries_silver_qc_beginner.py",
-           source_keys="hdx_phl_admin", fail_on_error=True) as dq:
-
+with DQRun(
+    layer="silver",
+    domain="admin_boundaries",
+    script_name="admin_boundaries_silver_qc_beginner.py",
+    source_keys="hdx_phl_admin",
+    fail_on_error=True,
+) as dq:
     # AS01: both source and target snapshots must contain records.
-    dq.record("AS01", table_name=SILVER_TABLE, source_key="hdx_phl_admin", batch_id=BATCH_ID,
-              check_name="Snapshot exists and has rows", check_type="COMPLETENESS",
-              severity="FAIL", status="PASS" if silver_rows > 0 and bronze_rows > 0 else "FAIL",
-              observed=silver_rows, expected="Nonempty Bronze and Silver snapshots")
+    dq.record(
+        "AS01",
+        table_name=SILVER_TABLE,
+        source_key="hdx_phl_admin",
+        batch_id=BATCH_ID,
+        check_name="Snapshot exists and has rows",
+        check_type="COMPLETENESS",
+        severity="FAIL",
+        status="PASS" if silver_rows > 0 and bronze_rows > 0 else "FAIL",
+        observed=silver_rows,
+        expected="Nonempty Bronze and Silver snapshots",
+    )
 
     # AS02: PSGC code is not included here because special structures may have null codes.
     missing = count_sql("""
@@ -74,9 +89,18 @@ with DQRun(layer="silver", domain="admin_boundaries", script_name="admin_boundar
            OR psgc_reference_checksum IS NULL OR TRIM(psgc_reference_checksum) = ''
            OR silver_processed_at IS NULL
     """)
-    dq.record("AS02", table_name=SILVER_TABLE, source_key="hdx_phl_admin", batch_id=BATCH_ID,
-              check_name="Required boundary fields complete", check_type="COMPLETENESS",
-              severity="FAIL", threshold=0, fail_count=missing, total_count=silver_rows)
+    dq.record(
+        "AS02",
+        table_name=SILVER_TABLE,
+        source_key="hdx_phl_admin",
+        batch_id=BATCH_ID,
+        check_name="Required boundary fields complete",
+        check_type="COMPLETENESS",
+        severity="FAIL",
+        threshold=0,
+        fail_count=missing,
+        total_count=silver_rows,
+    )
 
     # AS03: the logical key must identify only one row.
     duplicates = count_sql("""
@@ -85,9 +109,18 @@ with DQRun(layer="silver", domain="admin_boundaries", script_name="admin_boundar
             GROUP BY admin_level, boundary_pcode, source_version HAVING COUNT(*) > 1
         )
     """)
-    dq.record("AS03", table_name=SILVER_TABLE, source_key="hdx_phl_admin", batch_id=BATCH_ID,
-              check_name="Boundary logical key unique", check_type="UNIQUENESS",
-              severity="FAIL", threshold=0, fail_count=duplicates, total_count=silver_rows)
+    dq.record(
+        "AS03",
+        table_name=SILVER_TABLE,
+        source_key="hdx_phl_admin",
+        batch_id=BATCH_ID,
+        check_name="Boundary logical key unique",
+        check_type="UNIQUENESS",
+        severity="FAIL",
+        threshold=0,
+        fail_count=duplicates,
+        total_count=silver_rows,
+    )
 
     # AS04: only ADM1/2/3 and polygon boundary types are allowed.
     invalid_values = count_sql("""
@@ -95,16 +128,35 @@ with DQRun(layer="silver", domain="admin_boundaries", script_name="admin_boundar
         WHERE admin_level IS NULL OR admin_level NOT IN ('1', '2', '3')
            OR geometry_type IS NULL OR geometry_type NOT IN ('Polygon', 'MultiPolygon')
     """)
-    dq.record("AS04", table_name=SILVER_TABLE, source_key="hdx_phl_admin", batch_id=BATCH_ID,
-              check_name="Administrative and geometry values accepted", check_type="VALIDITY",
-              severity="FAIL", threshold=0, fail_count=invalid_values, total_count=silver_rows)
+    dq.record(
+        "AS04",
+        table_name=SILVER_TABLE,
+        source_key="hdx_phl_admin",
+        batch_id=BATCH_ID,
+        check_name="Administrative and geometry values accepted",
+        check_type="VALIDITY",
+        severity="FAIL",
+        threshold=0,
+        fail_count=invalid_values,
+        total_count=silver_rows,
+    )
 
     # ASB05: this beginner check compares total counts only.
     # It has its own code because AS05 in the detailed script also compares counts per level.
-    dq.record("ASB05", table_name=SILVER_TABLE, source_key="hdx_phl_admin", batch_id=BATCH_ID,
-              check_name="Boundary total rows reconcile", check_type="RECONCILIATION",
-              severity="FAIL", threshold=0, fail_count=abs(bronze_rows - silver_rows),
-              total_count=bronze_rows, observed=silver_rows, expected=bronze_rows)
+    dq.record(
+        "ASB05",
+        table_name=SILVER_TABLE,
+        source_key="hdx_phl_admin",
+        batch_id=BATCH_ID,
+        check_name="Boundary total rows reconcile",
+        check_type="RECONCILIATION",
+        severity="FAIL",
+        threshold=0,
+        fail_count=abs(bronze_rows - silver_rows),
+        total_count=bronze_rows,
+        observed=silver_rows,
+        expected=bronze_rows,
+    )
 
     # AS07: area is positive, latitude is -90..90, longitude is -180..180.
     spatial_issues = count_sql("""
@@ -114,9 +166,18 @@ with DQRun(layer="silver", domain="admin_boundaries", script_name="admin_boundar
            OR center_lat IS NULL OR ISNAN(center_lat) OR center_lat NOT BETWEEN -90 AND 90
            OR center_lon IS NULL OR ISNAN(center_lon) OR center_lon NOT BETWEEN -180 AND 180
     """)
-    dq.record("AS07", table_name=SILVER_TABLE, source_key="hdx_phl_admin", batch_id=BATCH_ID,
-              check_name="Spatial attributes valid", check_type="RANGE",
-              severity="FAIL", threshold=0, fail_count=spatial_issues, total_count=silver_rows)
+    dq.record(
+        "AS07",
+        table_name=SILVER_TABLE,
+        source_key="hdx_phl_admin",
+        batch_id=BATCH_ID,
+        check_name="Spatial attributes valid",
+        check_type="RANGE",
+        severity="FAIL",
+        threshold=0,
+        fail_count=spatial_issues,
+        total_count=silver_rows,
+    )
 
     # AS08: allow a null PSGC code ONLY for the documented special structures.
     classification_issues = count_sql("""
@@ -131,9 +192,18 @@ with DQRun(layer="silver", domain="admin_boundaries", script_name="admin_boundar
                         OR boundary_name IN ('City of Isabela (not a province)', 'Special Geographic Area')))
                     OR (admin_level = '3' AND adm2_name = 'Special Geographic Area'), FALSE)))
     """)
-    dq.record("AS08", table_name=SILVER_TABLE, source_key="hdx_phl_admin", batch_id=BATCH_ID,
-              check_name="PSGC match status and special structures valid", check_type="CONSISTENCY",
-              severity="FAIL", threshold=0, fail_count=classification_issues, total_count=silver_rows)
+    dq.record(
+        "AS08",
+        table_name=SILVER_TABLE,
+        source_key="hdx_phl_admin",
+        batch_id=BATCH_ID,
+        check_name="PSGC match status and special structures valid",
+        check_type="CONSISTENCY",
+        severity="FAIL",
+        threshold=0,
+        fail_count=classification_issues,
+        total_count=silver_rows,
+    )
 
     # AS09: verify the recorded PSGC reference snapshot and the correct geographic level.
     reference_issues = count_sql("""
@@ -151,8 +221,17 @@ with DQRun(layer="silver", domain="admin_boundaries", script_name="admin_boundar
                 OR (s.admin_level = '2' AND p.geographic_level = 'Prov')
                 OR (s.admin_level = '3' AND p.geographic_level IN ('City', 'Mun')))) <> 1)
     """)
-    dq.record("AS09", table_name=SILVER_TABLE, source_key="hdx_phl_admin", batch_id=BATCH_ID,
-              check_name="PSGC reference snapshot and level valid", check_type="REFERENTIAL_INTEGRITY",
-              severity="FAIL", threshold=0, fail_count=reference_issues, total_count=silver_rows)
+    dq.record(
+        "AS09",
+        table_name=SILVER_TABLE,
+        source_key="hdx_phl_admin",
+        batch_id=BATCH_ID,
+        check_name="PSGC reference snapshot and level valid",
+        check_type="REFERENTIAL_INTEGRITY",
+        severity="FAIL",
+        threshold=0,
+        fail_count=reference_issues,
+        total_count=silver_rows,
+    )
 
 print("Admin boundaries Silver QC completed. Results: public_health.quality.qc_results")

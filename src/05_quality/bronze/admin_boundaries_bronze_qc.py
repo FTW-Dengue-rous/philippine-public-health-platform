@@ -45,10 +45,12 @@ import json
 import os
 import re
 import sys
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from datetime import datetime, timezone
 
-from pyspark.sql import SparkSession, functions as F
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+
 
 def _add_dq_utils_to_path():
     # Find dq_utils.py and put its folder on sys.path. Looks in this file's folder and the
@@ -117,8 +119,14 @@ CHECKS = {
     "HB14": ("Required source property keys", "SCHEMA", "FAIL"),
 }
 REQUIRED_COLUMNS = [
-    "source_feature_json", "properties_json", "_source_version", "_batch_id",
-    "_dataset_id", "_source_key", "_admin_level", "_record_sha256",
+    "source_feature_json",
+    "properties_json",
+    "_source_version",
+    "_batch_id",
+    "_dataset_id",
+    "_source_key",
+    "_admin_level",
+    "_record_sha256",
 ]
 
 
@@ -126,17 +134,22 @@ REQUIRED_COLUMNS = [
 # Arguments and input contract
 # -----------------------------------------------------------------------------
 
+
 def parse_args():
     # Notebook inputs only. No argparse and no command-line arguments.
     from types import SimpleNamespace
+
     utils = globals().get("dbutils")
     if utils is None:
         from pyspark.dbutils import DBUtils
+
         utils = DBUtils(spark)
     defaults = {
         "bronze_handoff_path": "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/4e0d319d-0eef-4183-8b17-fce5e8bae757/bronze_handoff.json",
-        "fail_on_error": "true", "profile": "false",
-        "job_run_id": "", "code_version": "",
+        "fail_on_error": "true",
+        "profile": "false",
+        "job_run_id": "",
+        "code_version": "",
     }
     values = {}
     for name, default in defaults.items():
@@ -146,8 +159,15 @@ def parse_args():
             utils.widgets.text(name, default, name.replace("_", " ").title())
             value = utils.widgets.get(name)
         value = value.strip()
-        values[name] = (value or default) if name in ("bronze_handoff_path", "fail_on_error", "profile") else (value or None)
-    if values["fail_on_error"] not in ("true", "false") or values["profile"] not in ("true", "false"):
+        values[name] = (
+            (value or default)
+            if name in ("bronze_handoff_path", "fail_on_error", "profile")
+            else (value or None)
+        )
+    if values["fail_on_error"] not in ("true", "false") or values["profile"] not in (
+        "true",
+        "false",
+    ):
         raise ValueError("fail_on_error and profile must be true or false")
     return SimpleNamespace(**values)
 
@@ -160,8 +180,14 @@ def load_handoff(value):
     if path.name != "bronze_handoff.json":
         raise ValueError("Expected bronze_handoff.json")
     h = json.loads(path.read_text(encoding="utf-8"))
-    for key in ("source_key", "dataset_id", "source_version", "batch_id",
-                "bronze_table", "expected_by_level"):
+    for key in (
+        "source_key",
+        "dataset_id",
+        "source_version",
+        "batch_id",
+        "bronze_table",
+        "expected_by_level",
+    ):
         if not h.get(key):
             raise ValueError(f"Missing handoff field: {key}")
     if h.get("status") != "bronze_loaded_pending_qc":
@@ -315,13 +341,24 @@ def run_checks(dq, h, expected, profile):
     if missing:
         raise ValueError(f"Required Bronze columns are missing: {missing}")
     df.filter(F.col("_source_version") == h["source_version"]).createOrReplaceTempView(
-        "admin_boundaries_qc_batch")
-    spark.createDataFrame(list(expected.items()), "admin_level INT, expected_rows LONG").createOrReplaceTempView(
-        "admin_boundaries_qc_expected")
-    spark.createDataFrame([(
-        h["source_key"], h["dataset_id"], h["source_version"], h["batch_id"], BRONZE_TABLE, version
-    )], "source_key STRING, dataset STRING, source_version STRING, batch_id STRING, table_name STRING, bronze_delta_version LONG").createOrReplaceTempView(
-        "admin_boundaries_qc_context")
+        "admin_boundaries_qc_batch"
+    )
+    spark.createDataFrame(
+        list(expected.items()), "admin_level INT, expected_rows LONG"
+    ).createOrReplaceTempView("admin_boundaries_qc_expected")
+    spark.createDataFrame(
+        [
+            (
+                h["source_key"],
+                h["dataset_id"],
+                h["source_version"],
+                h["batch_id"],
+                BRONZE_TABLE,
+                version,
+            )
+        ],
+        "source_key STRING, dataset STRING, source_version STRING, batch_id STRING, table_name STRING, bronze_delta_version LONG",
+    ).createOrReplaceTempView("admin_boundaries_qc_context")
     # Each view statement is independent of data modification; source rows stay raw.
     for statement in SQL_STATEMENTS:
         if statement.strip():
@@ -337,9 +374,15 @@ def run_checks(dq, h, expected, profile):
         fail_count = int(r["fail_count"])
         status = "PASS" if fail_count == 0 else severity
         dq.record(
-            check_id, table_name=BRONZE_TABLE, source_key=h["source_key"],
-            batch_id=h["batch_id"], check_name=name, check_type=kind,
-            severity=severity, status=status, fail_count=fail_count,
+            check_id,
+            table_name=BRONZE_TABLE,
+            source_key=h["source_key"],
+            batch_id=h["batch_id"],
+            check_name=name,
+            check_type=kind,
+            severity=severity,
+            status=status,
+            fail_count=fail_count,
             total_count=int(r["total_count"]),
             detail=f"Delta version={version}; source_version={h['source_version']}; {r['detail']}",
         )
@@ -362,12 +405,18 @@ def run_checks(dq, h, expected, profile):
 # Run and persist audit before applying the Silver gate
 # -----------------------------------------------------------------------------
 
+
 def main():
     args = parse_args()
     path = Path(args.bronze_handoff_path)
     # Remove earlier outputs first: a failed rerun must not leave a passing marker.
     parts = PurePosixPath(args.bronze_handoff_path).parts
-    if len(parts) < 5 or parts[:2] != ("/", "Volumes") or ".." in parts or path.name != "bronze_handoff.json":
+    if (
+        len(parts) < 5
+        or parts[:2] != ("/", "Volumes")
+        or ".." in parts
+        or path.name != "bronze_handoff.json"
+    ):
         raise ValueError("Use a safe /Volumes path to bronze_handoff.json")
     summary_path = path.parent / "bronze_qc_summary.json"
     summary_path.unlink(missing_ok=True)
@@ -378,9 +427,13 @@ def main():
     # Leave automatic raising off so DQRun flushes all audit rows before our gate.
     # The script enforces fail_on_error after the context manager has completed.
     with DQRun(
-        layer="bronze", domain=DOMAIN, script_name=SCRIPT_NAME,
-        job_run_id=args.job_run_id, source_keys="hdx_phl_admin",
-        fail_on_error=False, code_version=args.code_version,
+        layer="bronze",
+        domain=DOMAIN,
+        script_name=SCRIPT_NAME,
+        job_run_id=args.job_run_id,
+        source_keys="hdx_phl_admin",
+        fail_on_error=False,
+        code_version=args.code_version,
     ) as dq:
         try:
             path, h, expected = load_handoff(args.bronze_handoff_path)
@@ -389,24 +442,33 @@ def main():
             failures = ["HB00"]
             name, kind, severity = CHECKS["HB00"]
             dq.record(
-                "HB00", table_name=BRONZE_TABLE,
+                "HB00",
+                table_name=BRONZE_TABLE,
                 source_key=h.get("source_key", "hdx_phl_admin"),
-                batch_id=h.get("batch_id"), check_name=name, check_type=kind,
-                severity=severity, status="FAIL",
+                batch_id=h.get("batch_id"),
+                check_name=name,
+                check_type=kind,
+                severity=severity,
+                status="FAIL",
                 detail=f"{type(error).__name__}: {error}",
             )
             print(f"HB00: FAIL — {type(error).__name__}: {error}")
     # Write only after the shared DQRun audit flush succeeds.
     summary = {
-        "status": "FAIL" if failures else "PASS", "domain": DOMAIN,
-        "layer": "bronze", "bronze_table": BRONZE_TABLE,
-        "source_key": h.get("source_key"), "dataset_id": h.get("dataset_id"),
-        "source_version": h.get("source_version"), "batch_id": h.get("batch_id"),
-        "bronze_delta_version": version, "failed_checks": failures,
+        "status": "FAIL" if failures else "PASS",
+        "domain": DOMAIN,
+        "layer": "bronze",
+        "bronze_table": BRONZE_TABLE,
+        "source_key": h.get("source_key"),
+        "dataset_id": h.get("dataset_id"),
+        "source_version": h.get("source_version"),
+        "batch_id": h.get("batch_id"),
+        "bronze_delta_version": version,
+        "failed_checks": failures,
         "expected_check_ids": sorted(set(CHECKS) - {"HB00"}),
         "job_run_id": args.job_run_id,
         "quality_run_id": str(dq.run_id) if getattr(dq, "run_id", None) is not None else None,
-        "executed_at": datetime.now(timezone.utc).isoformat(),
+        "executed_at": datetime.now(UTC).isoformat(),
     }
     temporary = summary_path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(summary, indent=2), encoding="utf-8")
