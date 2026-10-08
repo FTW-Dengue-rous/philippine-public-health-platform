@@ -5,23 +5,21 @@
 #   The PSA PSGC API is loaded into the shared geography_bronze table.
 #   Population observations are retained in the nested populations_json column.
 #
-# Bronze checks focus on:
-#   - table/load completeness
-#   - required schema
-#   - PSGC-specific lineage
-#   - empty rows
-#   - ingestion metadata reconciliation
-#   - Bronze schema contract
-#   - nested population JSON parsing
-#   - nested population numeric parsing
+# This script checks the latest PSGC Bronze batch and validates the nested
+# population payload before population Silver processing.
 #
-# Population business rules such as:
-#   - non-negative population
-#   - valid population year
-#   - population grain uniqueness
-#   - parent/child PSGC consistency
+# Shared checks
+#   B01  table exists and has rows
+#   B04  required columns present
+#   B05  lineage columns not null
+#   B07  no fully empty rows
+#   B10  numeric population values parse
+#   B13  rows match ingestion metadata
+#   B15  Bronze data columns are STRING
+#   B16  nested population payload parses
 #
-# belong to Silver QC.
+# File/sheet checks are skipped because PSGC is an API source.
+# Business rules belong to Silver QC.
 # =============================================================================
 
 import argparse
@@ -30,7 +28,6 @@ import sys
 
 import yaml
 from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
 
 # -----------------------------------------------------------------------------
 # Locate shared dq_utils.py
@@ -38,7 +35,6 @@ from pyspark.sql import functions as F
 
 
 def _add_dq_utils_to_path():
-    """Find dq_utils.py in the project and add its directory to sys.path."""
     starts = [os.getcwd()]
 
     try:
@@ -89,6 +85,10 @@ _add_dq_utils_to_path()
 
 from dq_utils import DQRun  # noqa: E402
 
+# -----------------------------------------------------------------------------
+# Spark
+# -----------------------------------------------------------------------------
+
 spark = SparkSession.builder.getOrCreate()
 
 
@@ -96,14 +96,15 @@ spark = SparkSession.builder.getOrCreate()
 # Configuration
 # -----------------------------------------------------------------------------
 
-CONFIG_NAMES = ("sources.yaml",)
+CONFIG_NAMES = ("sources_population.yaml",)
 
-SOURCE_KEY = "psgc"
+SOURCE_KEY = "psgc_population"
 DOMAIN = "population"
 SCRIPT_NAME = "psgc_population_bronze_qc.py"
 
 
-# These are ingestion/lineage columns rather than source data columns.
+# Technical ingestion columns.
+# These are excluded from B15 because they are not raw source data fields.
 TECHNICAL_COLS = {
     "source_system",
     "source_version",
@@ -115,22 +116,7 @@ TECHNICAL_COLS = {
 }
 
 
-# PSGC-specific lineage contract.
-LINEAGE_COLS = {
-    "source_system",
-    "source_version",
-    "source_endpoint",
-    "batch_id",
-    "content_checksum",
-    "raw_path",
-    "ingested_at",
-}
-
-
-# Fixed meanings of the Bronze check IDs.
-#
-# B05 is intentionally included here because PSGC has its own valid lineage
-# structure even though it does not use the diseases file/sheet lineage fields.
+# Fixed registry meanings.
 CHECKS = {
     "B00": (
         "QC ran without error",
@@ -180,6 +166,7 @@ CHECKS = {
 }
 
 
+# Expected nested population structure.
 POPULATION_JSON_SCHEMA = """
 ARRAY<STRUCT<
     id: BIGINT,
@@ -191,12 +178,12 @@ ARRAY<STRUCT<
 
 
 # -----------------------------------------------------------------------------
-# YAML helpers
+# Helpers
 # -----------------------------------------------------------------------------
 
 
 def find_config(explicit=None):
-    """Locate config/sources.yaml unless --config_path was supplied."""
+    """Locate config/sources_population.yaml."""
 
     if explicit:
         if not os.path.isfile(explicit):
@@ -244,7 +231,7 @@ def find_config(explicit=None):
 
 
 def load_config(path):
-    """Load sources.yaml and return the PSGC source entry."""
+    """Load the population source configuration."""
 
     with open(path, encoding="utf-8") as file:
         config = yaml.safe_load(file) or {}
@@ -265,11 +252,6 @@ def load_config(path):
     return config, entry
 
 
-# -----------------------------------------------------------------------------
-# SQL helpers
-# -----------------------------------------------------------------------------
-
-
 def q(column):
     """Quote a Spark SQL identifier."""
 
@@ -283,43 +265,44 @@ def sql_str(value):
 
 
 def scalar(sql):
-    """Return the first scalar result from a Spark SQL query."""
+    """Return the first scalar value from a SQL query."""
 
     return spark.sql(sql).collect()[0][0]
 
 
-def required_columns(entry):
-    """Read required_columns from the source YAML."""
+def q_col(column):
+    from pyspark.sql import functions as F
 
+    return F.col(column)
+
+
+def required_columns(entry):
     qc = entry.get("qc") or {}
 
     return list(dict.fromkeys(qc.get("required_columns") or []))
 
 
-# -----------------------------------------------------------------------------
-# Batch handling
-# -----------------------------------------------------------------------------
-
-
-def latest_batch(table_name, source_name, source_version):
+def latest_batch(
+    table_name,
+    source_system,
+    source_version,
+):
     """
-    Return the latest PSGC batch based on ingested_at.
-
-    The geography_bronze table contains batch_id and ingested_at, so no
-    file-based source lineage is required.
+    Return the latest PSGC batch for the configured
+    source system and source version.
     """
 
     rows = (
         spark.table(table_name)
         .where(
-            (F.col("source_system") == source_name) & (F.col("source_version") == source_version)
+            (q_col("source_system") == source_system) & (q_col("source_version") == source_version)
         )
         .select(
             "batch_id",
             "content_checksum",
             "ingested_at",
         )
-        .orderBy(F.col("ingested_at").desc_nulls_last())
+        .orderBy(q_col("ingested_at").desc_nulls_last())
         .limit(1)
         .collect()
     )
@@ -332,22 +315,22 @@ def latest_batch(table_name, source_name, source_version):
 # -----------------------------------------------------------------------------
 
 
-def create_population_views(table_name, batch_id):
+def create_population_views(
+    table_name,
+    batch_id,
+):
     """
-    Create temporary views from the nested populations_json payload.
-
-    psgc_population_payloads:
-        One row per geography_bronze record.
-
-    psgc_population_observations:
-        One row per nested population observation.
+    Create temporary views used to validate
+    the nested population payload.
     """
 
     batch_filter = sql_str(batch_id)
 
     spark.sql(
         f"""
-        CREATE OR REPLACE TEMP VIEW psgc_population_payloads AS
+        CREATE OR REPLACE TEMP VIEW
+        psgc_population_payloads AS
+
         SELECT
             psgc_code AS parent_psgc_code,
             area_name,
@@ -370,7 +353,8 @@ def create_population_views(table_name, batch_id):
 
     spark.sql(
         """
-        CREATE OR REPLACE TEMP VIEW psgc_population_observations AS
+        CREATE OR REPLACE TEMP VIEW
+        psgc_population_observations AS
 
         SELECT
             parent_psgc_code,
@@ -380,9 +364,14 @@ def create_population_views(table_name, batch_id):
             batch_id,
             content_checksum,
 
-            population_item.psgc AS population_psgc_code,
-            population_item.year AS population_year,
-            population_item.population AS population_raw,
+            population_item.psgc
+                AS population_psgc_code,
+
+            population_item.year
+                AS population_year,
+
+            population_item.population
+                AS population_raw,
 
             TRY_CAST(
                 REPLACE(
@@ -403,33 +392,39 @@ def create_population_views(table_name, batch_id):
 
 
 # -----------------------------------------------------------------------------
-# Main Bronze checks
+# QC checks
 # -----------------------------------------------------------------------------
 
 
-def run_checks(dq, entry, profile=True):
+def run_checks(
+    dq,
+    entry,
+    profile=True,
+):
     table_name = entry["bronze_table"]
+
+    # Read source metadata from YAML.
     source_name = entry["source_name"]
+    source_system = entry.get(
+        "source_system",
+        source_name,
+    )
     source_version = entry["version"]
 
     qc = entry.get("qc") or {}
 
     skip = set(qc.get("skip_checks") or [])
 
-    severity_overrides = {
-        str(key): str(value).upper() for key, value in (qc.get("severity") or {}).items()
-    }
+    overrides = {str(k): str(v).upper() for k, v in (qc.get("severity") or {}).items()}
 
-    def rec(check_id, ok=None, **kwargs):
-        """
-        Record one standardized DQ result.
-
-        DQRun handles the final status/severity behavior.
-        """
-
+    def rec(
+        check_id,
+        ok=None,
+        **kwargs,
+    ):
         name, check_type, default_severity = CHECKS[check_id]
 
-        severity = severity_overrides.get(
+        severity = overrides.get(
             check_id,
             default_severity,
         )
@@ -448,44 +443,45 @@ def run_checks(dq, entry, profile=True):
             **kwargs,
         )
 
-    # -------------------------------------------------------------------------
-    # B01 — table exists and latest PSGC batch has rows
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Locate latest batch
+    # ------------------------------------------------------------------
 
-    if not spark.catalog.tableExists(table_name):
-        rec(
-            "B01",
-            ok=False,
-            observed="missing",
-            expected="exists",
-        )
-
-        return
-
-    df = spark.table(table_name)
-
-    latest = latest_batch(
+    batch = latest_batch(
         table_name,
-        source_name,
+        source_system,
         source_version,
     )
 
-    if latest is None or not latest.get("batch_id"):
+    if not batch:
         rec(
             "B01",
             ok=False,
             observed=0,
             expected="> 0",
-            detail="No PSGC batch found.",
+            detail=(
+                "No Bronze rows found for "
+                f"source_system={source_system}, "
+                f"source_version={source_version}"
+            ),
         )
 
         return
 
-    batch_id = latest["batch_id"]
+    batch_id = batch["batch_id"]
 
-    scoped = df.where(F.col("batch_id") == batch_id)
+    df = spark.table(table_name).where(
+        (q_col("source_system") == source_system)
+        & (q_col("source_version") == source_version)
+        & (q_col("batch_id") == batch_id)
+    )
 
-    total = scoped.count()
+    total = df.count()
+    data_columns = [field.name for field in df.schema.fields if field.name not in TECHNICAL_COLS]
+
+    # ------------------------------------------------------------------
+    # B01 — table exists and has rows
+    # ------------------------------------------------------------------
 
     rec(
         "B01",
@@ -495,102 +491,95 @@ def run_checks(dq, entry, profile=True):
         batch_id=batch_id,
     )
 
-    # Capture standard table statistics through dq_utils.
-    try:
-        dq.capture_table_stats(table_name)
-    except Exception as exc:
-        print(f"  note: table stats skipped ({str(exc)[:150]})")
-
-    if total == 0:
-        return
-
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # B04 — required columns
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
-    actual_columns = {column.lower() for column in df.columns}
+    actual_columns = set(df.columns)
 
     required = required_columns(entry)
 
-    missing = [column for column in required if column.lower() not in actual_columns]
+    missing = [column for column in required if column not in actual_columns]
 
     rec(
         "B04",
         ok=not missing,
-        observed=len(required) - len(missing),
-        expected=len(required),
-        detail=(f"missing: {missing}" if missing else None),
+        observed=len(missing),
+        expected=0,
+        detail=(f"missing={missing}" if missing else None),
         batch_id=batch_id,
     )
 
-    # -------------------------------------------------------------------------
-    # B05 — PSGC lineage columns are not null
-    #
-    # Unlike diseases Bronze, PSGC does not have:
-    #   _source_key
-    #   _source_file
-    #   _source_row_num
-    #
-    # Instead it has its own valid lineage contract:
-    #   source_system
-    #   source_version
-    #   source_endpoint
-    #   batch_id
-    #   content_checksum
-    #   raw_path
-    #   ingested_at
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # B05 — lineage columns not null
+    # ------------------------------------------------------------------
 
-    missing_lineage_columns = [
-        column for column in LINEAGE_COLS if column.lower() not in actual_columns
+    lineage_columns = [
+        "source_system",
+        "source_version",
+        "source_endpoint",
+        "batch_id",
+        "content_checksum",
+        "raw_path",
+        "ingested_at",
     ]
 
-    if missing_lineage_columns:
+    missing_lineage = [column for column in lineage_columns if column not in actual_columns]
+
+    if missing_lineage:
         rec(
             "B05",
             ok=False,
-            observed=0,
-            expected=len(LINEAGE_COLS),
-            detail=(f"missing lineage columns: {missing_lineage_columns}"),
+            observed=len(missing_lineage),
+            expected=0,
+            detail=(f"missing lineage columns: {missing_lineage}"),
             batch_id=batch_id,
         )
-
     else:
-        lineage_null_counts = {}
+        null_conditions = " OR ".join(f"{q(column)} IS NULL" for column in lineage_columns)
 
-        for column in LINEAGE_COLS:
-            null_count = scoped.where(
-                F.col(column).isNull() | (F.trim(F.col(column).cast("string")) == "")
-            ).count()
-
-            lineage_null_counts[column] = null_count
-
-        total_lineage_nulls = sum(lineage_null_counts.values())
+        null_count = scalar(
+            f"""
+            SELECT count(*)
+            FROM {table_name}
+            WHERE batch_id = {sql_str(batch_id)}
+              AND ({null_conditions})
+            """
+        )
 
         rec(
             "B05",
-            ok=total_lineage_nulls == 0,
-            observed=total_lineage_nulls,
-            expected=0,
-            detail=(f"null/blank counts: {lineage_null_counts}" if total_lineage_nulls else None),
+            ok=null_count == 0,
+            fail_count=null_count,
+            total_count=total,
             batch_id=batch_id,
         )
 
-    # -------------------------------------------------------------------------
-    # B07 — no completely empty rows
-    # -------------------------------------------------------------------------
-
-    data_columns = [column for column in df.columns if column not in TECHNICAL_COLS]
+    # ------------------------------------------------------------------
+    # B07 — no fully empty rows
+    # ------------------------------------------------------------------
 
     if data_columns:
-        empty_condition = " AND ".join(
-            (f"coalesce(trim(cast({q(column)} AS STRING)), '') = ''") for column in data_columns
+        blank_condition = " AND ".join(
+            f"""
+            (
+                {q(column)} IS NULL
+                OR TRIM(CAST({q(column)} AS STRING)) = ''
+            )
+            """
+            for column in data_columns
         )
 
-        blank = scoped.where(empty_condition).count()
-
+        blank = scalar(
+            f"""
+            SELECT count(*)
+            FROM {table_name}
+            WHERE batch_id = {sql_str(batch_id)}
+              AND {blank_condition}
+            """
+        )
     else:
-        blank = 0
+        blank = total
 
     rec(
         "B07",
@@ -599,9 +588,9 @@ def run_checks(dq, entry, profile=True):
         batch_id=batch_id,
     )
 
-    # -------------------------------------------------------------------------
-    # B13 — Bronze row count matches ingestion metadata
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # B13 — ingestion metadata reconciliation
+    # ------------------------------------------------------------------
 
     metadata_table = entry.get("metadata_table")
 
@@ -610,7 +599,7 @@ def run_checks(dq, entry, profile=True):
             "B13",
             status="FAIL",
             observed=total,
-            expected="processed ingestion_metadata row",
+            expected=("processed ingestion_metadata row"),
             detail=(f"metadata table not found: {metadata_table}"),
             batch_id=batch_id,
         )
@@ -626,12 +615,9 @@ def run_checks(dq, entry, profile=True):
             FROM {metadata_table}
 
             WHERE batch_id = {sql_str(batch_id)}
-
-            AND source_name = {sql_str(source_name)}
-
-            AND source_version = {sql_str(source_version)}
-
-            AND lower(status) = 'processed'
+              AND source_name = {sql_str(source_name)}
+              AND source_version = {sql_str(source_version)}
+              AND lower(status) = 'processed'
 
             ORDER BY retrieved_at DESC
 
@@ -644,7 +630,7 @@ def run_checks(dq, entry, profile=True):
                 "B13",
                 status="FAIL",
                 observed=total,
-                expected="processed ingestion_metadata row",
+                expected=("processed ingestion_metadata row"),
                 detail=(f"No processed metadata row for batch {batch_id}"),
                 batch_id=batch_id,
             )
@@ -654,19 +640,16 @@ def run_checks(dq, entry, profile=True):
 
             rec(
                 "B13",
-                ok=total == expected_count,
+                ok=(total == expected_count),
                 observed=total,
                 expected=expected_count,
-                detail=f"batch_id={batch_id}",
+                detail=(f"batch_id={batch_id}"),
                 batch_id=batch_id,
             )
 
-    # -------------------------------------------------------------------------
-    # B15 — source/data columns are STRING
-    #
-    # Technical ingestion columns are excluded because they are metadata,
-    # not raw source fields.
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # B15 — Bronze data columns are STRING
+    # ------------------------------------------------------------------
 
     not_string = [
         (f"{field.name} {field.dataType.simpleString()}")
@@ -683,18 +666,18 @@ def run_checks(dq, entry, profile=True):
         batch_id=batch_id,
     )
 
-    # -------------------------------------------------------------------------
-    # Nested population checks
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Create nested population views
+    # ------------------------------------------------------------------
 
     create_population_views(
         table_name,
         batch_id,
     )
 
-    # -------------------------------------------------------------------------
-    # B16 — populations_json structure parses
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # B16 — nested JSON payload parses
+    # ------------------------------------------------------------------
 
     payload_total = scalar(
         """
@@ -708,9 +691,7 @@ def run_checks(dq, entry, profile=True):
         """
         SELECT count(*)
         FROM psgc_population_payloads
-
         WHERE populations_json IS NOT NULL
-
           AND population_items IS NULL
         """
     )
@@ -721,16 +702,16 @@ def run_checks(dq, entry, profile=True):
         total_count=payload_total,
         column_name="populations_json",
         detail=(
-            "Non-null populations_json values that "
-            "could not be parsed as "
+            "Non-null populations_json values "
+            "that could not be parsed as "
             "ARRAY<STRUCT<id,population,psgc,year>>"
         ),
         batch_id=batch_id,
     )
 
-    # -------------------------------------------------------------------------
-    # B10 — nested population values parse as BIGINT
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # B10 — nested population values parse
+    # ------------------------------------------------------------------
 
     observation_total = scalar(
         """
@@ -742,7 +723,6 @@ def run_checks(dq, entry, profile=True):
     invalid_population = scalar(
         """
         SELECT count(*)
-
         FROM psgc_population_observations
 
         WHERE population_raw IS NOT NULL
@@ -762,20 +742,20 @@ def run_checks(dq, entry, profile=True):
         "B10",
         fail_count=invalid_population,
         total_count=observation_total,
-        column_name="populations_json.population",
+        column_name=("populations_json.population"),
         detail=("Nested population values with non-null raw text that cannot be parsed as BIGINT"),
         batch_id=batch_id,
     )
 
-    # -------------------------------------------------------------------------
-    # Standard profiling through DQRun
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Shared profiling
+    # ------------------------------------------------------------------
 
     if profile and entry.get("sharing") != "restricted":
         try:
             dq.profile_table(
                 table_name,
-                where=f"batch_id = {sql_str(batch_id)}",
+                where=(f"batch_id = {sql_str(batch_id)}"),
             )
         except Exception as exc:
             print(f"  note: Bronze table profile skipped ({str(exc)[:150]})")
@@ -792,7 +772,7 @@ def run_checks(dq, entry, profile=True):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Bronze QC for PSGC population data")
+    parser = argparse.ArgumentParser(description=("Bronze QC for PSGC population data"))
 
     parser.add_argument(
         "--config_path",
@@ -822,6 +802,11 @@ def parse_args():
     )
 
     return parser.parse_known_args()[0]
+
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
 
 
 def main():
@@ -865,10 +850,11 @@ def main():
                 check_name=name,
                 check_type=check_type,
                 severity=severity,
-                detail=(f"{type(exc).__name__}: {exc}"),
+                detail=repr(exc),
             )
 
-            raise
+            if args.fail_on_error == "true":
+                raise
 
 
 if __name__ == "__main__":
