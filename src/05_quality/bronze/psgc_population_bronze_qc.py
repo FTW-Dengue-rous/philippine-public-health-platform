@@ -29,10 +29,10 @@ import sys
 import yaml
 from pyspark.sql import SparkSession
 
-
 # -----------------------------------------------------------------------------
 # Locate shared dq_utils.py
 # -----------------------------------------------------------------------------
+
 
 def _add_dq_utils_to_path():
     starts = [os.getcwd()]
@@ -55,8 +55,7 @@ def _add_dq_utils_to_path():
                     candidates += [
                         os.path.join(base, name)
                         for name in sorted(os.listdir(base))
-                        if "quality" in name.lower()
-                        and os.path.isdir(os.path.join(base, name))
+                        if "quality" in name.lower() and os.path.isdir(os.path.join(base, name))
                     ]
                 except OSError:
                     pass
@@ -64,9 +63,7 @@ def _add_dq_utils_to_path():
             for candidate in candidates:
                 searched.append(candidate)
 
-                if os.path.isfile(
-                    os.path.join(candidate, "dq_utils.py")
-                ):
+                if os.path.isfile(os.path.join(candidate, "dq_utils.py")):
                     if candidate not in sys.path:
                         sys.path.insert(0, candidate)
 
@@ -80,15 +77,13 @@ def _add_dq_utils_to_path():
             folder = parent
 
     raise ModuleNotFoundError(
-        "dq_utils.py not found. Looked in:\n  "
-        + "\n  ".join(dict.fromkeys(searched))
+        "dq_utils.py not found. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched))
     )
 
 
 _add_dq_utils_to_path()
 
 from dq_utils import DQRun  # noqa: E402
-
 
 # -----------------------------------------------------------------------------
 # Spark
@@ -186,14 +181,13 @@ ARRAY<STRUCT<
 # Helpers
 # -----------------------------------------------------------------------------
 
+
 def find_config(explicit=None):
     """Locate config/sources_population.yaml."""
 
     if explicit:
         if not os.path.isfile(explicit):
-            raise FileNotFoundError(
-                f"--config_path does not exist: {explicit}"
-            )
+            raise FileNotFoundError(f"--config_path does not exist: {explicit}")
 
         return os.path.abspath(explicit)
 
@@ -232,8 +226,7 @@ def find_config(explicit=None):
 
     raise FileNotFoundError(
         f"None of {CONFIG_NAMES} found. "
-        "Pass --config_path with its full path.\n"
-        + "\n".join(dict.fromkeys(searched))
+        "Pass --config_path with its full path.\n" + "\n".join(dict.fromkeys(searched))
     )
 
 
@@ -246,14 +239,10 @@ def load_config(path):
     sources = config.get("sources")
 
     if not isinstance(sources, dict):
-        raise KeyError(
-            "'sources' is missing or is not a mapping"
-        )
+        raise KeyError("'sources' is missing or is not a mapping")
 
     if SOURCE_KEY not in sources:
-        raise KeyError(
-            f"'{SOURCE_KEY}' is missing from {path}"
-        )
+        raise KeyError(f"'{SOURCE_KEY}' is missing from {path}")
 
     entry = dict(sources[SOURCE_KEY] or {})
 
@@ -290,11 +279,7 @@ def q_col(column):
 def required_columns(entry):
     qc = entry.get("qc") or {}
 
-    return list(
-        dict.fromkeys(
-            qc.get("required_columns") or []
-        )
-    )
+    return list(dict.fromkeys(qc.get("required_columns") or []))
 
 
 def latest_batch(
@@ -310,20 +295,14 @@ def latest_batch(
     rows = (
         spark.table(table_name)
         .where(
-            (q_col("source_system") == source_system)
-            & (
-                q_col("source_version")
-                == source_version
-            )
+            (q_col("source_system") == source_system) & (q_col("source_version") == source_version)
         )
         .select(
             "batch_id",
             "content_checksum",
             "ingested_at",
         )
-        .orderBy(
-            q_col("ingested_at").desc_nulls_last()
-        )
+        .orderBy(q_col("ingested_at").desc_nulls_last())
         .limit(1)
         .collect()
     )
@@ -334,6 +313,7 @@ def latest_batch(
 # -----------------------------------------------------------------------------
 # Nested population views
 # -----------------------------------------------------------------------------
+
 
 def create_population_views(
     table_name,
@@ -415,6 +395,7 @@ def create_population_views(
 # QC checks
 # -----------------------------------------------------------------------------
 
+
 def run_checks(
     dq,
     entry,
@@ -432,25 +413,16 @@ def run_checks(
 
     qc = entry.get("qc") or {}
 
-    skip = set(
-        qc.get("skip_checks") or []
-    )
+    skip = set(qc.get("skip_checks") or [])
 
-    overrides = {
-        str(k): str(v).upper()
-        for k, v in (
-            qc.get("severity") or {}
-        ).items()
-    }
+    overrides = {str(k): str(v).upper() for k, v in (qc.get("severity") or {}).items()}
 
     def rec(
         check_id,
         ok=None,
         **kwargs,
     ):
-        name, check_type, default_severity = CHECKS[
-            check_id
-        ]
+        name, check_type, default_severity = CHECKS[check_id]
 
         severity = overrides.get(
             check_id,
@@ -458,11 +430,7 @@ def run_checks(
         )
 
         if ok is not None:
-            kwargs["status"] = (
-                "PASS"
-                if ok
-                else severity
-            )
+            kwargs["status"] = "PASS" if ok else severity
 
         return dq.record(
             check_id,
@@ -502,27 +470,14 @@ def run_checks(
 
     batch_id = batch["batch_id"]
 
-    df = (
-        spark.table(table_name)
-        .where(
-            (q_col("source_system") == source_system)
-            & (
-                q_col("source_version")
-                == source_version
-            )
-            & (
-                q_col("batch_id")
-                == batch_id
-            )
-        )
+    df = spark.table(table_name).where(
+        (q_col("source_system") == source_system)
+        & (q_col("source_version") == source_version)
+        & (q_col("batch_id") == batch_id)
     )
 
     total = df.count()
-    data_columns = [
-        field.name
-        for field in df.schema.fields
-        if field.name not in TECHNICAL_COLS
-    ]
+    data_columns = [field.name for field in df.schema.fields if field.name not in TECHNICAL_COLS]
 
     # ------------------------------------------------------------------
     # B01 — table exists and has rows
@@ -544,22 +499,14 @@ def run_checks(
 
     required = required_columns(entry)
 
-    missing = [
-        column
-        for column in required
-        if column not in actual_columns
-    ]
+    missing = [column for column in required if column not in actual_columns]
 
     rec(
         "B04",
         ok=not missing,
         observed=len(missing),
         expected=0,
-        detail=(
-            f"missing={missing}"
-            if missing
-            else None
-        ),
+        detail=(f"missing={missing}" if missing else None),
         batch_id=batch_id,
     )
 
@@ -577,11 +524,7 @@ def run_checks(
         "ingested_at",
     ]
 
-    missing_lineage = [
-        column
-        for column in lineage_columns
-        if column not in actual_columns
-    ]
+    missing_lineage = [column for column in lineage_columns if column not in actual_columns]
 
     if missing_lineage:
         rec(
@@ -589,17 +532,11 @@ def run_checks(
             ok=False,
             observed=len(missing_lineage),
             expected=0,
-            detail=(
-                "missing lineage columns: "
-                f"{missing_lineage}"
-            ),
+            detail=(f"missing lineage columns: {missing_lineage}"),
             batch_id=batch_id,
         )
     else:
-        null_conditions = " OR ".join(
-            f"{q(column)} IS NULL"
-            for column in lineage_columns
-        )
+        null_conditions = " OR ".join(f"{q(column)} IS NULL" for column in lineage_columns)
 
         null_count = scalar(
             f"""
@@ -655,27 +592,15 @@ def run_checks(
     # B13 — ingestion metadata reconciliation
     # ------------------------------------------------------------------
 
-    metadata_table = entry.get(
-        "metadata_table"
-    )
+    metadata_table = entry.get("metadata_table")
 
-    if (
-        not metadata_table
-        or not spark.catalog.tableExists(
-            metadata_table
-        )
-    ):
+    if not metadata_table or not spark.catalog.tableExists(metadata_table):
         rec(
             "B13",
             status="FAIL",
             observed=total,
-            expected=(
-                "processed ingestion_metadata row"
-            ),
-            detail=(
-                f"metadata table not found: "
-                f"{metadata_table}"
-            ),
+            expected=("processed ingestion_metadata row"),
+            detail=(f"metadata table not found: {metadata_table}"),
             batch_id=batch_id,
         )
 
@@ -705,31 +630,20 @@ def run_checks(
                 "B13",
                 status="FAIL",
                 observed=total,
-                expected=(
-                    "processed ingestion_metadata row"
-                ),
-                detail=(
-                    "No processed metadata row "
-                    f"for batch {batch_id}"
-                ),
+                expected=("processed ingestion_metadata row"),
+                detail=(f"No processed metadata row for batch {batch_id}"),
                 batch_id=batch_id,
             )
 
         else:
-            expected_count = metadata_rows[0][
-                "record_count"
-            ]
+            expected_count = metadata_rows[0]["record_count"]
 
             rec(
                 "B13",
-                ok=(
-                    total == expected_count
-                ),
+                ok=(total == expected_count),
                 observed=total,
                 expected=expected_count,
-                detail=(
-                    f"batch_id={batch_id}"
-                ),
+                detail=(f"batch_id={batch_id}"),
                 batch_id=batch_id,
             )
 
@@ -738,29 +652,17 @@ def run_checks(
     # ------------------------------------------------------------------
 
     not_string = [
-        (
-            f"{field.name} "
-            f"{field.dataType.simpleString()}"
-        )
+        (f"{field.name} {field.dataType.simpleString()}")
         for field in df.schema.fields
-        if field.name not in TECHNICAL_COLS
-        and field.dataType.simpleString()
-        != "string"
+        if field.name not in TECHNICAL_COLS and field.dataType.simpleString() != "string"
     ]
 
     rec(
         "B15",
         ok=not not_string,
-        observed=(
-            len(data_columns)
-            - len(not_string)
-        ),
+        observed=(len(data_columns) - len(not_string)),
         expected=len(data_columns),
-        detail=(
-            f"not string: {not_string}"
-            if not_string
-            else None
-        ),
+        detail=(f"not string: {not_string}" if not_string else None),
         batch_id=batch_id,
     )
 
@@ -840,14 +742,8 @@ def run_checks(
         "B10",
         fail_count=invalid_population,
         total_count=observation_total,
-        column_name=(
-            "populations_json.population"
-        ),
-        detail=(
-            "Nested population values with "
-            "non-null raw text that cannot "
-            "be parsed as BIGINT"
-        ),
+        column_name=("populations_json.population"),
+        detail=("Nested population values with non-null raw text that cannot be parsed as BIGINT"),
         batch_id=batch_id,
     )
 
@@ -855,47 +751,28 @@ def run_checks(
     # Shared profiling
     # ------------------------------------------------------------------
 
-    if (
-        profile
-        and entry.get("sharing")
-        != "restricted"
-    ):
+    if profile and entry.get("sharing") != "restricted":
         try:
             dq.profile_table(
                 table_name,
-                where=(
-                    f"batch_id = "
-                    f"{sql_str(batch_id)}"
-                ),
+                where=(f"batch_id = {sql_str(batch_id)}"),
             )
         except Exception as exc:
-            print(
-                "  note: Bronze table profile "
-                f"skipped ({str(exc)[:150]})"
-            )
+            print(f"  note: Bronze table profile skipped ({str(exc)[:150]})")
 
         try:
-            dq.profile_table(
-                "psgc_population_observations"
-            )
+            dq.profile_table("psgc_population_observations")
         except Exception as exc:
-            print(
-                "  note: nested population "
-                f"profile skipped ({str(exc)[:150]})"
-            )
+            print(f"  note: nested population profile skipped ({str(exc)[:150]})")
 
 
 # -----------------------------------------------------------------------------
 # CLI
 # -----------------------------------------------------------------------------
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description=(
-            "Bronze QC for PSGC "
-            "population data"
-        )
-    )
+    parser = argparse.ArgumentParser(description=("Bronze QC for PSGC population data"))
 
     parser.add_argument(
         "--config_path",
@@ -931,30 +808,19 @@ def parse_args():
 # Main
 # -----------------------------------------------------------------------------
 
+
 def main():
     args = parse_args()
 
-    config_path = find_config(
-        args.config_path
-    )
+    config_path = find_config(args.config_path)
 
-    print(
-        f"Config: {config_path}"
-    )
+    print(f"Config: {config_path}")
 
-    _, entry = load_config(
-        config_path
-    )
+    _, entry = load_config(config_path)
 
-    print(
-        f"[{SOURCE_KEY}] "
-        f"{entry.get('source_name')}"
-    )
+    print(f"[{SOURCE_KEY}] {entry.get('source_name')}")
 
-    print(
-        "Bronze table: "
-        f"{entry.get('bronze_table')}"
-    )
+    print(f"Bronze table: {entry.get('bronze_table')}")
 
     with DQRun(
         layer="bronze",
@@ -962,32 +828,23 @@ def main():
         script_name=SCRIPT_NAME,
         job_run_id=args.job_run_id,
         source_keys=SOURCE_KEY,
-        fail_on_error=(
-            args.fail_on_error == "true"
-        ),
+        fail_on_error=(args.fail_on_error == "true"),
         code_version=args.code_version,
         strict_registry=True,
     ) as dq:
-
         try:
             run_checks(
                 dq,
                 entry,
-                profile=(
-                    args.profile == "true"
-                ),
+                profile=(args.profile == "true"),
             )
 
         except Exception as exc:
-            name, check_type, severity = (
-                CHECKS["B00"]
-            )
+            name, check_type, severity = CHECKS["B00"]
 
             dq.record(
                 "B00",
-                table_name=entry.get(
-                    "bronze_table"
-                ),
+                table_name=entry.get("bronze_table"),
                 source_key=SOURCE_KEY,
                 status="FAIL",
                 check_name=name,
