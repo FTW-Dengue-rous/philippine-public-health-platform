@@ -1,7 +1,9 @@
 # Databricks notebook source
-# openpyxl is required on Serverless compute for .xlsx parsing
-%pip install openpyxl
+# MAGIC %pip install openpyxl
 
+# COMMAND ----------
+
+# openpyxl is required on Serverless compute for .xlsx parsing
 import pandas as pd
 
 # Source: infirmary Excel file in the PSA landing zone
@@ -13,7 +15,7 @@ infirmary_source_path = (
 # header=3 skips the title, sub-header, and blank rows;
 # row 4 has the actual column names (No. of Facilities, ABC, etc.)
 infirmary_pdf = pd.read_excel(infirmary_source_path, header=3)
-infirmary_pdf = infirmary_pdf.dropna(how='all')
+infirmary_pdf = infirmary_pdf.dropna(how="all")
 
 # Handle NaN/Unnamed column names and duplicates for Spark compatibility.
 # Columns without headers in the Excel file get named col_0, col_1, etc.
@@ -21,10 +23,10 @@ infirmary_pdf = infirmary_pdf.dropna(how='all')
 _cols = []
 _seen = {}
 for i, c in enumerate(infirmary_pdf.columns):
-    name = f'col_{i}' if (pd.isna(c) or str(c).startswith('Unnamed:')) else str(c).strip()
+    name = f"col_{i}" if (pd.isna(c) or str(c).startswith("Unnamed:")) else str(c).strip()
     if name in _seen:
         _seen[name] += 1
-        name = f'{name}_{_seen[name]}'
+        name = f"{name}_{_seen[name]}"
     else:
         _seen[name] = 0
     _cols.append(name)
@@ -32,8 +34,8 @@ infirmary_pdf.columns = _cols
 
 # Convert object columns to nullable string type for Arrow compatibility
 # (Spark can't convert mixed object columns to Arrow)
-for col in infirmary_pdf.select_dtypes(include=['object']).columns:
-    infirmary_pdf[col] = infirmary_pdf[col].astype('string')
+for col in infirmary_pdf.select_dtypes(include=["object"]).columns:
+    infirmary_pdf[col] = infirmary_pdf[col].astype("string")
 
 infirmary_df = spark.createDataFrame(infirmary_pdf)
 
@@ -41,18 +43,17 @@ infirmary_df = spark.createDataFrame(infirmary_pdf)
 # Column mapping preserves column names with spaces (e.g., "No. of Facilities")
 # overwriteSchema allows schema changes between runs
 (
-    infirmary_df.write
-                .format("delta")
-                .mode("overwrite")
-                .option("delta.columnMapping.mode", "name")
-                .option("delta.minReaderVersion", "2")
-                .option("delta.minWriterVersion", "5")
-                .option("overwriteSchema", "true")
-                .saveAsTable("ph_public_health.bronze.facilities_infirmary")
+    infirmary_df.write.format("delta")
+    .mode("overwrite")
+    .option("delta.columnMapping.mode", "name")
+    .option("delta.minReaderVersion", "2")
+    .option("delta.minWriterVersion", "5")
+    .option("overwriteSchema", "true")
+    .saveAsTable("public_health.bronze.facilities_infirmary")
 )
 
 # COMMAND ----------
 
 # DBTITLE 1,Preview infirmary data
 # MAGIC %sql
-# MAGIC SELECT * FROM ph_public_health.bronze.facilities_infirmary
+# MAGIC SELECT * FROM public_health.bronze.facilities_infirmary

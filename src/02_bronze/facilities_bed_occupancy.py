@@ -1,86 +1,76 @@
--- Databricks notebook source
--- MAGIC %python
--- MAGIC %pip install openpyxl
+# Databricks notebook source
+# MAGIC %pip install openpyxl
 
--- COMMAND ----------
+# COMMAND ----------
 
--- DBTITLE 1,Read Excel sheets
--- MAGIC %python
--- MAGIC import pandas as pd
--- MAGIC
--- MAGIC file_path = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/bed_occupancy_rate_2025.xlsx"
--- MAGIC sheet_names = ['2020', '2021', '2022', '2023', '2024', '2025']
--- MAGIC all_dfs = []
--- MAGIC
--- MAGIC for sheet in sheet_names:
--- MAGIC     df = pd.read_excel(file_path, sheet_name=sheet, header=0)
--- MAGIC     df['year'] = sheet
--- MAGIC     all_dfs.append(df)
--- MAGIC     print(f"Sheet '{sheet}': {df.shape[0]} rows, {df.shape[1]} columns")
--- MAGIC
+# DBTITLE 1,Read Excel sheets
+import pandas as pd
 
--- COMMAND ----------
+file_path = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/facilities/bed_occupancy_rate_2025.xlsx"
+sheet_names = ["2020", "2021", "2022", "2023", "2024", "2025"]
+all_dfs = []
 
--- DBTITLE 1,Merge all sheets
--- MAGIC %python
--- MAGIC # Merge all sheets into one DataFrame
--- MAGIC # pd.concat aligns columns by name and fills missing with NaN
--- MAGIC merged_df = pd.concat(all_dfs, ignore_index=True)
--- MAGIC
--- MAGIC # Rename to snake_case
--- MAGIC col_map = {
--- MAGIC     'Region': 'region',
--- MAGIC     'Province/District': 'province_district',
--- MAGIC     'City/Municipality': 'city_municipality',
--- MAGIC     'General': 'general',
--- MAGIC     'Nature of Ownership': 'nature_of_ownership',
--- MAGIC     'Authorized Bed Capacity': 'authorized_bed_capacity',
--- MAGIC     'Implementing Beds': 'implementing_beds',
--- MAGIC     'Bed Occupancy Rate (BOR) Based on Authorized Beds': 'bed_occupancy_rate',
--- MAGIC }
--- MAGIC merged_df = merged_df.rename(columns=col_map)
--- MAGIC
--- MAGIC # Ensure year is the last column
--- MAGIC cols = [c for c in merged_df.columns if c != 'year'] + ['year']
--- MAGIC merged_df = merged_df[cols]
--- MAGIC
--- MAGIC # Convert all columns to string for Arrow compatibility
--- MAGIC merged_df = merged_df.astype('string')
--- MAGIC
--- MAGIC print(f"Merged shape: {merged_df.shape}")
--- MAGIC print(f"Columns: {list(merged_df.columns)}")
--- MAGIC print(f"\nYear breakdown:")
--- MAGIC print(merged_df['year'].value_counts().sort_index())
--- MAGIC
+for sheet in sheet_names:
+    df = pd.read_excel(file_path, sheet_name=sheet, header=0)
+    df["year"] = sheet
+    all_dfs.append(df)
+    print(f"Sheet '{sheet}': {df.shape[0]} rows, {df.shape[1]} columns")
 
--- COMMAND ----------
+# COMMAND ----------
 
--- MAGIC %python
--- MAGIC # Write merged DataFrame to Delta table
--- MAGIC spark_df = spark.createDataFrame(merged_df)
--- MAGIC spark_df.write.mode("overwrite") \
--- MAGIC     .option("columnMapping.mode", "name") \
--- MAGIC     .option("overwriteSchema", "true") \
--- MAGIC     .saveAsTable("public_health.bronze.facilities_bed_occupancy_rate")
--- MAGIC
--- MAGIC print(f"Wrote {merged_df.shape[0]} rows to public_health.bronze.facilities_bed_occupancy_rate")
--- MAGIC
+# DBTITLE 1,Merge all sheets
+# Merge all sheets into one DataFrame
+# pd.concat aligns columns by name and fills missing with NaN
+merged_df = pd.concat(all_dfs, ignore_index=True)
 
--- COMMAND ----------
+# Rename to snake_case
+col_map = {
+    "Region": "region",
+    "Province/District": "province_district",
+    "City/Municipality": "city_municipality",
+    "General": "general",
+    "Nature of Ownership": "nature_of_ownership",
+    "Authorized Bed Capacity": "authorized_bed_capacity",
+    "Implementing Beds": "implementing_beds",
+    "Bed Occupancy Rate (BOR) Based on Authorized Beds": "bed_occupancy_rate",
+}
+merged_df = merged_df.rename(columns=col_map)
 
--- MAGIC %python
--- MAGIC # Verify the written table
--- MAGIC print("Table schema:")
--- MAGIC spark.sql("DESCRIBE TABLE public_health.bronze.facilities_bed_occupancy_rate").show(truncate=False)
--- MAGIC
--- MAGIC print("\nRow count and year breakdown:")
--- MAGIC spark.sql("""
--- MAGIC     SELECT year, COUNT(*) as cnt
--- MAGIC     FROM public_health.bronze.facilities_bed_occupancy_rate
--- MAGIC     GROUP BY year
--- MAGIC     ORDER BY year
--- MAGIC """).show()
--- MAGIC
--- MAGIC print("Sample rows:")
--- MAGIC display(spark.sql("SELECT * FROM public_health.bronze.facilities_bed_occupancy_rate LIMIT 5"))
--- MAGIC
+# Ensure year is the last column
+cols = [c for c in merged_df.columns if c != "year"] + ["year"]
+merged_df = merged_df[cols]
+
+# Convert all columns to string for Arrow compatibility
+merged_df = merged_df.astype("string")
+
+print(f"Merged shape: {merged_df.shape}")
+print(f"Columns: {list(merged_df.columns)}")
+print("\nYear breakdown:")
+print(merged_df["year"].value_counts().sort_index())
+
+# COMMAND ----------
+
+# Write merged DataFrame to Delta table
+spark_df = spark.createDataFrame(merged_df)
+spark_df.write.mode("overwrite").option("columnMapping.mode", "name").option(
+    "overwriteSchema", "true"
+).saveAsTable("public_health.bronze.facilities_bed_occupancy_rate")
+
+print(f"Wrote {merged_df.shape[0]} rows to public_health.bronze.facilities_bed_occupancy_rate")
+
+# COMMAND ----------
+
+# Verify the written table
+print("Table schema:")
+spark.sql("DESCRIBE TABLE public_health.bronze.facilities_bed_occupancy_rate").show(truncate=False)
+
+print("\nRow count and year breakdown:")
+spark.sql("""
+    SELECT year, COUNT(*) as cnt
+    FROM public_health.bronze.facilities_bed_occupancy_rate
+    GROUP BY year
+    ORDER BY year
+""").show()
+
+print("Sample rows:")
+display(spark.sql("SELECT * FROM public_health.bronze.facilities_bed_occupancy_rate LIMIT 5"))
