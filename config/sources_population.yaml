@@ -1,0 +1,36 @@
+sources:
+  psgc_population:
+    source_name: PSA PSGC
+    source_system: PSA PSGC
+    source_endpoint: PSGC API
+    version: Q2_2024
+
+    bronze_table: public_health.bronze.geography_bronze
+    geography_silver_table: public_health.silver.geography_silver
+
+    metadata_table: public_health.bronze.ingestion_metadata
+    qc_results_table: public_health.quality.qc_results
+
+    qc:
+      required_columns:
+        - psgc_code
+        - area_name
+        - geographic_level
+        - source_version
+        - populations_json
+        - source_system
+        - source_endpoint
+        - batch_id
+        - content_checksum
+        - raw_path
+        - ingested_at
+
+      skip_checks:
+        - B02
+        - B03
+        - B06
+        - B08
+        - B09
+        - B11
+        - B12
+        - B14
