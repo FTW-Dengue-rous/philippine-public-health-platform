@@ -31,7 +31,6 @@ sources:
 
     bronze_table: "public_health.bronze.geography_phl_admin_boundaries"
     dq_results_table: "public_health.bronze.geography_phl_admin_boundaries_dq"
-
     admin_boundaries_silver_table: "public_health.silver.admin_boundaries_silver"
     qc_results_table: "public_health.quality.qc_results"
 
@@ -54,27 +53,3 @@ sources:
       accepted_geometry_types:
         - Polygon
         - MultiPolygon
-
-  qc:
-    required_columns:
-      - psgc_code
-      - area_name
-      - geographic_level
-      - source_version
-      - populations_json
-      - source_system
-      - source_endpoint
-      - batch_id
-      - content_checksum
-      - raw_path
-      - ingested_at
-
-    skip_checks:
-      - B02  # API source; no YAML file list
-      - B03  # API source; no per-file expected row counts
-      - B06  # No file/sheet/row-number lineage in API Bronze
-      - B08  # File/sheet duplicate check does not apply to API source
-      - B09  # No _rescued_data column in API Bronze
-      - B11  # No verified Bronze control totals configured
-      - B12  # No source total/parts configuration
-      - B14  # File/YAML stray-file check does not apply to API source
