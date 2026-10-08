@@ -1,6 +1,8 @@
 # Databricks notebook source
 # openpyxl is required on Serverless compute for .xlsx parsing
-%pip install openpyxl
+# MAGIC %pip install openpyxl
+
+# COMMAND ----------
 
 import pandas as pd
 
