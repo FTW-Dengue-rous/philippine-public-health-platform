@@ -29,8 +29,8 @@ sources:
     layer_extensions: [".geojson", ".json"]
     layer_pattern: '(?:^|[_-])(?:adm|admin)(\d+)(?=[_.-]|$)'
 
-    bronze_table: "public_health.bronze.geography_phl_admin_boundaries"
-    dq_results_table: "public_health.bronze.geography_phl_admin_boundaries_dq"
+    bronze_table: "public_health.bronze.admin_boundaries_bronze"
+    dq_results_table: "public_health.bronze.admin_boundaries_dq"
     admin_boundaries_silver_table: "public_health.silver.admin_boundaries_silver"
     qc_results_table: "public_health.quality.qc_results"
 
