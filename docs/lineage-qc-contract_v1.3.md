@@ -1,6 +1,7 @@
-# Lineage and QC contract (shared, v1.2 draft)
+# Lineage and QC contract (shared, v1.3 draft)
 
 Last updated: 2026-10-09.
+- **v1.3: `row_disposition` stores only the bronze rows that were not loaded** (dropped, duplicate, quarantined, merged). Loaded rows are no longer written: about 99% fewer rows, with the same reconciliation check (section 7.1).
 - **v1.2 reduces the lineage columns on silver rows from 11 to 7** (6 where nothing is unpivoted). Facts that are the same for every row of a file (load time, load id, checksum, build time) are stored once per build in `build_inputs` and `build_log`, and reached by a join. Traceability is unchanged (sections 3.3 to 3.5, 13).
 - v1.1 added four clarifications (section 13). No table, column or identifier changes, and nothing a domain plan has to restructure.
 - One contract for lineage and QC identity across all domains (geography, facilities, diseases, workforce, socioeconomic). Domain guides reference this document and only declare what is specific to their sources.
@@ -271,6 +272,7 @@ Two tables in `public_health.quality`: `build_log` and `build_inputs`. **Created
 | `v_latest_build` | The latest successful build per table. Used by freshness and by gold |
 | `v_build_lineage` | `build_inputs` of successful builds with the build time. The join target for silver rows (section 3.3) |
 | `v_qc_results_identity` | `qc_results` with `build_id`, `content_checksum` and the checked table version (section 8.1) |
+| `v_build_reconciliation` | Per input of each successful build: rows read, rows not loaded by kind, rows loaded (section 7.1) |
 
 ### 5.1 Build sequence
 
@@ -320,22 +322,36 @@ Two checks. One does not replace the other.
 
 ### 7.1 Input accounting: `quality.row_disposition`
 
-Every bronze row read by a build has exactly one disposition.
+**Every bronze row a build read is either loaded or has a disposition row saying why it was not.** Only the rows that were not loaded are stored.
+
+| Bronze row | Recorded where |
+|---|---|
+| Loaded | Not in `row_disposition`. The silver row already carries its bronze row reference (`_source_key`, `_source_file`, `_source_sheet`, `_source_row_num`) |
+| Not loaded: `dropped_non_data`, `duplicate_of`, `quarantined` | One row in `row_disposition`, with the reason |
+| `merged_into` (it contributed to a silver row built from several bronze rows) | One row in `row_disposition`, with the silver key in `target_key` |
+
+**Why loaded rows are not stored:** they were about 99% of the table (diseases: 117,650 of 118,766 rows per run) and repeated what the silver lineage columns already say. The rows a reviewer needs to see are the ones that did not make it.
 
 | Column | Note |
 |---|---|
-| `_silver_build_id` | The build |
-| `_source_key`, `_source_file`, `_source_sheet`, `_source_row_num` | The bronze row. `_source_sheet` is null for CSVs; compare with `<=>` |
-| `_load_batch_id`, `_content_checksum` | Which load and which file version the row reference belongs to. Kept here, unlike on silver rows: this is a log table, and a failed build has dispositions but no `build_inputs` rows |
-| `target_table`, `target_key` | Where it went |
-| `disposition` | `loaded` / `merged_into` / `duplicate_of` / `quarantined` / `dropped_non_data` |
-| `reason` | Required unless `loaded` |
+| `build_id` | The build (`_silver_build_id` on the silver rows) |
+| `source_key`, `source_file`, `source_sheet`, `source_row_num` | The bronze row. `source_sheet` is null for CSVs; compare with `<=>` |
+| `load_batch_id`, `content_checksum` | Which load and which file version the row reference belongs to. Kept here, unlike on silver rows: this is a log table, and a failed build has dispositions but no `build_inputs` rows |
+| `target_table`, `target_key` | The table being built. `target_key` is JSON: the retained bronze row for `duplicate_of`, the silver key for `merged_into` |
+| `disposition` | `merged_into` / `duplicate_of` / `quarantined` / `dropped_non_data` |
+| `reason` | Why the row was not loaded |
+| `recorded_at` | When it was written |
 
-Checks:
-- Dispositions per input = bronze rows per input (no gaps, no doubles).
-- Distinct bronze rows referenced by silver lineage, per input = `loaded` + `merged_into` dispositions for that input.
+Column names have no leading underscore, the same as `build_inputs`, so the two tables join directly. Created by `quality_setup.sql`.
 
-A row reference without the load and version is ambiguous: row 18 of a file means something else after the file is revised.
+**Checks, per input file or sheet:**
+- Rows read by the build (`build_inputs.input_rows`) = bronze rows of that input (nothing skipped).
+- Distinct bronze rows referenced by silver lineage = rows read − rows not loaded. `merged_into` rows count as loaded here, because they contributed.
+- Rows loaded is therefore derived: `input_rows` minus the disposition rows. The view `quality.v_build_reconciliation` shows rows read, not loaded by kind, and loaded, per input of each successful build.
+
+- A build that still writes `loaded` rows is not wrong: the view and the checks ignore them. New and revised builds should not write them.
+- A row reference without the load and version is ambiguous: row 18 of a file means something else after the file is revised.
+- **What is no longer possible:** listing exactly which bronze rows an old build loaded, once its silver table has been replaced. The count per input is still known, and the rows not loaded are still listed.
 
 ### 7.2 Output validation
 
@@ -444,8 +460,9 @@ A domain does not redefine identifiers, naming, the freshness policy or the mean
 | `socioeconomic-silver-guide.md` and the poverty SQL pattern | Trim to the v1.2 column set: drop the per-side `ingested_at`, `load_batch_id`, `content_checksum` and `_silver_loaded_at` from the output (poverty: 16 → 9). `poverty_inputs` already holds them for `build_inputs` |
 | `workforce-silver-plan.md` | Trim to the v1.2 column set (denominator: 16 → 9) |
 | `diseases-silver-plan.md` | Done (plan v1.2) |
+| Silver builds that write `row_disposition` (v1.3) | Write only the rows that were not loaded. Diseases: done. Facilities, workforce and socioeconomic: filter out `loaded` in the disposition insert |
 | Diseases, workforce, geography silver | Follow this contract from the start |
-| `quality_setup.sql` | **Done (2026-10-09):** `build_log`, `build_inputs`, `v_latest_build`, `v_build_lineage`, `v_qc_results_identity`. **Still to add:** `row_disposition`, which the file does not create yet |
+| `quality_setup.sql` | **Done (2026-10-09):** `build_log`, `build_inputs`, `v_latest_build`, `v_build_lineage`, `v_qc_results_identity`. `row_disposition` added the same day |
 | Silver QC script (shared) | Read table configs; implement sections 4, 6 and 7 through `DQRun` |
 | Bronze tables and loaders | **No change.** Identifiers come from `ingestion_metadata` |
 | Bronze QC scripts | No change. They already write `<source_key>:<content_checksum>` |
@@ -461,6 +478,17 @@ A domain does not redefine identifiers, naming, the freshness policy or the mean
 | O5 | The API-ingested geography source has no file or row number. Its lineage group needs endpoint and record key in place of file, sheet and row |
 
 ## 13. Changes
+
+### v1.3 (2026-10-09): `row_disposition` holds exceptions only
+
+| Item | Change |
+|---|---|
+| `row_disposition` | Stores only bronze rows that were not loaded. `loaded` rows are no longer written (7.1) |
+| Loaded count | Derived: `build_inputs.input_rows` minus the disposition rows. New view `quality.v_build_reconciliation` |
+| Reconciliation check | Rows read = bronze rows; rows referenced by silver = rows read − rows not loaded |
+| Schema | No table or column change. One view added; column comments updated |
+| Size | Diseases: 118,766 rows per run → 1,116 |
+| Still to do | The same filter in the facilities, workforce and socioeconomic builds |
 
 ### v1.2 (2026-10-09): fewer lineage columns on silver rows
 
@@ -683,7 +711,7 @@ With `_source_file` and `_ingested_at` only, the first two cases look identical.
 | `ingestion_metadata` | one load of one file or sheet | Source of `_load_batch_id` and `_content_checksum`; record of what the loader did |
 | `build_log` | one build of one silver or gold table | Status, row count, table version written, code version. Records failed builds too |
 | `build_inputs` | one input consumed by one successful build | The exact files, sheets, loads and versions a table was built from. Basis of the freshness check |
-| `row_disposition` | one bronze row in one build | Says what happened to every bronze row: `loaded`, `merged_into`, `duplicate_of`, `quarantined` or `dropped_non_data`. Proves no row was lost or counted twice |
+| `row_disposition` | one bronze row that a build read but did not load | Says why: `duplicate_of`, `quarantined`, `dropped_non_data` (or `merged_into`). With `build_inputs.input_rows` it proves no row was lost or counted twice |
 
 ### A.7 Worked example: tracing one dashboard number
 
