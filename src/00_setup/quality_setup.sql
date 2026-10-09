@@ -11,6 +11,7 @@
 --   quality.quarantine        rows rejected by silver checks, kept as JSON
 --   quality.build_log         one row per silver or gold build (succeeded or failed)
 --   quality.build_inputs      one row per input file, sheet or table read by a successful build
+--   quality.row_disposition   bronze rows a build read but did not load: duplicate, quarantined, dropped
 -- Views
 --   quality.v_latest_results  results of the latest QC execution per table
 --   quality.v_table_health    one status per table (worst status of its latest checks)
@@ -20,6 +21,7 @@
 --   quality.v_build_lineage   inputs of every successful build, with the build time (join target
 --                             for silver rows: load time, load id, file checksum)
 --   quality.v_qc_results_identity  qc_results with build_id, content_checksum and checked version
+--   quality.v_build_reconciliation rows read, not loaded (by kind) and loaded, per input of each build
 --
 -- How to run
 --   This file only CREATEs objects (IF NOT EXISTS / OR REPLACE VIEW), so "Run All"
@@ -229,6 +231,30 @@ USING DELTA
 COMMENT 'One row per input (file, sheet or table) read by a successful build';
 
 
+-- Input accounting (contract section 7.1): the bronze rows a build read but did NOT load.
+-- One row per such bronze row per build and target table: dropped, duplicate, quarantined or
+-- merged. Loaded rows are not stored here: the silver rows already carry their bronze row
+-- reference, and rows loaded per input = build_inputs.input_rows minus the rows here
+-- (view v_build_reconciliation). Row references only, no source values, so it is safe for
+-- restricted sources.
+CREATE TABLE IF NOT EXISTS public_health.quality.row_disposition (
+  build_id          STRING    COMMENT 'Build that read the row; joins to build_log',
+  target_table      STRING    COMMENT 'Full name of the table the build wrote',
+  source_key        STRING    COMMENT 'Bronze row: _source_key',
+  source_file       STRING    COMMENT 'Bronze row: _source_file',
+  source_sheet      STRING    COMMENT 'Bronze row: _source_sheet; null for CSV sources (compare with <=>)',
+  source_row_num    INT       COMMENT 'Bronze row: _source_row_num',
+  load_batch_id     STRING    COMMENT 'Load that wrote the bronze row. Kept here because a failed build has no build_inputs rows',
+  content_checksum  STRING    COMMENT 'File version the row reference belongs to',
+  disposition       STRING    COMMENT 'merged_into | duplicate_of | quarantined | dropped_non_data. (loaded is not stored; older builds may have such rows)',
+  reason            STRING    COMMENT 'Why the row was not loaded, e.g. footnote, hxl_tag_row, area_unresolved',
+  target_key        STRING    COMMENT 'JSON. duplicate_of: the retained bronze row. merged_into: the silver key',
+  recorded_at       TIMESTAMP COMMENT 'When the disposition was written (UTC)'
+)
+USING DELTA
+COMMENT 'Bronze rows a build read but did not load, per build and target table';
+
+
 -- -----------------------------------------------------------------------------
 -- 8. Views
 -- -----------------------------------------------------------------------------
@@ -349,6 +375,36 @@ LEFT JOIN public_health.quality.build_log b
  AND b.target_table_version = s.checked_table_version
  AND b.status = 'succeeded';
 
+-- Input accounting per input of each successful build: rows read = rows loaded + rows not loaded.
+-- rows_loaded is derived, because row_disposition stores only the rows that were not loaded.
+-- A build that also wrote 'loaded' rows (older builds) gives the same numbers: they are ignored.
+-- A merged row contributed to a silver row, so it counts as loaded; rows_merged shows how many.
+CREATE OR REPLACE VIEW public_health.quality.v_build_reconciliation
+COMMENT 'Per input of each successful build: rows read, rows not loaded by kind, rows loaded'
+AS
+SELECT i.build_id, i.target_table, i.input_table, i.source_key, i.source_file, i.source_sheet,
+       i.input_rows                                               AS rows_read,
+       coalesce(d.dropped_non_data, 0)                            AS rows_dropped_non_data,
+       coalesce(d.duplicates, 0)                                  AS rows_duplicate,
+       coalesce(d.quarantined, 0)                                 AS rows_quarantined,
+       coalesce(d.merged, 0)                                      AS rows_merged,
+       i.input_rows - coalesce(d.not_loaded, 0)                   AS rows_loaded
+FROM public_health.quality.build_inputs i
+JOIN public_health.quality.build_log b
+  ON b.build_id = i.build_id AND b.target_table = i.target_table AND b.status = 'succeeded'
+LEFT JOIN (
+  SELECT build_id, target_table, source_key, source_file, source_sheet,
+         count_if(disposition = 'dropped_non_data') AS dropped_non_data,
+         count_if(disposition = 'duplicate_of')     AS duplicates,
+         count_if(disposition = 'quarantined')      AS quarantined,
+         count_if(disposition = 'merged_into')      AS merged,
+         count_if(disposition NOT IN ('loaded', 'merged_into')) AS not_loaded
+  FROM public_health.quality.row_disposition
+  GROUP BY build_id, target_table, source_key, source_file, source_sheet
+) d ON d.build_id = i.build_id AND d.target_table = i.target_table AND d.source_key = i.source_key
+   AND d.source_file = i.source_file AND d.source_sheet <=> i.source_sheet
+WHERE i.input_kind = 'bronze_source';
+
 -- -----------------------------------------------------------------------------
 -- 9. Notes (nothing to run)
 -- -----------------------------------------------------------------------------
@@ -361,5 +417,3 @@ LEFT JOIN public_health.quality.build_log b
 --   writes three build_log rows.
 -- * A build never updates or deletes rows here. A rebuilt table gets a new build_id; the
 --   old build's rows stay as history.
--- * quality.row_disposition (input accounting per bronze row) is in the contract but is
---   not created by this file yet.
