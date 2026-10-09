@@ -1,0 +1,48 @@
+# Databricks Asset Bundle — Philippine Public Health Platform
+# Deploys the pipeline job (resources/*.yml) and the src/ + config/ code to the workspace.
+#
+# Local use (any teammate):  databricks bundle deploy -t dev
+# CI/CD use: .github/workflows/cd.yml  (dev branch -> dev, main -> prod)
+
+bundle:
+  name: ph_public_health
+
+include:
+  - resources/*.yml
+
+# Only ship what the job needs. Everything else stays in Git only.
+sync:
+  exclude:
+    - archive/**
+    - dashboard/**
+    - data/**
+    - docs/**
+    - presentation/**
+    - tests/**
+    - "**/README.md"
+
+targets:
+  # dev: personal / integration copy.
+  # mode: development -> job names get a "[dev <user>]" prefix, schedules are paused,
+  # each deployer (teammate or CI service principal) gets their own copy.
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://<your-workspace-host>  # TODO: e.g. https://dbc-xxxx.cloud.databricks.com
+
+  # prod: the one "official" copy, deployed only by CI from main.
+  prod:
+    mode: production
+    workspace:
+      host: https://<your-workspace-host>  # TODO: same host as dev (single workspace)
+      # Lives under the service principal's home, not a person's.
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    run_as:
+      service_principal_name: <sp-application-id>  # TODO: the SP's Application ID (UUID)
+    permissions:
+      # TODO: replace with your teammates' emails (or a group via group_name)
+      - user_name: jghsantiago91@gmail.com
+        level: CAN_MANAGE
+      # - user_name: teammate@example.com
+      #   level: CAN_VIEW
