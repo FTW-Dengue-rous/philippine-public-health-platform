@@ -10,7 +10,7 @@ sources:
 
     bronze_table: "public_health.bronze.geography_bronze"
     geography_silver_table: "public_health.silver.geography_silver"
-    qc_results_table: "public_health.bronze.qc_results"
+    qc_results_table: "public_health.quality.qc_results"
     metadata_table: "public_health.bronze.ingestion_metadata"
 
   hdx_phl_admin:
@@ -29,5 +29,27 @@ sources:
     layer_extensions: [".geojson", ".json"]
     layer_pattern: '(?:^|[_-])(?:adm|admin)(\d+)(?=[_.-]|$)'
 
-    bronze_table: "public_health.bronze.geography_phl_admin_boundaries"
-    dq_results_table: "public_health.bronze.geography_phl_admin_boundaries_dq"
+    bronze_table: "public_health.bronze.admin_boundaries_bronze"
+    dq_results_table: "public_health.bronze.admin_boundaries_dq"
+    admin_boundaries_silver_table: "public_health.silver.admin_boundaries_silver"
+    qc_results_table: "public_health.quality.qc_results"
+
+    silver_qc:
+      required_columns:
+        - admin_level
+        - boundary_pcode
+        - boundary_name
+        - area_sqkm
+        - center_lat
+        - center_lon
+        - geometry_type
+        - geometry_json
+        - source_crs
+        - source_version
+        - batch_id
+        - source_file
+        - record_sha256
+
+      accepted_geometry_types:
+        - Polygon
+        - MultiPolygon
