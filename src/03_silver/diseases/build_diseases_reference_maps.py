@@ -784,7 +784,9 @@ ihme_causes = (
     .distinct()
     .collect()
 )
-for cid, name in sorted({(r.cause_id, r.cause_name) for r in ihme_causes}, key=lambda x: int(x[0])):
+for cid, _name in sorted(
+    {(r.cause_id, r.cause_name) for r in ihme_causes}, key=lambda x: int(x[0])
+):
     add_cause("ihme_gbd", "ihme_cause_id", cid, "data", f"ihme_{cid}", cid)
 
 for sk in ("doh_foi_dengue", "upnoah", "hdx_dengue"):
