@@ -29,20 +29,28 @@ targets:
     mode: development
     default: true
     workspace:
-      host: https://<your-workspace-host>  # TODO: e.g. https://dbc-xxxx.cloud.databricks.com
+      host: https://dbc-f35d1246-e7fd.cloud.databricks.com/
 
   # prod: the one "official" copy, deployed only by CI from main.
   prod:
     mode: production
     workspace:
-      host: https://<your-workspace-host>  # TODO: same host as dev (single workspace)
-      # Lives under the service principal's home, not a person's.
+      host: https://dbc-f35d1246-e7fd.cloud.databricks.com/
       root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     run_as:
-      service_principal_name: <sp-application-id>  # TODO: the SP's Application ID (UUID)
+      service_principal_name: 56e63750-69f1-4af9-80c6-f85bc6f1c506  # TODO: the SP's Application ID (UUID)
     permissions:
-      # TODO: replace with your teammates' emails (or a group via group_name)
       - user_name: jghsantiago91@gmail.com
         level: CAN_MANAGE
+      - user_name: virna.pomendia@ftwfoundation.org
+        level: CAN_RUN
+      - user_name: shiena.arico@ftwfoundation.org
+        level: CAN_MANAGE
+      - user_name: via.cabuyao@ftwfoundation.org
+        level: CAN_RUN
+      - user_name: cristina.villota@ftwfoundation.org
+        level: CAN_RUN
+      - user_name: margarette.legaspi@ftwfoundation.org
+        level: CAN_RUN
       # - user_name: teammate@example.com
-      #   level: CAN_VIEW
+      #   level: CAN_RUN
