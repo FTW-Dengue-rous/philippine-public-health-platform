@@ -28,8 +28,6 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: https://dbc-f35d1246-e7fd.cloud.databricks.com/
 
   # prod: the one "official" copy, deployed only by CI from main.
   prod:
