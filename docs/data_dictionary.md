@@ -8,15 +8,35 @@ This ingests raw health-facility and health-workforce source files from the land
 
 1. [Shared Conventions](#shared-conventions)
 2. [Tables at a Glance](#tables-at-a-glance)
-3. [`facilities_primary_care`](#public_healthbronzefacilities_primary_care) — Regional Distribution of Primary Care Facilities
-4. [`active_facilities`](#public_healthbronzeactive_facilities) — NHFR Active Facilities
-5. [`facilities_hospital_list`](#public_healthbronzefacilities_hospital_list) — Regional Distribution of Hospitals
-6. [`facilities_infirmary`](#public_healthbronzefacilities_infirmary) — Regional Distribution of Regulated Infirmaries
-7. [`government_medical_practitioners_by_region`](#public_healthbronzegovernment_medical_practitioners_by_region) — Government Medical Practitioners by Region, 2012–2023
-8. [`psmo_oncologists`](#public_healthbronzepsmo_oncologists) — PSMO Oncologist Count by Region/Province
-9. [`globocan_2024_statistics_at_glance`](#public_healthbronzeglobocan_2024_statistics_at_glance) — GLOBOCAN 2024 Summary Cancer Statistics
-10. [`globocan_2024_cancer_site_metrics`](#public_healthbronzeglobocan_2024_cancer_site_metrics) — GLOBOCAN 2024 Cancer Site Metrics
-11. [`neoplasm_prevalence`](#public_healthbronzeneoplasm_prevalence) — IHME GBD Neoplasm Prevalence by Province
+3. [Bronze Layer](#bronze-layer)
+    - [Diseases](#bronze-diseases-domain)
+    - [Geography](#bronze-geography-domain)
+        - [`geography_bronze`](#public_healthbronzegeography_bronze)
+        - [`geography_phl_admin_boundaries`](#public_healthbronzegeography_phl_admin_boundaries)
+        - [`geography_phl_admin_boundaries_dq`](#public_healthbronzegeography_phl_admin_boundaries_dq)
+    - [Facilities](#bronze-facilities-domain)
+        - [`facilities_primary_care`](#public_healthbronzefacilities_primary_care) — Regional Distribution of Primary Care Facilities
+        - [`active_facilities`](#public_healthbronzeactive_facilities) — NHFR Active Facilities
+        - [`facilities_hospital_list`](#public_healthbronzefacilities_hospital_list) — Regional Distribution of Hospitals
+        - [`facilities_infirmary`](#public_healthbronzefacilities_infirmary) — Regional Distribution of Regulated Infirmaries
+        - [`government_medical_practitioners_by_region`](#public_healthbronzegovernment_medical_practitioners_by_region) — Government Medical Practitioners by Region, 2012–2023
+        - [`psmo_oncologists`](#public_healthbronzepsmo_oncologists) — PSMO Oncologist Count by Region/Province
+        - [`globocan_2024_statistics_at_glance`](#public_healthbronzeglobocan_2024_statistics_at_glance) — GLOBOCAN 2024 Summary Cancer Statistics
+        - [`globocan_2024_cancer_site_metrics`](#public_healthbronzeglobocan_2024_cancer_site_metrics) — GLOBOCAN 2024 Cancer Site Metrics
+        - [`neoplasm_prevalence`](#public_healthbronzeneoplasm_prevalence) — IHME GBD Neoplasm Prevalence by Province
+    - [Population](#bronze-population-domain)
+        - [`population_bronze`](#public_healthbronzepopulation_bronze--legacy-psa-population-file-ingestion) — Legacy PSA Population Data
+    - [Socio-economic](#bronze-socio-economic-domain)
+    - [Workforce](#bronze-workforce-domain)
+4. [Silver Layer](#silver-layer)
+    - [Diseases](#silver-disease-domain)
+    - [Geography](#silver-geography-domain)
+    - [Facilities](#silver-facilities-domain)
+    - [Population](#silver-population-domain)
+        - [`population_silver`](#public_healthsilverpopulation_silver) —  Silver-Transformed PSGC Population Data
+    - [Socio-economic](#silver-socio-economic-domain)
+    - [Workforce](#silver-workforce-domain)
+
 
 ---
 
@@ -33,6 +53,7 @@ This ingests raw health-facility and health-workforce source files from the land
 
 ### Tables at a Glance
 
+#### Bronze Layer
 | Bronze Table | Source File | Provider | Rows | Columns | Status |
 |---|---|---|---|---|---|
 | `facilities_primary_care` | `primary_care_asof20260630.xlsx` | PSA | 19 | 6 | Active |
@@ -43,9 +64,373 @@ This ingests raw health-facility and health-workforce source files from the land
 | `psmo_oncologists` | `psmo_oncologists.csv` | PSMO | 52 | 6 | Active |
 | `globocan_2024_statistics_at_glance` | `globocan_2024.xlsx` | GLOBOCAN / IARC | 8 | 10 | Active |
 | `globocan_2024_cancer_site_metrics` | `globocan_2024.xlsx` | GLOBOCAN / IARC | 34 | 14 | Active |
-| `neoplasm_prevalence` | `neoplasm_prevalence.csv` | IHME | 8,364 | 11 | Active |
+| `neoplasm_prevalence` | `neoplasm_prevaleFnce.csv` | IHME | 8,364 | 11 | Active |
+| `population_bronze` | Excel files in `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/population` | PSA | Runtime-dependent | 20 | Legacy |
 
+#### Silver Layer
+| Silver Table | Source File | Provider | Rows | Columns | Status |
+|---|---|---|---|---|---|
+| `population_silver` | `populations_json` in `geography_bronze` | PSA PSGC API | Run-time dependent | 8 | Active |
 > Row and column counts reflect the state at the time of writing and may change after a refresh.
+
+---
+
+## Bronze Layer
+
+
+
+### Bronze: Diseases domain
+
+
+---
+
+### Bronze: Geography domain
+
+---
+
+### `public_health.bronze.geography_bronze`
+
+**Purpose**
+
+Stores source-aligned Philippine Standard Geographic Code (PSGC) records
+retrieved from the Philippine Statistics Authority (PSA) API.
+
+The Bronze table preserves useful source attributes as individual columns,
+nested population observations as JSON, the complete logical source record,
+and ingestion lineage metadata.
+
+**Grain**
+
+One row per PSGC geographic code per logical source snapshot.
+
+**Source**
+
+PSA Philippine Standard Geographic Code (PSGC) API.
+
+**Natural source key**
+
+`psgc_code`
+
+**Bronze merge key**
+
+`content_checksum + psgc_code`
+
+This allows the same PSGC code to exist in different source snapshots while
+preventing duplicate records within the same logical snapshot.
+
+| Column | Data Type | Description |
+|---|---|---|
+| `psgc_code` | STRING | PSGC geographic identifier. Derived from the PSA source field `code`. |
+| `area_name` | STRING | Official geographic area name from PSA. |
+| `correspondence_code` | STRING | Correspondence code supplied by PSA. |
+| `geographic_level` | STRING | Geographic level of the record, such as `Reg`, `Prov`, `City`, `Mun`, `SubMun`, or `Bgy`. Blank values may exist in the source for exceptional geographic records. |
+| `reg` | STRING | Region component/code supplied by PSA. |
+| `prv` | STRING | Province component/code supplied by PSA. |
+| `mun` | STRING | Municipality/city component/code supplied by PSA. |
+| `bgy` | STRING | Barangay component/code supplied by PSA. |
+| `old_name` | STRING | Previous geographic name supplied by PSA, when available. |
+| `city_class` | STRING | PSA city classification, when applicable. |
+| `income_classification` | STRING | Income classification supplied by PSA, generally applicable to provinces, cities, and municipalities. |
+| `urban_rural` | STRING | Urban/rural classification supplied by PSA, primarily populated for barangay records. |
+| `island_region` | STRING | Major island-region grouping supplied by PSA, such as Luzon, Visayas, or Mindanao. |
+| `record_status` | STRING | Status value from the PSA source record. Renamed from source field `status` to distinguish it from ingestion-run status. |
+| `record_version` | STRING | Version value contained in the individual PSA source record. Renamed from source field `version`. |
+| `populations_json` | STRING | JSON array containing population observations associated with the PSGC code. Each observation may contain `id`, `population`, `psgc`, and `year`. Preserved in Bronze for later parsing and normalization in Silver. |
+| `source_record_json` | STRING | Complete logical PSA source record preserved as JSON for auditability, traceability, and future reprocessing. |
+| `source_system` | STRING | Name of the source system, e.g. `PSA PSGC`. |
+| `source_version` | STRING | PSGC source version requested by the ingestion pipeline, e.g. `Q2_2024`. |
+| `source_endpoint` | STRING | PSA API endpoint used for the ingestion. |
+| `batch_id` | STRING | Unique identifier for the ingestion run that wrote the Bronze record. |
+| `content_checksum` | STRING | Deterministic SHA-256 checksum representing the logical source snapshot. Used for idempotency and duplicate detection. |
+| `raw_path` | STRING | Permanent landing path containing the validated raw source files associated with the snapshot. |
+| `ingested_at` | TIMESTAMP | Timestamp when the record was written to the Bronze Delta table. |
+
+#### Source-value notes
+
+Some PSGC attributes are only applicable to specific geographic levels.
+Therefore, blank values in fields such as `old_name`, `city_class`,
+`income_classification`, `urban_rural`, and `record_status` do not
+automatically indicate a data-quality failure.
+
+Population observations are kept in source form in Bronze. Population values
+may contain commas, surrounding spaces, blank strings, or source values such
+as `#N/A`. Cleaning, type conversion, and exploding population observations
+are Silver-layer responsibilities.
+
+---
+
+### `public_health.bronze.geography_phl_admin_boundaries`
+
+**Purpose**
+
+Stores source-aligned Philippine administrative boundary features retrieved
+from the Humanitarian Data Exchange (HDX) Common Operational Dataset for
+Administrative Boundaries (COD-AB).
+
+The Bronze table preserves each complete GeoJSON Feature, raw properties,
+geometry, and technical lineage metadata required for auditability,
+idempotent reruns, and downstream geographic reconciliation.
+
+**Grain**
+
+One row per GeoJSON Feature per administrative level per immutable HDX
+source version.
+
+**Source**
+
+HDX Philippines Administrative Boundaries (`cod-ab-phl`).
+
+Source format: GeoJSON.
+
+Source resource:
+
+`https://data.humdata.org/dataset/cod-ab-phl/resource/0120c30e-ba8b-487d-83f5-a664eddd3a8e`
+
+**Source key**
+
+`hdx_phl_admin`
+
+**Administrative levels**
+
+* ADM1 — region-level boundaries
+* ADM2 — province-level boundaries
+* ADM3 — municipality/city-level boundaries
+
+HDX p-codes are preserved as source values in Bronze. They are not yet
+treated as canonical/current PSA Philippine Standard Geographic Code (PSGC)
+identifiers.
+
+PSGC reconciliation, canonical naming, hierarchy standardization, and
+resolution of source-specific administrative differences are Silver-layer
+responsibilities.
+
+**Source version key**
+
+`_source_version`
+
+The source version is the SHA-256 checksum of the immutable downloaded HDX
+source archive.
+
+**Batch key**
+
+`_batch_id`
+
+The batch identifier is deterministic and follows:
+
+`dataset_id:source_version`
+
+**Bronze rerun rule**
+
+For the same `_source_version`:
+
+* if no records exist, load the complete validated batch;
+* if the complete expected batch already exists, perform a no-op;
+* if a partial or inconsistent batch exists, fail rather than append.
+
+This prevents duplicate records when the same immutable source version is
+rerun.
+
+| Column | Data Type | Description |
+|---|---|---|
+| `source_feature_json` | STRING | Complete GeoJSON Feature preserved from the HDX source for auditability, traceability, and future reprocessing. |
+| `_staging_file_path` | STRING | Exact prepared JSONL file read by Spark for the Bronze record. Technical staging is not a Medallion layer. |
+| `feature_type` | STRING | GeoJSON object type. Expected source value is `Feature`. |
+| `source_feature_id` | STRING | GeoJSON Feature identifier when supplied by the source; may be null. |
+| `properties_json` | STRING | Raw GeoJSON `properties` object containing source administrative attributes. |
+| `geometry_json` | STRING | Raw GeoJSON geometry object including source coordinates. |
+| `geometry_type` | STRING | Source geometry type. Validated values for the current source are `Polygon` and `MultiPolygon`. |
+| `_source_key` | STRING | Source configuration key. Expected value: `hdx_phl_admin`. |
+| `_dataset_id` | STRING | HDX dataset identifier. Expected value: `cod-ab-phl`. |
+| `_source_version` | STRING | SHA-256 checksum identifying the immutable HDX source archive. |
+| `_batch_id` | STRING | Deterministic source batch identifier composed from the dataset ID and source version. |
+| `_admin_level` | INT | Administrative level represented by the Feature: `1`, `2`, or `3`. |
+| `_source_file` | STRING | Original extracted GeoJSON layer, such as `phl_admin1.geojson`, `phl_admin2.geojson`, or `phl_admin3.geojson`. |
+| `_source_file_sha256` | STRING | SHA-256 checksum of the extracted source GeoJSON layer. |
+| `_source_crs` | STRING | Coordinate reference system reported by the source. |
+| `_source_url` | STRING | HDX resource URL used during source ingestion. |
+| `_landing_receipt_path` | STRING | Path to the immutable Landing `receipt.json` containing source provenance and ingestion metadata. |
+| `_staging_manifest_path` | STRING | Path to the validated staging `manifest.json` containing prepared-file metadata and expected row counts. |
+| `_validation_id` | STRING | Validation execution associated with the original Bronze load. Later validation executions of the same source version do not rewrite existing Bronze rows. |
+| `_landing_ingested_at` | TIMESTAMP | Timestamp when the immutable source version was ingested into Landing. |
+| `_bronze_ingested_at` | TIMESTAMP | Timestamp when the Bronze record was committed to the Delta table. |
+| `_record_sha256` | STRING | SHA-256 fingerprint of the complete source GeoJSON Feature used for record-level reconciliation and duplicate detection. |
+
+#### Source property notes
+
+The exact fields available in `properties_json` depend on the
+administrative level.
+
+Common source properties include:
+
+| Source Property | Description |
+|---|---|
+| `adm0_name` | Country-level source name. |
+| `adm0_pcode` | Country-level source p-code. |
+| `adm1_name` | ADM1 source administrative name. |
+| `adm1_pcode` | ADM1 source p-code. |
+| `adm2_name` | ADM2 source administrative name, present on ADM2 and ADM3 records. |
+| `adm2_pcode` | ADM2 source p-code, present on ADM2 and ADM3 records. |
+| `adm3_name` | ADM3 source administrative name. |
+| `adm3_pcode` | ADM3 source p-code. |
+| `adm3_ref_name` | Additional ADM3 reference name when supplied by the source. |
+| `area_sqkm` | Source-provided administrative area in square kilometers. |
+| `center_lat` | Source-provided center latitude. Preserved as supplied and not treated as a calculated centroid. |
+| `center_lon` | Source-provided center longitude. Preserved as supplied and not treated as a calculated centroid. |
+| `valid_on` | Source validity start value. |
+| `valid_to` | Source validity end value when supplied. |
+| `version` | Administrative-boundary version value supplied by the source. |
+| `lang` | Primary source language metadata. |
+| `lang1` | Additional source language metadata. |
+| `lang2` | Additional source language metadata. |
+| `lang3` | Additional source language metadata. |
+
+Alternate-name fields such as `adm0_name1`, `adm0_name2`, `adm0_name3`,
+`adm1_name1`, `adm1_name2`, `adm1_name3`, and equivalent fields for other
+administrative levels are also preserved when present.
+
+The complete `source_feature_json` remains the authoritative Bronze
+representation if additional source properties appear in a future HDX
+version.
+
+The Bronze validation checks geometry type only. A `Polygon` or
+`MultiPolygon` value does not by itself prove full geometric or topological
+validity. Full spatial validity checks belong in downstream processing when
+required.
+
+#### Current validated source snapshot
+
+Current immutable source version:
+
+`032db5d91fcb8a13aef378d6b4453da7225ef7f0fb9c0a1c3bf3c2205d0010d6`
+
+| Administrative Level | Feature Count |
+|---|---:|
+| ADM1 | 17 |
+| ADM2 | 88 |
+| ADM3 | 1,642 |
+| **Total** | **1,747** |
+
+The current source contains:
+
+* ADM1: 15 `MultiPolygon`, 2 `Polygon`
+* ADM2: 59 `MultiPolygon`, 29 `Polygon`
+* ADM3: 369 `MultiPolygon`, 1,273 `Polygon`
+
+The current source CRS is:
+
+`urn:ogc:def:crs:OGC:1.3:CRS84`
+
+These counts describe this immutable source version only.
+
+Future legitimate HDX source versions may contain different administrative
+record counts or geometry distributions. The pipeline derives expected row
+counts from the validated staging manifest rather than hard-coding these
+values.
+
+#### Current rerun validation
+
+The current source version was loaded successfully with:
+
+* ADM1: 17 rows
+* ADM2: 88 rows
+* ADM3: 1,642 rows
+* Total: 1,747 rows
+
+The same source version was rerun and returned:
+
+`write_outcome = already_complete`
+
+No additional Bronze rows were written, and the table remained at 1,747
+records for the source version.
+
+---
+
+### `public_health.bronze.geography_phl_admin_boundaries_dq`
+
+**Purpose**
+
+Stores validation evidence for the HDX Philippines administrative-boundary
+pipeline before a source version is allowed to load into Bronze.
+
+The table keeps validation history across executions rather than replacing
+previous validation results.
+
+**Grain**
+
+One row per validation check per administrative level per validation
+execution.
+
+**Related Bronze table**
+
+`public_health.bronze.geography_phl_admin_boundaries`
+
+**Source dataset**
+
+HDX `cod-ab-phl`.
+
+| Column | Data Type | Description |
+|---|---|---|
+| `validation_id` | STRING | Unique identifier for one validation execution. |
+| `run_id` | STRING | Ingestion notebook run identifier associated with the validation. |
+| `batch_id` | STRING | Source batch being validated. |
+| `dataset` | STRING | Source dataset identifier. Expected value: `cod-ab-phl`. |
+| `executed_at` | TIMESTAMP | Timestamp when the validation execution was recorded. |
+| `stage` | STRING | Pipeline validation stage. |
+| `admin_level` | INT | Administrative level evaluated by the validation rule. |
+| `check_name` | STRING | Name of the validation rule. |
+| `check_type` | STRING | Validation category, such as schema, null, uniqueness, accepted values, foreign key, volume, or format. |
+| `status` | STRING | Validation result. Expected values are `PASS`, `WARN`, or `FAIL`. |
+| `severity` | STRING | Severity assigned to the validation rule. |
+| `fail_count` | BIGINT | Number of records failing the validation rule. |
+| `total_count` | BIGINT | Number of records evaluated by the validation rule. |
+| `fail_pct` | DOUBLE | Percentage of evaluated records that failed the rule. |
+| `threshold` | DOUBLE | Allowed failure threshold recorded for the validation rule. |
+| `detail` | STRING | Additional validation detail or error context. |
+
+#### Validation checks
+
+Current validation includes:
+
+* required source-field availability;
+* optional source-field availability;
+* Spark JSON parsing;
+* manifest-to-record row-count reconciliation;
+* nonblank administrative p-codes;
+* p-code uniqueness within each administrative level;
+* nonblank administrative names;
+* GeoJSON `Feature` type;
+* accepted geometry types (`Polygon` or `MultiPolygon`);
+* ADM2-to-ADM1 parent-reference integrity; and
+* ADM3-to-ADM2 parent-reference integrity.
+
+A source version must have no blocking `FAIL` results before the ingestion
+notebook publishes a validated handoff to the Bronze loader.
+
+`WARN` results are retained for auditability but do not block the handoff.
+
+#### Current validated execution
+
+The latest validated handoff used validation ID:
+
+`8b5188af-8739-464f-8614-ca5b39dd4e2c`
+
+The validation execution recorded:
+
+* 37 validation checks
+* 0 blocking `FAIL` results
+* expected ADM1 rows: 17
+* expected ADM2 rows: 88
+* expected ADM3 rows: 1,642
+* expected total rows: 1,747
+
+A later validation execution of the same immutable source version does not
+rewrite the `_validation_id` stored on already-loaded Bronze records.
+Existing Bronze rows retain the validation execution that authorized their
+original load.
+
+---
+
+### Bronze: Facilities domain
 
 ---
 
@@ -454,347 +839,82 @@ A `DEBUG` flag in the config cell gates an exploratory schema-inspection cell. W
 
 ---
 
-## Bronze Layer
-
-### `public_health.bronze.geography_bronze`
-
-**Purpose**
-
-Stores source-aligned Philippine Standard Geographic Code (PSGC) records
-retrieved from the Philippine Statistics Authority (PSA) API.
-
-The Bronze table preserves useful source attributes as individual columns,
-nested population observations as JSON, the complete logical source record,
-and ingestion lineage metadata.
-
-**Grain**
-
-One row per PSGC geographic code per logical source snapshot.
-
-**Source**
-
-PSA Philippine Standard Geographic Code (PSGC) API.
-
-**Natural source key**
-
-`psgc_code`
-
-**Bronze merge key**
-
-`content_checksum + psgc_code`
-
-This allows the same PSGC code to exist in different source snapshots while
-preventing duplicate records within the same logical snapshot.
-
-| Column | Data Type | Description |
-|---|---|---|
-| `psgc_code` | STRING | PSGC geographic identifier. Derived from the PSA source field `code`. |
-| `area_name` | STRING | Official geographic area name from PSA. |
-| `correspondence_code` | STRING | Correspondence code supplied by PSA. |
-| `geographic_level` | STRING | Geographic level of the record, such as `Reg`, `Prov`, `City`, `Mun`, `SubMun`, or `Bgy`. Blank values may exist in the source for exceptional geographic records. |
-| `reg` | STRING | Region component/code supplied by PSA. |
-| `prv` | STRING | Province component/code supplied by PSA. |
-| `mun` | STRING | Municipality/city component/code supplied by PSA. |
-| `bgy` | STRING | Barangay component/code supplied by PSA. |
-| `old_name` | STRING | Previous geographic name supplied by PSA, when available. |
-| `city_class` | STRING | PSA city classification, when applicable. |
-| `income_classification` | STRING | Income classification supplied by PSA, generally applicable to provinces, cities, and municipalities. |
-| `urban_rural` | STRING | Urban/rural classification supplied by PSA, primarily populated for barangay records. |
-| `island_region` | STRING | Major island-region grouping supplied by PSA, such as Luzon, Visayas, or Mindanao. |
-| `record_status` | STRING | Status value from the PSA source record. Renamed from source field `status` to distinguish it from ingestion-run status. |
-| `record_version` | STRING | Version value contained in the individual PSA source record. Renamed from source field `version`. |
-| `populations_json` | STRING | JSON array containing population observations associated with the PSGC code. Each observation may contain `id`, `population`, `psgc`, and `year`. Preserved in Bronze for later parsing and normalization in Silver. |
-| `source_record_json` | STRING | Complete logical PSA source record preserved as JSON for auditability, traceability, and future reprocessing. |
-| `source_system` | STRING | Name of the source system, e.g. `PSA PSGC`. |
-| `source_version` | STRING | PSGC source version requested by the ingestion pipeline, e.g. `Q2_2024`. |
-| `source_endpoint` | STRING | PSA API endpoint used for the ingestion. |
-| `batch_id` | STRING | Unique identifier for the ingestion run that wrote the Bronze record. |
-| `content_checksum` | STRING | Deterministic SHA-256 checksum representing the logical source snapshot. Used for idempotency and duplicate detection. |
-| `raw_path` | STRING | Permanent landing path containing the validated raw source files associated with the snapshot. |
-| `ingested_at` | TIMESTAMP | Timestamp when the record was written to the Bronze Delta table. |
-
-#### Source-value notes
-
-Some PSGC attributes are only applicable to specific geographic levels.
-Therefore, blank values in fields such as `old_name`, `city_class`,
-`income_classification`, `urban_rural`, and `record_status` do not
-automatically indicate a data-quality failure.
-
-Population observations are kept in source form in Bronze. Population values
-may contain commas, surrounding spaces, blank strings, or source values such
-as `#N/A`. Cleaning, type conversion, and exploding population observations
-are Silver-layer responsibilities.
+### Bronze: Population domain
 
 ---
 
-### `public_health.bronze.geography_phl_admin_boundaries`
+### `public_health.bronze.population_bronze` — Legacy PSA Population File Ingestion
+
+**Status:** Legacy / retained in repository; not used by the current population Silver pipeline.
 
 **Purpose**
 
-Stores source-aligned Philippine administrative boundary features retrieved
-from the Humanitarian Data Exchange (HDX) Common Operational Dataset for
-Administrative Boundaries (COD-AB).
-
-The Bronze table preserves each complete GeoJSON Feature, raw properties,
-geometry, and technical lineage metadata required for auditability,
-idempotent reruns, and downstream geographic reconciliation.
-
-**Grain**
-
-One row per GeoJSON Feature per administrative level per immutable HDX
-source version.
+Stores raw PSA population Excel sheets using positional columns rather than interpreting source headers during ingestion. Each loaded file and worksheet is tagged with source-file, worksheet, row, and snapshot-date metadata. The table is retained for historical/reference purposes, but the current `population_silver` table is sourced from `populations_json` in `public_health.bronze.geography_bronze`.
 
 **Source**
 
-HDX Philippines Administrative Boundaries (`cod-ab-phl`).
+PSA population Excel files in the configured Landing folder:
 
-Source format: GeoJSON.
+`/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/population`
 
-Source resource:
+The ingestion notebook selects files matching:
 
-`https://data.humdata.org/dataset/cod-ab-phl/resource/0120c30e-ba8b-487d-83f5-a664eddd3a8e`
-
-**Source key**
-
-`hdx_phl_admin`
-
-**Administrative levels**
-
-* ADM1 — region-level boundaries
-* ADM2 — province-level boundaries
-* ADM3 — municipality/city-level boundaries
-
-HDX p-codes are preserved as source values in Bronze. They are not yet
-treated as canonical/current PSA Philippine Standard Geographic Code (PSGC)
-identifiers.
-
-PSGC reconciliation, canonical naming, hierarchy standardization, and
-resolution of source-specific administrative differences are Silver-layer
-responsibilities.
-
-**Source version key**
-
-`_source_version`
-
-The source version is the SHA-256 checksum of the immutable downloaded HDX
-source archive.
-
-**Batch key**
-
-`_batch_id`
-
-The batch identifier is deterministic and follows:
-
-`dataset_id:source_version`
-
-**Bronze rerun rule**
-
-For the same `_source_version`:
-
-* if no records exist, load the complete validated batch;
-* if the complete expected batch already exists, perform a no-op;
-* if a partial or inconsistent batch exists, fail rather than append.
-
-This prevents duplicate records when the same immutable source version is
-rerun.
-
-| Column | Data Type | Description |
-|---|---|---|
-| `source_feature_json` | STRING | Complete GeoJSON Feature preserved from the HDX source for auditability, traceability, and future reprocessing. |
-| `_staging_file_path` | STRING | Exact prepared JSONL file read by Spark for the Bronze record. Technical staging is not a Medallion layer. |
-| `feature_type` | STRING | GeoJSON object type. Expected source value is `Feature`. |
-| `source_feature_id` | STRING | GeoJSON Feature identifier when supplied by the source; may be null. |
-| `properties_json` | STRING | Raw GeoJSON `properties` object containing source administrative attributes. |
-| `geometry_json` | STRING | Raw GeoJSON geometry object including source coordinates. |
-| `geometry_type` | STRING | Source geometry type. Validated values for the current source are `Polygon` and `MultiPolygon`. |
-| `_source_key` | STRING | Source configuration key. Expected value: `hdx_phl_admin`. |
-| `_dataset_id` | STRING | HDX dataset identifier. Expected value: `cod-ab-phl`. |
-| `_source_version` | STRING | SHA-256 checksum identifying the immutable HDX source archive. |
-| `_batch_id` | STRING | Deterministic source batch identifier composed from the dataset ID and source version. |
-| `_admin_level` | INT | Administrative level represented by the Feature: `1`, `2`, or `3`. |
-| `_source_file` | STRING | Original extracted GeoJSON layer, such as `phl_admin1.geojson`, `phl_admin2.geojson`, or `phl_admin3.geojson`. |
-| `_source_file_sha256` | STRING | SHA-256 checksum of the extracted source GeoJSON layer. |
-| `_source_crs` | STRING | Coordinate reference system reported by the source. |
-| `_source_url` | STRING | HDX resource URL used during source ingestion. |
-| `_landing_receipt_path` | STRING | Path to the immutable Landing `receipt.json` containing source provenance and ingestion metadata. |
-| `_staging_manifest_path` | STRING | Path to the validated staging `manifest.json` containing prepared-file metadata and expected row counts. |
-| `_validation_id` | STRING | Validation execution associated with the original Bronze load. Later validation executions of the same source version do not rewrite existing Bronze rows. |
-| `_landing_ingested_at` | TIMESTAMP | Timestamp when the immutable source version was ingested into Landing. |
-| `_bronze_ingested_at` | TIMESTAMP | Timestamp when the Bronze record was committed to the Delta table. |
-| `_record_sha256` | STRING | SHA-256 fingerprint of the complete source GeoJSON Feature used for record-level reconciliation and duplicate detection. |
-
-#### Source property notes
-
-The exact fields available in `properties_json` depend on the
-administrative level.
-
-Common source properties include:
-
-| Source Property | Description |
-|---|---|
-| `adm0_name` | Country-level source name. |
-| `adm0_pcode` | Country-level source p-code. |
-| `adm1_name` | ADM1 source administrative name. |
-| `adm1_pcode` | ADM1 source p-code. |
-| `adm2_name` | ADM2 source administrative name, present on ADM2 and ADM3 records. |
-| `adm2_pcode` | ADM2 source p-code, present on ADM2 and ADM3 records. |
-| `adm3_name` | ADM3 source administrative name. |
-| `adm3_pcode` | ADM3 source p-code. |
-| `adm3_ref_name` | Additional ADM3 reference name when supplied by the source. |
-| `area_sqkm` | Source-provided administrative area in square kilometers. |
-| `center_lat` | Source-provided center latitude. Preserved as supplied and not treated as a calculated centroid. |
-| `center_lon` | Source-provided center longitude. Preserved as supplied and not treated as a calculated centroid. |
-| `valid_on` | Source validity start value. |
-| `valid_to` | Source validity end value when supplied. |
-| `version` | Administrative-boundary version value supplied by the source. |
-| `lang` | Primary source language metadata. |
-| `lang1` | Additional source language metadata. |
-| `lang2` | Additional source language metadata. |
-| `lang3` | Additional source language metadata. |
-
-Alternate-name fields such as `adm0_name1`, `adm0_name2`, `adm0_name3`,
-`adm1_name1`, `adm1_name2`, `adm1_name3`, and equivalent fields for other
-administrative levels are also preserved when present.
-
-The complete `source_feature_json` remains the authoritative Bronze
-representation if additional source properties appear in a future HDX
-version.
-
-The Bronze validation checks geometry type only. A `Polygon` or
-`MultiPolygon` value does not by itself prove full geometric or topological
-validity. Full spatial validity checks belong in downstream processing when
-required.
-
-#### Current validated source snapshot
-
-Current immutable source version:
-
-`032db5d91fcb8a13aef378d6b4453da7225ef7f0fb9c0a1c3bf3c2205d0010d6`
-
-| Administrative Level | Feature Count |
-|---|---:|
-| ADM1 | 17 |
-| ADM2 | 88 |
-| ADM3 | 1,642 |
-| **Total** | **1,747** |
-
-The current source contains:
-
-* ADM1: 15 `MultiPolygon`, 2 `Polygon`
-* ADM2: 59 `MultiPolygon`, 29 `Polygon`
-* ADM3: 369 `MultiPolygon`, 1,273 `Polygon`
-
-The current source CRS is:
-
-`urn:ogc:def:crs:OGC:1.3:CRS84`
-
-These counts describe this immutable source version only.
-
-Future legitimate HDX source versions may contain different administrative
-record counts or geometry distributions. The pipeline derives expected row
-counts from the validated staging manifest rather than hard-coding these
-values.
-
-#### Current rerun validation
-
-The current source version was loaded successfully with:
-
-* ADM1: 17 rows
-* ADM2: 88 rows
-* ADM3: 1,642 rows
-* Total: 1,747 rows
-
-The same source version was rerun and returned:
-
-`write_outcome = already_complete`
-
-No additional Bronze rows were written, and the table remained at 1,747
-records for the source version.
-
----
-
-### `public_health.bronze.geography_phl_admin_boundaries_dq`
-
-**Purpose**
-
-Stores validation evidence for the HDX Philippines administrative-boundary
-pipeline before a source version is allowed to load into Bronze.
-
-The table keeps validation history across executions rather than replacing
-previous validation results.
+`population_YYYY_asof_YYYYMMDD.xlsx`
 
 **Grain**
 
-One row per validation check per administrative level per validation
-execution.
+One row per source worksheet row per source file/sheet/snapshot. The ingestion notebook assigns `_source_row_num` within each worksheet. The source row itself is stored positionally across `c0` through `c13`.
 
-**Related Bronze table**
+**Refresh / idempotency behavior**
 
-`public_health.bronze.geography_phl_admin_boundaries`
+- By default, files already present in the table (identified by `_source_file`) are not loaded again.
+- The `reload_all` parameter allows previously loaded files to be reloaded.
+- Loading uses `REPLACE WHERE` for the matching `_source_file` and `_source_sheet` combination.
+- The ingestion notebook checks that a source sheet does not exceed 14 columns.
 
-**Source dataset**
-
-HDX `cod-ab-phl`.
+#### Data Structure
 
 | Column | Data Type | Description |
 |---|---|---|
-| `validation_id` | STRING | Unique identifier for one validation execution. |
-| `run_id` | STRING | Ingestion notebook run identifier associated with the validation. |
-| `batch_id` | STRING | Source batch being validated. |
-| `dataset` | STRING | Source dataset identifier. Expected value: `cod-ab-phl`. |
-| `executed_at` | TIMESTAMP | Timestamp when the validation execution was recorded. |
-| `stage` | STRING | Pipeline validation stage. |
-| `admin_level` | INT | Administrative level evaluated by the validation rule. |
-| `check_name` | STRING | Name of the validation rule. |
-| `check_type` | STRING | Validation category, such as schema, null, uniqueness, accepted values, foreign key, volume, or format. |
-| `status` | STRING | Validation result. Expected values are `PASS`, `WARN`, or `FAIL`. |
-| `severity` | STRING | Severity assigned to the validation rule. |
-| `fail_count` | BIGINT | Number of records failing the validation rule. |
-| `total_count` | BIGINT | Number of records evaluated by the validation rule. |
-| `fail_pct` | DOUBLE | Percentage of evaluated records that failed the rule. |
-| `threshold` | DOUBLE | Allowed failure threshold recorded for the validation rule. |
-| `detail` | STRING | Additional validation detail or error context. |
+| `c0` | STRING | First positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c1` | STRING | Second positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c2` | STRING | Third positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c3` | STRING | Fourth positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c4` | STRING | Fifth positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c5` | STRING | Sixth positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c6` | STRING | Seventh positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c7` | STRING | Eighth positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c8` | STRING | Ninth positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c9` | STRING | Tenth positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c10` | STRING | Eleventh positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c11` | STRING | Twelfth positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c12` | STRING | Thirteenth positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `c13` | STRING | Fourteenth positional cell from the source worksheet. Meaning depends on the worksheet and source layout. |
+| `_rescued_data` | STRING | Reserved for data rescued by the ingestion reader. The notebook currently writes `NULL`. |
+| `_source_file` | STRING | Source Excel filename, expected to follow `population_YYYY_asof_YYYYMMDD.xlsx`. |
+| `_source_sheet` | STRING | Worksheet name from the source Excel file. |
+| `_source_row_num` | INT | Row number assigned during ingestion within the worksheet. |
+| `_as_of_date` | DATE | Snapshot date parsed from the source filename. |
+| `_ingested_at` | TIMESTAMP | UTC timestamp assigned to the batch when the worksheet is loaded. |
 
-#### Validation checks
+#### Source-specific Handling and Limitations
 
-Current validation includes:
+- The ingestion process does not parse or standardize source headers. All worksheet cells are loaded as positional string columns (`c0`–`c13`).
+- The actual meaning of each positional column can vary by worksheet or file, so column meanings should be interpreted using the corresponding source file and worksheet.
+- The ingestion notebook validates the filename convention and checks for worksheets wider than 14 columns. It does not itself normalize the data into a year/value schema.
+- This table is not the source for the current `public_health.silver.population_silver` transformation. Current Silver population observations are parsed from `public_health.bronze.geography_bronze.populations_json`.
 
-* required source-field availability;
-* optional source-field availability;
-* Spark JSON parsing;
-* manifest-to-record row-count reconciliation;
-* nonblank administrative p-codes;
-* p-code uniqueness within each administrative level;
-* nonblank administrative names;
-* GeoJSON `Feature` type;
-* accepted geometry types (`Polygon` or `MultiPolygon`);
-* ADM2-to-ADM1 parent-reference integrity; and
-* ADM3-to-ADM2 parent-reference integrity.
+---
 
-A source version must have no blocking `FAIL` results before the ingestion
-notebook publishes a validated handoff to the Bronze loader.
+### Bronze: Socio-economic domain
 
-`WARN` results are retained for auditability but do not block the handoff.
+---
 
-#### Current validated execution
+### Bronze: Workforce domain
 
-The latest validated handoff used validation ID:
+---
 
-`8b5188af-8739-464f-8614-ca5b39dd4e2c`
-
-The validation execution recorded:
-
-* 37 validation checks
-* 0 blocking `FAIL` results
-* expected ADM1 rows: 17
-* expected ADM2 rows: 88
-* expected ADM3 rows: 1,642
-* expected total rows: 1,747
-
-A later validation execution of the same immutable source version does not
-rewrite the `_validation_id` stored on already-loaded Bronze records.
-Existing Bronze rows retain the validation execution that authorized their
-original load.
+### Shared ingestion metadata
 
 ---
 ### `public_health.bronze.ingestion_metadata`
@@ -820,3 +940,67 @@ One row per ingestion attempt.
 | `page_count` | INT | Number of API pages retrieved by the run. |
 | `retrieved_at` | TIMESTAMP | Timestamp when the ingestion attempt was created/retrieved. |
 | `status` | STRING | Current ingestion-run status. Expected values include `in_progress`, `processed`, `failed`, and `skipped_duplicate`. |
+
+---
+
+## Silver Layer
+
+### Silver: Disease domain
+
+---
+
+### Silver: Geography domain
+
+---
+
+### Silver: Facilities domain
+
+---
+### Silver: Population domain
+
+---
+
+### `public_health.silver.population_silver`
+
+**Purpose**
+
+Stores normalized population observations parsed from the `populations_json` array in
+`public_health.bronze.geography_bronze`. Each JSON array element becomes one Silver row,
+making population values available for filtering, joins, trend analysis, and downstream
+population-based metrics.
+
+**Source**
+
+`public_health.bronze.geography_bronze`, specifically the `populations_json` column,
+with geographic identity and source lineage retained from the Bronze record.
+
+**Grain**
+
+One row per `psgc_code × population_year × source_version`.
+
+**Natural grain key**
+
+`psgc_code + population_year + source_version`
+
+#### Data Structure
+
+| Column | Data Type | Description |
+|---|---|---|
+| `psgc_code` | STRING | Philippine Standard Geographic Code inherited from the Bronze geography record. Identifies the geographic area associated with the population observation. |
+| `population_year` | INT | Year to which the population observation applies, parsed from the nested JSON observation's `year` field. |
+| `population` | BIGINT | Parsed population count. Source text is trimmed and commas are removed before conversion. Values that cannot be converted remain null and are identified by `population_parse_status`. |
+| `population_raw` | STRING | Original population value from the nested JSON observation, retained for traceability and troubleshooting. |
+| `population_parse_status` | STRING | Parse outcome for the source population value. Expected values: `VALID`, `MISSING`, or `INVALID`. |
+| `source_version` | STRING | Version of the PSA PSGC source snapshot associated with the Bronze record (e.g. `Q2_2024`). |
+| `batch_id` | STRING | Identifier of the Bronze ingestion batch from which the observation was derived. |
+| `silver_processed_at` | TIMESTAMP | Timestamp when the population observation was transformed and written to Silver. |
+
+---
+
+### Socio-economic domain
+
+---
+
+### Workforce domain
+
+---

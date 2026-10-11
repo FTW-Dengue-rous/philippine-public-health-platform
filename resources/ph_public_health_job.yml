@@ -1,0 +1,110 @@
+# Pipeline job: ingestion -> bronze -> silver (gold to follow).
+# Paths are relative to THIS file (resources/), hence the ../src/...
+# Compute: serverless (no cluster block). .py tasks use the "default" environment below;
+# .ipynb tasks run as notebooks and install their own libs if needed (%pip).
+#
+# TODO (team): confirm the depends_on order below matches your actual data flow.
+
+resources:
+  jobs:
+    ph_public_health_pipeline:
+      name: ph-public-health-pipeline
+      max_concurrent_runs: 1
+      tags:
+        project: ph-public-health
+        team: ftw-dengue-rous
+
+      # Uncomment to run on a schedule (in dev target it is auto-paused).
+      # schedule:
+      #   quartz_cron_expression: "0 0 6 ? * MON"   # Mondays 06:00
+      #   timezone_id: Asia/Manila
+
+      # email_notifications:
+      #   on_failure:
+      #     - jghsantiago91@gmail.com
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - pyyaml
+              - openpyxl
+
+      tasks:
+        # ---------------- Ingestion (source -> landing) ----------------
+        - task_key: ingest_psgc
+          notebook_task:
+            notebook_path: ../src/01_ingestion/psgc_ingestion.ipynb
+
+        - task_key: ingest_admin_boundaries
+          notebook_task:
+            notebook_path: ../src/01_ingestion/admin_boundaries_ingestion.ipynb
+
+        # ---------------- Bronze ----------------
+        - task_key: bronze_geography
+          depends_on:
+            - task_key: ingest_psgc
+          notebook_task:
+            notebook_path: ../src/02_bronze/geography_bronze.ipynb
+
+        - task_key: bronze_admin_boundaries
+          depends_on:
+            - task_key: ingest_admin_boundaries
+          notebook_task:
+            notebook_path: ../src/02_bronze/admin_boundaries_bronze.ipynb
+
+        # Config-driven .py loaders (read config/sources_<domain>.yaml automatically)
+        - task_key: bronze_facilities
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/02_bronze/facilities_bronze.py
+
+        - task_key: bronze_diseases
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/02_bronze/diseases_bronze.py
+
+        - task_key: bronze_socioeconomic
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/02_bronze/socioeconomic_bronze.py
+
+        - task_key: bronze_workforce
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/02_bronze/workforce_bronze.py
+
+        # TODO: dev has two population bronze notebooks
+        # (01_bronze_population.ipynb and 01_population_bronze.ipynb) — keep one, then enable:
+        # - task_key: bronze_population
+        #   notebook_task:
+        #     notebook_path: ../src/02_bronze/01_population_bronze.ipynb
+
+        # ---------------- Silver ----------------
+        - task_key: silver_geography
+          depends_on:
+            - task_key: bronze_geography
+          notebook_task:
+            notebook_path: ../src/03_silver/geography_silver.ipynb
+
+        - task_key: silver_admin_boundaries
+          depends_on:
+            - task_key: bronze_admin_boundaries
+          notebook_task:
+            notebook_path: ../src/03_silver/admin_boundaries_silver.ipynb
+
+        # Enable once bronze_population is in:
+        # - task_key: silver_psgc_population
+        #   depends_on:
+        #     - task_key: bronze_population
+        #     - task_key: silver_geography
+        #   notebook_task:
+        #     notebook_path: ../src/03_silver/psgc_population_silver.ipynb
+
+        # ---------------- Gold (add when ready) ----------------
+        # - task_key: gold_<model>
+        #   depends_on:
+        #     - task_key: silver_geography
+        #   notebook_task:
+        #     notebook_path: ../src/04_gold/<notebook>.ipynb

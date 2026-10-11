@@ -1,0 +1,73 @@
+name: CD
+
+# Deploy the Databricks Asset Bundle ONLY after CI passes on a push:
+#   push to dev  -> CI green -> deploy target "dev"
+#   push to main -> CI green -> deploy target "prod"
+# Note: workflow_run triggers only work once this file is on the default branch (main).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [dev, main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Bundle target to deploy
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy bundle (${{ github.event.workflow_run.head_branch == 'main' && 'prod' || inputs.target || 'dev' }})
+    # Skip if CI failed, or if CI ran for a pull_request (only deploy on real pushes)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+
+    # GitHub Environments hold the secrets; add "Required reviewers" on prod for a manual gate
+    environment: ${{ github.event.workflow_run.head_branch == 'main' && 'prod' || inputs.target || 'dev' }}
+
+    # One deploy per target at a time; never cancel a deploy halfway
+    concurrency:
+      group: databricks-deploy-${{ github.event.workflow_run.head_branch == 'main' && 'prod' || inputs.target || 'dev' }}
+      cancel-in-progress: false
+
+    env:
+      BUNDLE_TARGET: ${{ github.event.workflow_run.head_branch == 'main' && 'prod' || inputs.target || 'dev' }}
+      # Service principal OAuth (M2M) — set as Environment secrets
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Deploy the exact commit CI tested (not whatever is newest on the branch)
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: databricks/setup-cli@main  # tip: pin to a release tag once it works
+
+      - name: Who am I (auth check)
+        run: databricks current-user me
+
+      - name: Validate bundle
+        run: databricks bundle validate -t "$BUNDLE_TARGET"
+
+      - name: Deploy bundle
+        run: databricks bundle deploy -t "$BUNDLE_TARGET"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Deployed \`$BUNDLE_TARGET\`"
+            echo "- Commit: \`${{ github.event.workflow_run.head_sha || github.sha }}\`"
+            echo '```'
+            databricks bundle summary -t "$BUNDLE_TARGET"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

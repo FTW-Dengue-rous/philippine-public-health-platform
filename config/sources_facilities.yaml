@@ -252,7 +252,7 @@ sources:
       - Summary sheets are useful as control totals only (the two ABC totals above match them exactly).
       - Government has 471 hospitals here vs 473 in NHFR; Private 865 vs 886. Reconcile in silver on nhfr_code.
       - A few Government rows have values one column past REMARKS (col_33).
-      - nhfr_code is mostly 5-digit text with leading zeros (02593) but some cells are numbers (3880.0 -> 3880). Pad to 5 digits before matching NHFR Health Facility Code Short.
+      - Comparison uses nhfr_id = the numeric value of the code (cast to BIGINT), never a padded string. Parse ^(DOH)?\d{1,15}(\.0)?$ as valid; text tokens (none, duplicate NHFR, NO NHFR) -> null with reason invalid_code_token. See facilities-silver-plan v1.4 section 2.2.
       - service_capability = Level 1/2/3; abc = authorized bed capacity.
       - BARMM province typo in source (Maguindao del Sur).
 
