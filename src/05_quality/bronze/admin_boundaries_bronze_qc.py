@@ -140,15 +140,25 @@ REQUIRED_COLUMNS = [
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Admin boundaries Bronze QC")
-    parser.add_argument("--bronze_handoff_path", required=True,
-                        help="Full /Volumes path to the successful load's bronze_handoff.json")
-    parser.add_argument("--fail_on_error", choices=("true", "false"), default="true",
-                        help="false is diagnostic only; failed QC must not promote to Silver")
+    parser.add_argument(
+        "--bronze_handoff_path",
+        required=True,
+        help="Full /Volumes path to the successful load's bronze_handoff.json",
+    )
+    parser.add_argument(
+        "--fail_on_error",
+        choices=("true", "false"),
+        default="true",
+        help="false is diagnostic only; failed QC must not promote to Silver",
+    )
     parser.add_argument("--profile", choices=("true", "false"), default="false")
     parser.add_argument("--job_run_id", default=None)
     parser.add_argument("--code_version", default=None)
-    parser.add_argument("--dq_utils_path", default=None,
-                        help="Optional full path to dq_utils.py if auto-discovery cannot find it")
+    parser.add_argument(
+        "--dq_utils_path",
+        default=None,
+        help="Optional full path to dq_utils.py if auto-discovery cannot find it",
+    )
     return parser.parse_args(argv)
 
 
@@ -398,6 +408,7 @@ def main(argv=None):
     else:
         _add_dq_utils_to_path()
     from dq_utils import DQRun
+
     print(f"Admin boundaries Bronze QC {LOADER_VERSION}")
     path = Path(args.bronze_handoff_path)
     # Remove earlier outputs first: a failed rerun must not leave a passing marker.

@@ -74,13 +74,17 @@ def find_config(explicit=None):
                 candidate = parent / sub / "sources_geography.yaml"
                 if candidate.is_file():
                     return candidate
-    raise FileNotFoundError("sources_geography.yaml not found. Pass --config_path with its full path.")
+    raise FileNotFoundError(
+        "sources_geography.yaml not found. Pass --config_path with its full path."
+    )
 
 
 def qualified_table(name):
     parts = name.split(".")
     if len(parts) != 3 or any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", p) for p in parts):
-        raise ValueError("bronze_table must be catalog.schema.table using letters, numbers or underscores.")
+        raise ValueError(
+            "bronze_table must be catalog.schema.table using letters, numbers or underscores."
+        )
     return ".".join(f"`{part}`" for part in parts)
 
 
@@ -94,7 +98,11 @@ def matching_manifest(path, source, version, endpoint):
         raise ValueError("Manifest must be a JSON object.")
     if manifest.get("status") != "landed":
         return None
-    if (manifest.get("source_name"), manifest.get("source_version"), manifest.get("endpoint")) != (source, version, endpoint):
+    if (manifest.get("source_name"), manifest.get("source_version"), manifest.get("endpoint")) != (
+        source,
+        version,
+        endpoint,
+    ):
         return None
     if marker.read_text(encoding="utf-8").strip() != manifest.get("run_id"):
         raise ValueError("Success marker does not match manifest run_id.")
@@ -109,7 +117,9 @@ def select_batch(root, source, version, endpoint, explicit=""):
             raise ValueError("landing_batch_path must be inside the configured landing_path.")
         manifest = matching_manifest(path, source, version, endpoint)
         if manifest is None:
-            raise ValueError("Selected batch is incomplete or does not match YAML source/version/endpoint.")
+            raise ValueError(
+                "Selected batch is incomplete or does not match YAML source/version/endpoint."
+            )
         return path, manifest
     candidates = []
     version_root = root / "raw" / f"version={version}"
@@ -139,7 +149,8 @@ def validate_batch(path, manifest):
     if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
         raise ValueError("Manifest files must be a list of filenames.")
     expected = {
-        name for page in range(1, manifest["page_count"] + 1)
+        name
+        for page in range(1, manifest["page_count"] + 1)
         for name in (f"page_{page:04d}.json", f"records_page_{page:04d}.ndjson")
     }
     if len(names) != len(expected) or set(names) != expected:
@@ -169,20 +180,27 @@ def validate_batch(path, manifest):
                 if code is None or (isinstance(code, str) and not code.strip()):
                     code = record.get("psgc_code")
                 if not isinstance(code, str) or not code.strip():
-                    raise ValueError("Missing or non-string geographic code; preserve source codes as strings.")
+                    raise ValueError(
+                        "Missing or non-string geographic code; preserve source codes as strings."
+                    )
                 if code in seen:
                     raise ValueError("Duplicate geographic code in landing batch.")
                 seen.add(code)
                 version = record.get("version")
                 if version is not None and str(version) != manifest["source_version"]:
                     raise ValueError("Record version does not match landing manifest.")
-                canonical = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                canonical = json.dumps(
+                    record, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                )
                 hashes.append(hashlib.sha256(canonical.encode("utf-8")).hexdigest())
                 page_records.append(record)
                 total += 1
         if results != page_records:
             raise ValueError("Raw API page and landed records differ.")
-    if any(manifest[field] != total for field in ("record_count", "landed_record_count", "expected_record_count")):
+    if any(
+        manifest[field] != total
+        for field in ("record_count", "landed_record_count", "expected_record_count")
+    ):
         raise ValueError("Landed counts do not reconcile with manifest.")
     checksum = hashlib.sha256("\n".join(sorted(hashes)).encode("utf-8")).hexdigest()
     if checksum != manifest.get("content_checksum"):
@@ -214,7 +232,10 @@ def ingest_source(spark, args):
     if not re.fullmatch(r"[A-Za-z0-9_-]+", SOURCE_VERSION):
         raise ValueError("Invalid source version.")
     BATCH_PATH, MANIFEST = select_batch(
-        LANDING_PATH, SOURCE_NAME, SOURCE_VERSION, ENDPOINT,
+        LANDING_PATH,
+        SOURCE_NAME,
+        SOURCE_VERSION,
+        ENDPOINT,
         args.landing_batch_path,
     )
     RECORD_PATHS, RECORD_COUNT = validate_batch(BATCH_PATH, MANIFEST)
@@ -231,6 +252,7 @@ def ingest_source(spark, args):
 
     # Preserve original record JSON and expose source attributes without cleansing.
     records_df = spark.read.text(RECORD_PATHS)
+
     def source_value(name):
         return F.get_json_object(F.col("value"), f"$.{name}")
 
@@ -238,22 +260,41 @@ def ingest_source(spark, args):
         return F.when(F.length(F.trim(expr)) > 0, expr)
 
     SOURCE_FIELDS = [
-        "area_name", "correspondence_code", "geographic_level", "reg", "prv", "mun", "bgy",
-        "old_name", "city_class", "income_classification", "urban_rural", "island_region",
+        "area_name",
+        "correspondence_code",
+        "geographic_level",
+        "reg",
+        "prv",
+        "mun",
+        "bgy",
+        "old_name",
+        "city_class",
+        "income_classification",
+        "urban_rural",
+        "island_region",
     ]
     bronze_df = records_df.select(
-        F.coalesce(nonblank(source_value("code")), nonblank(source_value("psgc_code"))).alias("psgc_code"),
+        F.coalesce(nonblank(source_value("code")), nonblank(source_value("psgc_code"))).alias(
+            "psgc_code"
+        ),
         *[source_value(name).alias(name) for name in SOURCE_FIELDS],
         source_value("status").alias("record_status"),
         source_value("version").alias("record_version"),
-        F.coalesce(source_value("populations"), source_value("population_data")).alias("populations_json"),
+        F.coalesce(source_value("populations"), source_value("population_data")).alias(
+            "populations_json"
+        ),
         F.col("value").alias("source_record_json"),
-    ).withColumns({
-        "source_system": F.lit(SOURCE_NAME), "source_version": F.lit(SOURCE_VERSION),
-        "source_endpoint": F.lit(ENDPOINT), "batch_id": F.lit(RUN_ID),
-        "content_checksum": F.lit(CONTENT_CHECKSUM), "raw_path": F.lit(str(BATCH_PATH)),
-        "ingested_at": F.current_timestamp(),
-    })
+    ).withColumns(
+        {
+            "source_system": F.lit(SOURCE_NAME),
+            "source_version": F.lit(SOURCE_VERSION),
+            "source_endpoint": F.lit(ENDPOINT),
+            "batch_id": F.lit(RUN_ID),
+            "content_checksum": F.lit(CONTENT_CHECKSUM),
+            "raw_path": F.lit(str(BATCH_PATH)),
+            "ingested_at": F.current_timestamp(),
+        }
+    )
     if bronze_df.count() != RECORD_COUNT:
         raise RuntimeError("Spark input record count does not match validated landing batch.")
     if bronze_df.filter(F.col("psgc_code").isNull()).limit(1).count():
@@ -263,10 +304,15 @@ def ingest_source(spark, args):
     print("Bronze input validated.")
 
     # Prepare an absent table; do not alter an existing table's schema or rows.
-    expected_schema = {field.name: field.dataType.simpleString() for field in bronze_df.schema.fields}
+    expected_schema = {
+        field.name: field.dataType.simpleString() for field in bronze_df.schema.fields
+    }
     TABLE_EXISTS = spark.catalog.tableExists(BRONZE_TABLE)
     if TABLE_EXISTS:
-        actual_schema = {field.name: field.dataType.simpleString() for field in spark.table(BRONZE_TABLE).schema.fields}
+        actual_schema = {
+            field.name: field.dataType.simpleString()
+            for field in spark.table(BRONZE_TABLE).schema.fields
+        }
         if actual_schema != expected_schema:
             raise RuntimeError(
                 "Existing Bronze table schema differs from this notebook. "
@@ -284,16 +330,23 @@ def ingest_source(spark, args):
             spark.table(BRONZE_TABLE)
             .filter(F.col("source_version") == SOURCE_VERSION)
             .select("source_system", "source_endpoint", "content_checksum", "batch_id")
-            .distinct().collect()
+            .distinct()
+            .collect()
         )
         if len(version_snapshots) > 1:
             SILVER_COMPATIBILITY_ISSUE = "Multiple existing Bronze snapshots for this version; review Silver selection before loading."
         elif version_snapshots:
             existing = version_snapshots[0]
-            if (existing["source_system"], existing["source_endpoint"], existing["content_checksum"]) != (SOURCE_NAME, ENDPOINT, CONTENT_CHECKSUM):
+            if (
+                existing["source_system"],
+                existing["source_endpoint"],
+                existing["content_checksum"],
+            ) != (SOURCE_NAME, ENDPOINT, CONTENT_CHECKSUM):
                 SILVER_COMPATIBILITY_ISSUE = "A different Bronze snapshot already exists for this version. Current Silver expects one snapshot; loading another is blocked."
             elif not existing["batch_id"]:
-                SILVER_COMPATIBILITY_ISSUE = "Existing snapshot has no batch ID; review lineage before loading."
+                SILVER_COMPATIBILITY_ISSUE = (
+                    "Existing snapshot has no batch ID; review lineage before loading."
+                )
             else:
                 bronze_df = bronze_df.withColumn("batch_id", F.lit(existing["batch_id"]))
                 print("Preserving existing Bronze batch ID:", existing["batch_id"])
@@ -301,6 +354,7 @@ def ingest_source(spark, args):
         print("Silver compatibility notice:", SILVER_COMPATIBILITY_ISSUE)
 
     KEYS = ["source_system", "source_version", "source_endpoint", "content_checksum", "psgc_code"]
+
     def target_snapshot():
         if not TABLE_EXISTS:
             return bronze_df.limit(0)
@@ -315,15 +369,23 @@ def ingest_source(spark, args):
         if snapshot.filter(F.col("psgc_code").isNull()).limit(1).count():
             raise RuntimeError("Target snapshot contains a missing code.")
         if snapshot.groupBy("psgc_code").count().filter(F.col("count") > 1).limit(1).count():
-            raise RuntimeError("Target snapshot already contains duplicate codes; review before rerunning.")
+            raise RuntimeError(
+                "Target snapshot already contains duplicate codes; review before rerunning."
+            )
         # Equality of source JSON is checked before treating a row as an idempotent match.
         if snapshot.join(bronze_df.select("psgc_code"), "psgc_code", "left_anti").limit(1).count():
             raise RuntimeError("Target snapshot contains unexpected codes.")
-        conflicts = snapshot.alias("target").join(bronze_df.alias("source"), "psgc_code").filter(
-            ~F.col("target.source_record_json").eqNullSafe(F.col("source.source_record_json"))
+        conflicts = (
+            snapshot.alias("target")
+            .join(bronze_df.alias("source"), "psgc_code")
+            .filter(
+                ~F.col("target.source_record_json").eqNullSafe(F.col("source.source_record_json"))
+            )
         )
         if conflicts.limit(1).count():
-            raise RuntimeError("Target snapshot has conflicting source JSON; review before merging.")
+            raise RuntimeError(
+                "Target snapshot has conflicting source JSON; review before merging."
+            )
 
     check_existing_rows(target_snapshot())
     EXISTING_COUNT = target_snapshot().count()
@@ -339,12 +401,19 @@ def ingest_source(spark, args):
         if SILVER_COMPATIBILITY_ISSUE:
             raise RuntimeError(SILVER_COMPATIBILITY_ISSUE + " No Bronze rows were written.")
         if not TABLE_EXISTS:
-            definitions = ", ".join(f"`{name}` {dtype.upper()}" for name, dtype in expected_schema.items())
+            definitions = ", ".join(
+                f"`{name}` {dtype.upper()}" for name, dtype in expected_schema.items()
+            )
             spark.sql(f"CREATE TABLE IF NOT EXISTS {BRONZE_SQL} ({definitions}) USING DELTA")
             TABLE_EXISTS = True
-            actual_schema = {field.name: field.dataType.simpleString() for field in spark.table(BRONZE_TABLE).schema.fields}
+            actual_schema = {
+                field.name: field.dataType.simpleString()
+                for field in spark.table(BRONZE_TABLE).schema.fields
+            }
             if actual_schema != expected_schema:
-                raise RuntimeError("Concurrent table creation produced a different schema; no rows merged.")
+                raise RuntimeError(
+                    "Concurrent table creation produced a different schema; no rows merged."
+                )
         VIEW_NAME = f"psgc_bronze_incoming_{uuid.uuid4().hex}"
         bronze_df.createOrReplaceTempView(VIEW_NAME)
         condition = " AND ".join(f"target.`{name}` = source.`{name}`" for name in KEYS)
@@ -359,23 +428,29 @@ def ingest_source(spark, args):
             """)
         finally:
             spark.catalog.dropTempView(VIEW_NAME)
-        
+
         stored = target_snapshot()
         check_existing_rows(stored)
         STORED_COUNT = stored.count()
         if STORED_COUNT != RECORD_COUNT:
-            raise RuntimeError("Bronze count does not reconcile with landing; rerun after investigating.")
+            raise RuntimeError(
+                "Bronze count does not reconcile with landing; rerun after investigating."
+            )
         print("Landing → Bronze completed.")
         print("Bronze table:", BRONZE_TABLE)
         print("Records in this snapshot:", STORED_COUNT)
         print("Landing batch:", str(BATCH_PATH))
         print("Content checksum:", CONTENT_CHECKSUM)
 
-        handoff = {"source_system": SOURCE_NAME, "source_version": SOURCE_VERSION,
-                   "source_endpoint": ENDPOINT, "content_checksum": CONTENT_CHECKSUM,
-                   "batch_id": bronze_df.select("batch_id").first()["batch_id"],
-                   "expected_record_count": RECORD_COUNT,
-                   "landing_batch_path": str(BATCH_PATH)}
+        handoff = {
+            "source_system": SOURCE_NAME,
+            "source_version": SOURCE_VERSION,
+            "source_endpoint": ENDPOINT,
+            "content_checksum": CONTENT_CHECKSUM,
+            "batch_id": bronze_df.select("batch_id").first()["batch_id"],
+            "expected_record_count": RECORD_COUNT,
+            "landing_batch_path": str(BATCH_PATH),
+        }
         print("QC handoff:", json.dumps(handoff, sort_keys=True))
         # Optional handoff for notebook runners; Spark Python tasks use the printed JSON.
         if "dbutils" in globals():
@@ -395,8 +470,17 @@ def ingest_source(spark, args):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="PSGC landing to Bronze ingestion")
     parser.add_argument("--config_path", default=None, help="Full path to sources_geography.yaml")
-    parser.add_argument("--landing_batch_path", default="", help="Completed batch folder; blank selects latest matching batch")
-    parser.add_argument("--write_to_bronze", choices=("yes", "no"), default="no", help="Default no: preview without writes")
+    parser.add_argument(
+        "--landing_batch_path",
+        default="",
+        help="Completed batch folder; blank selects latest matching batch",
+    )
+    parser.add_argument(
+        "--write_to_bronze",
+        choices=("yes", "no"),
+        default="no",
+        help="Default no: preview without writes",
+    )
     return parser.parse_args(argv)
 
 
