@@ -1,0 +1,12 @@
+# Gitleaks config = default rules + project allowlist.
+# Loaded automatically by "gitleaks git ." in CI (repo-root .gitleaks.toml).
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Databricks job task_key values are identifiers, not secrets (generic-api-key false positive)"
+regexTarget = "line"
+regexes = [
+  '''^\s*-?\s*task_key:\s*[A-Za-z0-9_]+\s*(#.*)?$''',
+]
