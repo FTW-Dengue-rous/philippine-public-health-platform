@@ -590,7 +590,9 @@ def check_overrides(spark, bronze):
     )
     label_at = {
         (a, b, int(c)): d
-        for a, b, c, d in zip(f._source_file, f._source_sheet, f._source_row_num, f.area_name, strict=False)
+        for a, b, c, d in zip(
+            f._source_file, f._source_sheet, f._source_row_num, f.area_name, strict=False
+        )
     }
     rows, problems = [], []
     for file, sheet, row, bound, label, key, evidence, status, by, on in OVERRIDES:
@@ -789,9 +791,12 @@ def main():
             )
         )
     override_rows = {
-        (a, b, int(c)) for a, b, c in zip(ov._source_file, ov._source_sheet, ov._source_row_num, strict=False)
+        (a, b, int(c))
+        for a, b, c in zip(ov._source_file, ov._source_sheet, ov._source_row_num, strict=False)
     }
-    for row_num, key, label in zip(ov._source_row_num, ov.proposed_area_key, ov.original_label, strict=False):
+    for row_num, key, label in zip(
+        ov._source_row_num, ov.proposed_area_key, ov.original_label, strict=False
+    ):
         check_code(str(key).replace("psgc:", ""), "", f"override row {row_num} {label!r}")
     for row_num, label, code, geo_name in codes_2025(spark, bronze, geo, override_rows):
         unresolved.append(
