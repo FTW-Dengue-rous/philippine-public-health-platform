@@ -38,7 +38,7 @@
 --   QC scripts append to these tables (see dq_utils.py), so several domains can run QC at
 --   the same time without Delta write conflicts. The one exception is quarantine: a QC run
 --   replaces its own slice (layer, table, check, source table), so reruns do not duplicate rows.
---   Silver and gold builds only append to build_log and build_inputs 
+--   Silver and gold builds only append to build_log and build_inputs
 -- =============================================================================
 
 
