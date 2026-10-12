@@ -45,8 +45,8 @@ WITH g AS (
         count(*) OVER (PARTITION BY lpad(trim(psgc_code), 10, '0')) AS rows_for_code
     FROM public_health.silver.geography_silver
     WHERE content_checksum = (
-        SELECT max_by(content_checksum, silver_processed_at)
-        FROM public_health.silver.geography_silver
+        SELECT max_by(latest.content_checksum, latest.silver_processed_at)
+        FROM public_health.silver.geography_silver AS latest
     )
 ),
 
