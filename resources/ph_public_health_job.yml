@@ -1,9 +1,16 @@
-# Pipeline job: ingestion -> bronze -> silver (gold to follow).
-# Paths are relative to THIS file (resources/), hence the ../src/...
-# Compute: serverless (no cluster block). .py tasks use the "default" environment below;
-# .ipynb tasks run as notebooks and install their own libs if needed (%pip).
+# Pipeline job: setup -> bronze -> bronze QC -> silver -> silver QC   (gold: next)
 #
-# TODO (team): confirm the depends_on order below matches your actual data flow.
+# Ingestion (src/01_ingestion) is NOT in this job and not synced (see databricks.yml).
+# Bronze reads what is already in the landing volume.
+#
+# Paths are relative to THIS file (resources/), hence ../src/...
+# Task types:
+#   .ipynb + "Databricks notebook source" .py -> notebook_task       (serverless)
+#   plain .py                                   -> spark_python_task (env "default")
+#   plain .sql                                  -> sql_task.file     (${var.warehouse_id})
+#
+# Dependency rule: a task waits for the tables it reads AND the QC of those tables,
+# so a failing QC (dq_utils raises on ERROR) stops everything downstream of it.
 
 resources:
   jobs:
@@ -14,9 +21,8 @@ resources:
         project: ph-public-health
         team: ftw-dengue-rous
 
-      # Uncomment to run on a schedule (in dev target it is auto-paused).
-      # schedule:
-      #   quartz_cron_expression: "0 0 6 ? * MON"   # Mondays 06:00
+      # schedule:                                  # auto-paused in dev target
+      #   quartz_cron_expression: "0 0 6 ? * MON"
       #   timezone_id: Asia/Manila
 
       # email_notifications:
@@ -32,79 +38,431 @@ resources:
               - openpyxl
 
       tasks:
-        # ---------------- Ingestion (source -> landing) ----------------
-        - task_key: ingest_psgc
-          notebook_task:
-            notebook_path: ../src/01_ingestion/psgc_ingestion.ipynb
+        # ================================================================
+        # 0. SETUP — idempotent only
+        #    Skipped: ingestion_metadata.sql, quality_migrate_bronze_qc.sql
+        #    (one-time migrations), silver_setup.sql / gold_setup.sql (empty)
+        # ================================================================
+        - task_key: setup_schemas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/00_setup/schema_setup.sql
 
-        - task_key: ingest_admin_boundaries
-          notebook_task:
-            notebook_path: ../src/01_ingestion/admin_boundaries_ingestion.ipynb
-
-        # ---------------- Bronze ----------------
-        - task_key: bronze_geography
+        - task_key: setup_bronze
           depends_on:
-            - task_key: ingest_psgc
+            - task_key: setup_schemas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/00_setup/bronze_setup.sql
+
+        - task_key: setup_quality
+          depends_on:
+            - task_key: setup_schemas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/00_setup/quality_setup.sql
+
+        - task_key: setup_quality_registry
+          depends_on:
+            - task_key: setup_quality
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/05_quality/sql/quality_registry_seed.sql
+
+        # ================================================================
+        # 1. BRONZE (landing -> bronze), all in parallel after setup
+        # ================================================================
+        - task_key: bronze_geography            # PSGC geography + population payload
+          depends_on:
+            - task_key: setup_bronze
+            - task_key: setup_quality_registry
           notebook_task:
             notebook_path: ../src/02_bronze/geography_bronze.ipynb
 
         - task_key: bronze_admin_boundaries
           depends_on:
-            - task_key: ingest_admin_boundaries
+            - task_key: setup_bronze
+            - task_key: setup_quality_registry
           notebook_task:
             notebook_path: ../src/02_bronze/admin_boundaries_bronze.ipynb
 
-        # Config-driven .py loaders (read config/sources_<domain>.yaml automatically)
-        - task_key: bronze_facilities
-          environment_key: default
-          spark_python_task:
-            python_file: ../src/02_bronze/facilities_bronze.py
-
         - task_key: bronze_diseases
+          depends_on:
+            - task_key: setup_bronze
+            - task_key: setup_quality_registry
           environment_key: default
           spark_python_task:
             python_file: ../src/02_bronze/diseases_bronze.py
 
+        - task_key: bronze_facilities
+          depends_on:
+            - task_key: setup_bronze
+            - task_key: setup_quality_registry
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/02_bronze/facilities_bronze.py
+
         - task_key: bronze_socioeconomic
+          depends_on:
+            - task_key: setup_bronze
+            - task_key: setup_quality_registry
           environment_key: default
           spark_python_task:
             python_file: ../src/02_bronze/socioeconomic_bronze.py
 
         - task_key: bronze_workforce
+          depends_on:
+            - task_key: setup_bronze
+            - task_key: setup_quality_registry
           environment_key: default
           spark_python_task:
             python_file: ../src/02_bronze/workforce_bronze.py
 
-        # TODO: dev has two population bronze notebooks
-        # (01_bronze_population.ipynb and 01_population_bronze.ipynb) — keep one, then enable:
-        # - task_key: bronze_population
-        #   notebook_task:
-        #     notebook_path: ../src/02_bronze/01_population_bronze.ipynb
+        # ================================================================
+        # 2. BRONZE QC
+        #    TODO: geography_bronze_qc.py is still a placeholder. When it has checks,
+        #    add qc_bronze_geography (depends_on bronze_geography) and put it in
+        #    silver_geography's depends_on.
+        # ================================================================
+        - task_key: qc_bronze_admin_boundaries
+          depends_on:
+            - task_key: bronze_admin_boundaries
+          notebook_task:
+            notebook_path: ../src/05_quality/bronze/admin_boundaries_bronze_qc.py
 
-        # ---------------- Silver ----------------
+        - task_key: qc_bronze_psgc_population
+          depends_on:
+            - task_key: bronze_geography
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/psgc_population_bronze_qc.py
+
+        - task_key: qc_bronze_diseases
+          depends_on:
+            - task_key: bronze_diseases
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/diseases_bronze_qc.py
+
+        - task_key: qc_bronze_facilities
+          depends_on:
+            - task_key: bronze_facilities
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/facilities_bronze_qc.py
+
+        - task_key: qc_bronze_socioeconomic
+          depends_on:
+            - task_key: bronze_socioeconomic
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/socioeconomic_bronze_qc.py
+
+        - task_key: qc_bronze_workforce
+          depends_on:
+            - task_key: bronze_workforce
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/workforce_bronze_qc.py
+
+        # ================================================================
+        # 3. SILVER — geography backbone (+ its QC)
+        #    qc_silver_geography gates every task that reads geography_silver.
+        # ================================================================
         - task_key: silver_geography
           depends_on:
             - task_key: bronze_geography
           notebook_task:
             notebook_path: ../src/03_silver/geography_silver.ipynb
 
+        - task_key: qc_silver_geography
+          depends_on:
+            - task_key: silver_geography
+          notebook_task:
+            notebook_path: ../src/05_quality/silver/geography_silver_qc.py
+
         - task_key: silver_admin_boundaries
           depends_on:
-            - task_key: bronze_admin_boundaries
+            - task_key: qc_bronze_admin_boundaries
+            - task_key: qc_silver_geography
           notebook_task:
             notebook_path: ../src/03_silver/admin_boundaries_silver.ipynb
 
-        # Enable once bronze_population is in:
-        # - task_key: silver_psgc_population
-        #   depends_on:
-        #     - task_key: bronze_population
-        #     - task_key: silver_geography
-        #   notebook_task:
-        #     notebook_path: ../src/03_silver/psgc_population_silver.ipynb
+        - task_key: qc_silver_admin_boundaries
+          depends_on:
+            - task_key: silver_admin_boundaries
+          notebook_task:
+            notebook_path: ../src/05_quality/silver/admin_boundaries_silver_qc.py
 
-        # ---------------- Gold (add when ready) ----------------
+        - task_key: silver_psgc_population
+          depends_on:
+            - task_key: qc_bronze_psgc_population
+            - task_key: qc_silver_geography
+          notebook_task:
+            notebook_path: ../src/03_silver/psgc_population_silver.ipynb
+
+        - task_key: qc_silver_psgc_population
+          depends_on:
+            - task_key: silver_psgc_population
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/silver/psgc_population_silver_qc.py
+
+        # ================================================================
+        # 4. SILVER — diseases
+        #    00 -> {01, 02, 03};  01 -> 04;  all -> QC
+        # ================================================================
+        - task_key: silver_diseases_00_reference
+          depends_on:
+            - task_key: qc_bronze_diseases
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/diseases/diseases_silver_00_reference.sql
+
+        - task_key: silver_diseases_01_metric
+          depends_on:
+            - task_key: silver_diseases_00_reference
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/diseases/diseases_silver_01_metric.sql
+
+        - task_key: silver_diseases_02_deaths_age
+          depends_on:
+            - task_key: silver_diseases_00_reference
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/diseases/diseases_silver_02_deaths_age.sql
+
+        - task_key: silver_diseases_03_hospital_encounters
+          depends_on:
+            - task_key: silver_diseases_00_reference
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/diseases/diseases_silver_03_hospital_encounters.sql
+
+        - task_key: silver_diseases_04_source_coverage
+          depends_on:
+            - task_key: silver_diseases_01_metric
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/diseases/diseases_silver_04_source_coverage.sql
+
+        - task_key: qc_silver_diseases
+          depends_on:
+            - task_key: silver_diseases_02_deaths_age
+            - task_key: silver_diseases_03_hospital_encounters
+            - task_key: silver_diseases_04_source_coverage
+            - task_key: qc_silver_geography        # QC checks areas against geography_silver
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/silver/diseases_silver_qc.py
+
+        # ================================================================
+        # 5. SILVER — facilities
+        #    00_reference (area exceptions + id overrides) -> 01/02/03/04
+        #    00a_area_boundary -> 04a_osm_locate -> 04_osm_point
+        # ================================================================
+        - task_key: silver_facilities_00_reference
+          depends_on:
+            - task_key: qc_bronze_facilities
+            - task_key: qc_silver_geography        # validates against geography checksum
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/facilities/facilities_silver_00_reference.sql
+
+        - task_key: silver_facilities_00a_area_boundary
+          depends_on:
+            - task_key: qc_silver_geography
+            - task_key: qc_silver_admin_boundaries
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/facilities/facilities_silver_00a_area_boundary.sql
+
+        - task_key: silver_facilities_01_registry
+          depends_on:
+            - task_key: silver_facilities_00_reference
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/facilities/facilities_silver_01_registry.sql
+
+        - task_key: silver_facilities_02_metric
+          depends_on:
+            - task_key: silver_facilities_00_reference
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/facilities/facilities_silver_02_metric.sql
+
+        - task_key: silver_facilities_03_bed_occupancy
+          depends_on:
+            - task_key: silver_facilities_00_reference
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/facilities/facilities_silver_03_bed_occupancy.sql
+
+        - task_key: silver_facilities_04a_osm_locate
+          depends_on:
+            - task_key: qc_bronze_facilities
+            - task_key: silver_facilities_00a_area_boundary
+          notebook_task:
+            notebook_path: ../src/03_silver/facilities/facilities_silver_04a_osm_locate.py
+
+        - task_key: silver_facilities_04_osm_point
+          depends_on:
+            - task_key: silver_facilities_00_reference
+            - task_key: silver_facilities_04a_osm_locate
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/facilities/facilities_silver_04_osm_point.sql
+
+        - task_key: qc_silver_facilities
+          depends_on:
+            - task_key: silver_facilities_01_registry
+            - task_key: silver_facilities_02_metric
+            - task_key: silver_facilities_03_bed_occupancy
+            - task_key: silver_facilities_04_osm_point
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/silver/facilities_silver_qc.py
+
+        # ================================================================
+        # 6. SILVER — socioeconomic
+        #    00 -> 01 -> 05 (geography check);  02, 03, 04 independent;  all -> QC
+        # ================================================================
+        - task_key: silver_socioeconomic_00_reference
+          depends_on:
+            - task_key: qc_bronze_socioeconomic
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/socioeconomic/socioeconomic_silver_00_reference.sql
+
+        - task_key: silver_socioeconomic_01_poverty
+          depends_on:
+            - task_key: silver_socioeconomic_00_reference
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/socioeconomic/socioeconomic_silver_01_poverty.sql
+
+        - task_key: silver_socioeconomic_02_health_expenditure_share
+          depends_on:
+            - task_key: qc_bronze_socioeconomic
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/socioeconomic/socioeconomic_silver_02_health_expenditure_share.sql
+
+        - task_key: silver_socioeconomic_03_health_expenditure_per_capita
+          depends_on:
+            - task_key: qc_bronze_socioeconomic
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/socioeconomic/socioeconomic_silver_03_health_expenditure_per_capita.sql
+
+        - task_key: silver_socioeconomic_04_child_mortality
+          depends_on:
+            - task_key: qc_bronze_socioeconomic
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/socioeconomic/socioeconomic_silver_04_child_mortality.sql
+
+        - task_key: silver_socioeconomic_05_poverty_geography_check
+          depends_on:
+            - task_key: silver_socioeconomic_01_poverty
+            - task_key: qc_silver_geography
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/socioeconomic/socioeconomic_silver_05_poverty_geography_check.sql
+
+        - task_key: qc_silver_socioeconomic
+          depends_on:
+            - task_key: silver_socioeconomic_05_poverty_geography_check
+            - task_key: silver_socioeconomic_02_health_expenditure_share
+            - task_key: silver_socioeconomic_03_health_expenditure_per_capita
+            - task_key: silver_socioeconomic_04_child_mortality
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/silver/socioeconomic_silver_qc.py
+
+        # ================================================================
+        # 7. SILVER — workforce
+        #    00 -> 01 (fhsis staging) -> {02, 03};  00 -> 04;  all -> QC
+        # ================================================================
+        - task_key: silver_workforce_00_reference
+          depends_on:
+            - task_key: qc_bronze_workforce
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/workforce/workforce_silver_00_reference.sql
+
+        - task_key: silver_workforce_01_fhsis_areas
+          depends_on:
+            - task_key: silver_workforce_00_reference
+            - task_key: qc_silver_geography
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/workforce/workforce_silver_01_fhsis_areas.sql
+
+        - task_key: silver_workforce_02_headcount
+          depends_on:
+            - task_key: silver_workforce_01_fhsis_areas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/workforce/workforce_silver_02_headcount.sql
+
+        - task_key: silver_workforce_03_denominator
+          depends_on:
+            - task_key: silver_workforce_01_fhsis_areas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/workforce/workforce_silver_03_denominator.sql
+
+        - task_key: silver_workforce_04_specialist
+          depends_on:
+            - task_key: silver_workforce_00_reference
+            - task_key: qc_silver_geography
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/03_silver/workforce/workforce_silver_04_specialist.sql
+
+        - task_key: qc_silver_workforce
+          depends_on:
+            - task_key: silver_workforce_02_headcount
+            - task_key: silver_workforce_03_denominator
+            - task_key: silver_workforce_04_specialist
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/silver/workforce_silver_qc.py
+
+        # ================================================================
+        # 8. GOLD (next) — depend on the qc_silver_<domain> tasks you read from, e.g.
+        # ================================================================
         # - task_key: gold_<model>
         #   depends_on:
-        #     - task_key: silver_geography
+        #     - task_key: qc_silver_facilities
+        #     - task_key: qc_silver_psgc_population
         #   notebook_task:
         #     notebook_path: ../src/04_gold/<notebook>.ipynb
