@@ -163,18 +163,30 @@ USING (
     ),
     (
         'S52', 'silver', 'population', 'population filled exactly when the status is valid', 'VALIDITY', 'FAIL', 0,
-        'VALID / VALID_WITH_NOTE rows have a number; MISSING / INVALID rows are null, never 0; VALID_WITH_NOTE exactly when a note was moved out'
+        'VALID / VALID_WITH_NOTE rows have a number; MISSING / INVALID rows are null, never 0; VALID_WITH_NOTE exactly when a note was moved out' -- noqa: LT05
     ),
     (
         'S53', 'silver', 'population', 'rows without a usable population', 'COMPLETENESS', 'WARN', 0,
         'MISSING and INVALID rows, listed by status and year'
     ),
     (
-        'S54', 'silver', 'population', 'every geography area has a row for every census year', 'COMPLETENESS', 'WARN', 0,
+        'S54',
+        'silver',
+        'population',
+        'every geography area has a row for every census year',
+        'COMPLETENESS',
+        'WARN',
+        0,
         'Areas of the latest geography snapshot without a 2015, 2020 or 2024 row'
     ),
     (
-        'S55', 'silver', 'population', 'area total equals the sum of its cities and municipalities', 'CONSISTENCY', 'WARN', 0,
+        'S55',
+        'silver',
+        'population',
+        'area total equals the sum of its cities and municipalities',
+        'CONSISTENCY',
+        'WARN',
+        0,
         'Province and region totals against the sum of their cities and municipalities (HUCs excluded from provinces)'
     ),
     (
@@ -182,7 +194,13 @@ USING (
         'Control: national total per census year within 0.1 percent of the PSA release; FAIL once confirmed'
     ),
     (
-        'S57', 'silver', 'population', 'one population snapshot from the current PSGC release', 'CONSISTENCY', 'WARN', 0,
+        'S57',
+        'silver',
+        'population',
+        'one population snapshot from the current PSGC release',
+        'CONSISTENCY',
+        'WARN',
+        0,
         'Population has one content_checksum and it equals the latest geography snapshot'
     ),
     (
