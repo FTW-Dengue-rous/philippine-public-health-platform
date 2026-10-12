@@ -1,43 +1,38 @@
 -- =============================================================================
--- This file builds public_health.silver.facilities_area_boundary from the team's HDX boundaries
--- (public_health.silver.admin_boundaries_silver, HDX COD-AB PHL). One row per city / municipality
--- of geography_silver, with the HDX polygon, centroid and area when one is accepted.
+-- Builds public_health.silver.facilities_area_boundary from
+-- public_health.silver.admin_boundaries_silver (HDX COD-AB PHL).
+-- Grain: one city/municipality from geography_silver.
 --
--- Why: facilities place OSM points in a municipality by point-in-polygon (04a) and gold measures
--- distance to the municipality centroid. Both must use the SAME boundaries as dim_geography, so
--- this table copies admin_boundaries_silver; it never builds or downloads its own polygons.
+-- Purpose
+--   Provides the shared municipality polygons and centroids used for OSM
+--   point-in-polygon matching and downstream distance analysis. Reuses the team's
+--   HDX boundaries so facilities and dim_geography use the same geography source.
 --
--- Rules
---   geography_silver decides the areas (latest snapshot, City and Mun). admin_boundaries_silver
---   gives the polygon whose matched psgc_code is that area. A polygon is ACCEPTED when
---     - its HDX name agrees with the geography name (same place key as the facilities builds; the
---       text in brackets counts as a second name: 'Bacungan (Leon T. Postigo)'), or
---     - its psgc_match_status is a name-based match (anything other than CODE_MATCH): those were
---       matched by name in the admin boundaries notebook already.
---   A CODE_MATCH whose names disagree is NOT used (the admin boundaries defect: 16 Maguindanao del
---   Norte / del Sur municipalities carry another municipality's code). The area keeps a row with
---   boundary_rule 'name_conflict' and no geometry, so the gap is visible and nothing is misplaced.
---   Once the notebook fix is applied these rows become 'hdx' without any change here.
+-- Boundary assignment
+--   geography_silver defines the required cities and municipalities.
+--   Accepts an HDX polygon when its PSGC code matches the area and either:
+--     - the HDX and geography names agree, or
+--     - admin_boundaries_silver matched the boundary by name.
 --
---   boundary_rule   hdx            exactly one accepted HDX polygon
---                   name_conflict  HDX rows carry the code, none accepted (names disagree)
---                   no_boundary    no HDX row carries the code (e.g. SGA municipalities, which the
---                                  notebook keeps as SPECIAL_STRUCTURE without a psgc_code)
+--   Rejects code-matched polygons whose names disagree to avoid assigning the
+--   wrong geometry.
 --
--- Gates (stop the run, nothing written): no ADM3 rows; a code with 2+ accepted polygons; an
--- accepted polygon without geometry, outside the Philippines, with area <= 0, or not in WGS84.
--- Warnings (shown, not stopping): name_conflict, no_boundary, HDX polygons not used.
+-- boundary_rule
+--   hdx            accepted HDX polygon
+--   name_conflict  matching code exists, but the boundary name conflicts
+--   no_boundary    no usable HDX polygon exists for the area
 --
--- Run order: geography_silver -> admin_boundaries_silver -> THIS -> build_facilities_area_exceptions.py
---            -> facilities_silver_00_reference.sql -> 01 ... 04
+-- Validation
+--   Stops the build for duplicate accepted polygons, missing/invalid geometry,
+--   invalid area, coordinates outside the Philippines, or non-WGS84 geometry.
+--   Reports missing/conflicting boundaries as warnings.
 --
--- Column names of admin_boundaries_silver are taken from the notebook owner's guide
--- (admin_level, boundary_pcode, boundary_name, adm2_name, psgc_code, psgc_match_status, area_sqkm,
--- center_lat, center_lon, geometry_json, source_crs, boundary_version, source_version,
--- silver_processed_at). CONFIRM with DESCRIBE before the first run; they are only named in [1].
--- Status: first Databricks run 2026-10-12: 1 name_conflict (Leon T. Postigo, HDX 'Bacungan (Leon T.
--- Postigo)', now accepted through the bracket name) and 8 no_boundary (SGA municipalities, no
--- psgc_code in HDX). Bracket rule tested on local Spark 4.0 against a stand-in.
+-- Run before:
+--   build_facilities_area_exceptions.py
+--   facilities_silver_00_reference.sql
+--   downstream facilities Silver builds
+--
+-- Requires geography_silver and admin_boundaries_silver.
 -- =============================================================================
 
 -- [0] place key: the same normalisation as facilities_silver_01_registry.sql, brackets dropped first
