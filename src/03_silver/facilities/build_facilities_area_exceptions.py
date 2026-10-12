@@ -39,10 +39,12 @@
 #   %restart_python
 # Review the printed report and CSV diff before committing.
 
-%pip install shapely
-%restart_python
-
-import argparse, csv, difflib, re, sys, unicodedata
+import argparse
+import csv
+import difflib
+import re
+import sys
+import unicodedata
 from collections import Counter, defaultdict
 
 import pandas as pd
@@ -106,13 +108,20 @@ def fac_region_psgc(s):
     n = fac_norm(s) or ""
     def has(p):
         return re.search(r"(^| )(" + p + r")( |$)", n) is not None
-    if has("NCR|N C R|NATIONAL CAPITAL|METRO MANILA"): return "1300000000"
-    if has("CAR|C A R|CORDILLERA"): return "1400000000"
-    if has("BARMM|ARMM|BANGSAMORO|AUTONOMOUS REGION IN MUSLIM MINDANAO"): return "1900000000"
-    if has("NIR|NEGROS ISLAND"): return "1800000000"
-    if has("MIMAROPA|IV B|4 B|4B|IVB"): return "1700000000"
-    if has("CARAGA|XIII|13"): return "1600000000"
-    if has("CALABARZON|IV A|4 A|4A|IVA"): return "0400000000"
+    if has("NCR|N C R|NATIONAL CAPITAL|METRO MANILA"):
+        return "1300000000"
+    if has("CAR|C A R|CORDILLERA"):
+        return "1400000000"
+    if has("BARMM|ARMM|BANGSAMORO|AUTONOMOUS REGION IN MUSLIM MINDANAO"):
+        return "1900000000"
+    if has("NIR|NEGROS ISLAND"):
+        return "1800000000"
+    if has("MIMAROPA|IV B|4 B|4B|IVB"):
+        return "1700000000"
+    if has("CARAGA|XIII|13"):
+        return "1600000000"
+    if has("CALABARZON|IV A|4 A|4A|IVA"):
+        return "0400000000"
     named = {"ILOCOS": "01", "CAGAYAN VALLEY": "02", "CENTRAL LUZON": "03", "BICOL": "05", "WESTERN VISAYAS": "06",
              "CENTRAL VISAYAS": "07", "EASTERN VISAYAS": "08", "ZAMBOANGA PENINSULA": "09",
              "NORTHERN MINDANAO": "10", "DAVAO": "11", "SOCCSKSARGEN": "12"}
