@@ -271,7 +271,7 @@ FROM (
          ev_similarity(c.label, g.area_name) AS similarity,
          row_number() OVER (PARTITION BY c.label, c.province ORDER BY ev_similarity(c.label, g.area_name) DESC) AS rank
   FROM (SELECT DISTINCT label, province, review_status, scope_prov5, scope_region2 FROM ev_check_labels) c
-  JOIN ev_lgu g ON g.prov5 = c.scope_prov5 OR (c.scope_prov5 IS NULL AND g.region2 = c.scope_region2))
+  JOIN ev_lgu g ON g.prov5 = c.scope_prov5 OR (c.scope_prov5 IS NULL AND g.region2 = c.scope_region2)
 WHERE rank <= 3
 ORDER BY review_status, label, rank;
 
