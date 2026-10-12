@@ -1,57 +1,34 @@
 -- =============================================================================
--- facilities_silver_01_registry.sql
--- Builds two tables, one build id each:
---   public_health.silver.facilities_id_map_silver    one row per source identifier
---                                                     key (_source_key, source_record_id)
---   public_health.silver.facilities_registry_silver  one row per facility establishment
---                                                     key facility_key
--- Follows facilities-silver-plan.md v2.1 (sections 2, 4, 5, 6) and lineage-qc-contract.md v1.3
--- (one lineage group per side, plan 5.2 / contract 3.4; build_log / build_inputs per build; row_disposition holds only the
--- bronze rows that were NOT loaded; loaded = build_inputs.input_rows minus those rows).
--- Run order: 00a -> build_facilities_area_exceptions.py (when inputs change) -> 00 -> [01] -> 02 -> 03 -> 04a -> 04
+-- Builds two Silver facility registry tables in one validated build:
 --
--- Inputs: NHFR hospitals (spine) and four HFSRB licensed lists (hospitals, infirmaries,
--- primary care, free-standing dialysis clinics), geography silver, the two reference tables
--- from facilities_silver_00_reference.sql, and the PREVIOUS versions of the two targets
--- (so facility_key and history columns survive a rebuild).
+--   public_health.silver.facilities_id_map_silver
+--     Grain: one source facility identifier.
+--     Key: (_source_key, source_record_id).
 --
--- Build sequence (contract section 5.1)
---   Step 1, inputs
---     [0]  build ids, settings, helper functions, geography reference view
---     [1]  ..__classified   every bronze row of the five sources, parsed, with row_class
---     [2]  ..__inputs       one row per file or sheet read, with load id and checksum
---   Step 2, transform
---     [3]  ..__geo          area of every data row: from codes (NHFR) or name + level + parent
---     [4]  ..__records      identity: duplicate-code rule, code match, name match, overrides,
---                           facility_key (reused from the previous id map, else a new uuid)
---     [5]  ..__idmap_candidate, ..__candidate   the two candidate tables
---   Step 3, validate
---     [6]  ..__gates        every row must have failures = 0
---     [7]  build log rows   (succeeded or failed)
---     [8]  STOP if a gate failed: the failed build is logged, nothing else is written
---   Step 4, record
---     [9]  write both tables from the validated candidates
---     [10] append build_log, build_inputs, row_disposition (rows not loaded only, contract v1.3)
---     [11] summary; drop staging tables
+--   public_health.silver.facilities_registry_silver
+--     Grain: one facility establishment.
+--     Key: facility_key.
 --
--- Write mode: the candidate is the full new state of each table (current rows + rows carried
--- from the previous version), validated, then written with CREATE OR REPLACE. This gives the
--- same result as the MERGE described in the plan (section 5.3), and the rows validated are
--- exactly the rows written. Delta keeps every version.
+-- Inputs
+--   Uses NHFR hospitals as the registry spine and matches four HFSRB licensed lists:
+--   hospitals, infirmaries, primary care facilities, and free-standing dialysis clinics.
+--   Also uses geography_silver, facilities reference tables, and previous target versions
+--   to preserve facility_key and history across rebuilds.
 --
--- Needs
---   facilities_silver_00_reference.sql has been run (exceptions and id map override; their table
---   versions are recorded in build_inputs as reference inputs)
---   quality_setup.sql has been run (build_log, build_inputs, row_disposition)
---   geography silver exists (name set in [0], default public_health.silver.geography_silver)
---   Bronze QC passed for the five sources
+-- Facility matching
+--   Resolves geography, applies duplicate-code rules, matches records by facility code
+--   or name, applies reviewed overrides, and reuses existing facility_key values when
+--   available. Assigns a new facility_key only when no prior identity exists.
 --
--- Status
---   Ran on local Spark 4.0 against the landing files and the exported geography_silver
---   (2026-10-09), twice in a row (first build, then a rebuild that reuses keys); rerun 2026-10-12
---   with the regenerated exceptions: 3,957 facilities, all gates 0. Not yet run on Databricks.
---   NOT tested locally: Delta, read_files(), and DESCRIBE HISTORY in a subquery ([2], [10]).
---   If your runtime rejects DESCRIBE HISTORY there, use the NULL version noted in [2].
+-- Write strategy
+--   Builds and validates the complete new state of both tables before replacing them.
+--   If validation fails, logs the failed build and leaves both target tables unchanged.
+--
+-- Requires:
+--   facilities_silver_00_reference.sql
+--   geography silver tables
+--   quality_setup.sql
+--   bronze QC for all five facility registry sources
 -- =============================================================================
 
 -- [0] build ids and settings
@@ -67,7 +44,7 @@ DECLARE OR REPLACE VARIABLE geography_checksum STRING;
 SET VARIABLE geography_checksum =
   (SELECT max_by(content_checksum, silver_processed_at) FROM public_health.silver.geography_silver);
 
--- Text normalisation: upper case; N-tilde (also the broken 'Ã±' and NHFR's '?') becomes N;
+-- Text normalization: upper case; N-tilde (also the broken 'Ã±' and NHFR's '?') becomes N;
 -- anything that is not A-Z or 0-9 becomes a space; single spaces.
 CREATE OR REPLACE TEMPORARY FUNCTION fac_norm(s STRING) RETURNS STRING
 RETURN trim(regexp_replace(regexp_replace(
@@ -378,7 +355,7 @@ LEFT JOIN fac_registry_table_versions v ON v.table_name = t.table_name;
 
 
 -- =============================================================================
--- [3] geography: the area of every data row (plan 4.2). Each row resolves once.
+-- [3] geography: the area of every data row. Each row resolves once.
 --   NHFR: its own city/municipality code (Sulu codes remapped by the exceptions file),
 --         validated against geography; the level comes from geography.
 --   HFSRB: region label -> region (rule), province label -> province (name within region),
@@ -878,7 +855,7 @@ LEFT ANTI JOIN hashed h ON h.facility_key = p.facility_key;
 
 
 -- =============================================================================
--- [5c] dispositions (lineage-qc-contract.md v1.3, section 7.1): one row per bronze row that was
+-- [5c] dispositions: one row per bronze row that was
 --      NOT loaded as itself. Loaded rows are not stored: the silver rows carry their bronze row
 --      reference, and rows loaded per input = input_rows - rows here (quality.v_build_reconciliation).
 --      merged_into rows are stored (with the facility_key) but count as loaded: they contributed.
