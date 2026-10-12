@@ -74,7 +74,7 @@ The notebook follows this sequence:
 4. **Read landed records.** Spark reads the validated JSON-lines files and extracts selected PSGC fields while preserving the full record as `source_record_json`.
 5. **Validate the Spark candidate.** Checks that the Spark record count matches the validated landing count, that PSGC codes are present, and that codes are unique.
 6. **Check the target table.** If the table exists, requires exact schema compatibility and Delta format. It also checks existing records for duplicates, unexpected codes, or conflicting source JSON.
-7. **Preview or write.** The default `write_to_bronze=no` previews the number of records to insert. With `write_to_bronze=yes`, the notebook creates the target table if absent and performs an insert-only Delta `MERGE`.
+7. **Preview or write.** The  `write_to_bronze=no` previews the number of records to insert. With `write_to_bronze=yes`, the notebook creates the target table if absent and performs an insert-only Delta `MERGE`. Furthermore, `write_to_bronze` defaults to "no" if unspecified.
 8. **Reconcile the result.** Checks that the stored snapshot has the expected number of records and passes the existing-row consistency checks.
 
 #### Notebook parameters
@@ -167,7 +167,7 @@ The notebook extracts source attributes as strings. It does not standardize name
 | `_source_file` | STRING | Staging manifest | Original source filename |
 | `_source_file_sha256` | STRING | Staging manifest | SHA-256 checksum of the source file |
 | `_source_crs` | STRING | Staging manifest | Source coordinate reference system |
-| `_source_url` | STRING | Landing receipt | Source URL |
+| `_source_url` | STRING, nullable | Landing receipt | Source URL (nullable if omitted from receipt) |
 | `_landing_receipt_path` | STRING | Runtime | Path to the validated receipt |
 | `_staging_manifest_path` | STRING | Runtime | Path to the validated manifest |
 | `_validation_id` | STRING, nullable | Handoff | Upstream validation identifier, if supplied |
