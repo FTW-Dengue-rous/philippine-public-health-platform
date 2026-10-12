@@ -1012,7 +1012,7 @@ def check_child_mortality(dq, profile):
         f"SELECT count(*) FROM {MORT} WHERE "
         + " OR ".join(
             f"({r} IS NULL) <> ({q} = 'suppressed') OR {q} IS NULL OR {q} NOT IN ('ok', 'low_precision', 'suppressed')"
-            for r, q in zip(rates, reliab)
+            for r, q in zip(rates, reliab, strict=True)
         ),
         total_sql,
         column_name=", ".join(reliab),
