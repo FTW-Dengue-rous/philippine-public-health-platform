@@ -44,23 +44,57 @@ import csv
 import difflib
 import re
 import sys
-import unicodedata
 from collections import Counter, defaultdict
 
 import pandas as pd
 from pyspark.sql import SparkSession
 
-OUT_COLUMNS = ["source_group", "match_type", "match_value", "parent_label_norm", "year_from", "year_to",
-               "area_label_source", "psgc_code", "area_key", "named_key_level", "reason", "review_note",
-               "rule", "evidence", "evidence_n", "evidence_share", "review_status", "proposed_psgc_code",
-               "proposed_area_name", "geography_check", "records", "geography_checksum"]
+OUT_COLUMNS = [
+    "source_group",
+    "match_type",
+    "match_value",
+    "parent_label_norm",
+    "year_from",
+    "year_to",
+    "area_label_source",
+    "psgc_code",
+    "area_key",
+    "named_key_level",
+    "reason",
+    "review_note",
+    "rule",
+    "evidence",
+    "evidence_n",
+    "evidence_share",
+    "review_status",
+    "proposed_psgc_code",
+    "proposed_area_name",
+    "geography_check",
+    "records",
+    "geography_checksum",
+]
 USABLE = {"auto", "corroborated", "reviewed"}
 REF_DIR = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/reference/facilities"
-STRUCTURAL = {"code_prefix_same_name", "label_part", "not_a_province", "ncr_district", "word_order",
-              "directional_prefix", "province_prefix", "acronym", "split_province", "abbreviation"}
-ABBREVIATIONS = {"MT": ["MOUNTAIN", "MOUNT"], "PRES": ["PRESIDENT"], "STO": ["SANTO"], "STA": ["SANTA"]}
+STRUCTURAL = {
+    "code_prefix_same_name",
+    "label_part",
+    "not_a_province",
+    "ncr_district",
+    "word_order",
+    "directional_prefix",
+    "province_prefix",
+    "acronym",
+    "split_province",
+    "abbreviation",
+}
+ABBREVIATIONS = {
+    "MT": ["MOUNTAIN", "MOUNT"],
+    "PRES": ["PRESIDENT"],
+    "STO": ["SANTO"],
+    "STA": ["SANTA"],
+}
 SPELLING_MIN, SPELLING_MARGIN = 0.85, 0.05
-BGY_TOLERANCE = 0.07      # FHSIS barangay counts drift a few % between years and geography
+BGY_TOLERANCE = 0.07  # FHSIS barangay counts drift a few % between years and geography
 
 
 # ---------------------------------------------------------------------------------------------
@@ -82,8 +116,13 @@ def fac_place(s):
         return None
     t = " " + (fac_norm(re.sub(r"['’`-]", "", str(s))) or "") + " "
     t = re.sub(r" (HUC|ICC|CC|CAPITAL|NOT A PROVINCE) ", " ", t)
-    for a, b in ((" STA ", " SANTA "), (" STO ", " SANTO "), (" GEN ", " GENERAL "), (" GOV ", " GOVERNOR "),
-                 (" SEN ", " SENATOR ")):
+    for a, b in (
+        (" STA ", " SANTA "),
+        (" STO ", " SANTO "),
+        (" GEN ", " GENERAL "),
+        (" GOV ", " GOVERNOR "),
+        (" SEN ", " SENATOR "),
+    ):
         t = t.replace(a, b)
     t = re.sub(r"^ (MUNICIPALITY OF|ISLAND GARDEN CITY OF|SCIENCE CITY OF|CITY OF) ", " ", t)
     t = re.sub(r" CITY $", " ", t)
@@ -106,8 +145,10 @@ def fac_lgu(code):
 
 def fac_region_psgc(s):
     n = fac_norm(s) or ""
+
     def has(p):
         return re.search(r"(^| )(" + p + r")( |$)", n) is not None
+
     if has("NCR|N C R|NATIONAL CAPITAL|METRO MANILA"):
         return "1300000000"
     if has("CAR|C A R|CORDILLERA"):
@@ -122,25 +163,90 @@ def fac_region_psgc(s):
         return "1600000000"
     if has("CALABARZON|IV A|4 A|4A|IVA"):
         return "0400000000"
-    named = {"ILOCOS": "01", "CAGAYAN VALLEY": "02", "CENTRAL LUZON": "03", "BICOL": "05", "WESTERN VISAYAS": "06",
-             "CENTRAL VISAYAS": "07", "EASTERN VISAYAS": "08", "ZAMBOANGA PENINSULA": "09",
-             "NORTHERN MINDANAO": "10", "DAVAO": "11", "SOCCSKSARGEN": "12"}
+    named = {
+        "ILOCOS": "01",
+        "CAGAYAN VALLEY": "02",
+        "CENTRAL LUZON": "03",
+        "BICOL": "05",
+        "WESTERN VISAYAS": "06",
+        "CENTRAL VISAYAS": "07",
+        "EASTERN VISAYAS": "08",
+        "ZAMBOANGA PENINSULA": "09",
+        "NORTHERN MINDANAO": "10",
+        "DAVAO": "11",
+        "SOCCSKSARGEN": "12",
+    }
     for k, v in named.items():
         if re.fullmatch(k + r"( REGION)?", n):
             return v + "00000000"
     m = re.match(r"^REGION ([IVX]+|[0-9]+)( |$)", n)
-    roman = {"I": "01", "1": "01", "II": "02", "2": "02", "III": "03", "3": "03", "V": "05", "5": "05",
-             "VI": "06", "6": "06", "VII": "07", "7": "07", "VIII": "08", "8": "08", "IX": "09", "9": "09",
-             "X": "10", "10": "10", "XI": "11", "11": "11", "XII": "12", "12": "12"}
+    roman = {
+        "I": "01",
+        "1": "01",
+        "II": "02",
+        "2": "02",
+        "III": "03",
+        "3": "03",
+        "V": "05",
+        "5": "05",
+        "VI": "06",
+        "6": "06",
+        "VII": "07",
+        "7": "07",
+        "VIII": "08",
+        "8": "08",
+        "IX": "09",
+        "9": "09",
+        "X": "10",
+        "10": "10",
+        "XI": "11",
+        "11": "11",
+        "XII": "12",
+        "12": "12",
+    }
     if m and m.group(1) in roman:
         return roman[m.group(1)] + "00000000"
     return None
 
 
-GENERIC = {"HOSPITAL", "MEDICAL", "CENTER", "GENERAL", "DISTRICT", "PROVINCIAL", "MEMORIAL", "REGIONAL", "CITY",
-           "OF", "THE", "AND", "DE", "DEL", "NG", "SA", "MATERNITY", "CLINIC", "INFIRMARY", "HEALTH", "CARE",
-           "DOCTORS", "DR", "ST", "SANTO", "SAN", "OPC", "COMMUNITY", "MUNICIPAL", "HOSPITALS", "SPECIALTY",
-           "FOUNDATION", "INC", "CORP", "CORPORATION", "CO"}
+GENERIC = {
+    "HOSPITAL",
+    "MEDICAL",
+    "CENTER",
+    "GENERAL",
+    "DISTRICT",
+    "PROVINCIAL",
+    "MEMORIAL",
+    "REGIONAL",
+    "CITY",
+    "OF",
+    "THE",
+    "AND",
+    "DE",
+    "DEL",
+    "NG",
+    "SA",
+    "MATERNITY",
+    "CLINIC",
+    "INFIRMARY",
+    "HEALTH",
+    "CARE",
+    "DOCTORS",
+    "DR",
+    "ST",
+    "SANTO",
+    "SAN",
+    "OPC",
+    "COMMUNITY",
+    "MUNICIPAL",
+    "HOSPITALS",
+    "SPECIALTY",
+    "FOUNDATION",
+    "INC",
+    "CORP",
+    "CORPORATION",
+    "CO",
+}
 
 
 def name_similarity(a, b):
@@ -164,21 +270,30 @@ DIRECTIONS = r"^(NORTH|NORTHERN|SOUTH|SOUTHERN|EAST|EASTERN|WEST|WESTERN) "
 # Geography
 # ---------------------------------------------------------------------------------------------
 class Geo:
-    LEVEL = {"Reg": "region", "Prov": "province", "City": "city", "Mun": "municipality",
-             "SubMun": "submunicipality", "Bgy": "barangay"}
+    LEVEL = {
+        "Reg": "region",
+        "Prov": "province",
+        "City": "city",
+        "Mun": "municipality",
+        "SubMun": "submunicipality",
+        "Bgy": "barangay",
+    }
 
     def __init__(self, df, source="geography"):
         # One PSGC snapshot, as in build_diseases_reference_maps.py: stop rather than pick one.
         snapshots = df.content_checksum.dropna().unique()
         if len(snapshots) != 1:
-            sys.exit(f"STOPPED: {source} holds {len(snapshots)} PSGC snapshots; this script needs exactly one")
+            sys.exit(
+                f"STOPPED: {source} holds {len(snapshots)} PSGC snapshots; this script needs exactly one"
+            )
         self.checksum = snapshots[0]
         g = df.copy()
         g["psgc_code"] = g.psgc_code.astype(str).str.strip().str.zfill(10)
         # damaged n-tilde (UTF-8 read as Latin-1): a no-op once geography_silver is repaired
         self.repaired = int(g.area_name.fillna("").str.contains("\u00c3").sum())
-        g["area_name"] = g.area_name.str.replace("\u00c3\u00b1", "\u00f1", regex=False) \
-                                    .str.replace("\u00c3\u2018", "\u00d1", regex=False)
+        g["area_name"] = g.area_name.str.replace("\u00c3\u00b1", "\u00f1", regex=False).str.replace(
+            "\u00c3\u2018", "\u00d1", regex=False
+        )
         g["level"] = g.geographic_level.map(self.LEVEL)
         g["region"] = g.psgc_code.str[:2] + "00000000"
         g["province"] = None
@@ -192,7 +307,7 @@ class Geo:
         self.city_class = dict(zip(g.psgc_code, g.city_class))
         self.other = g[g.level.isna() & g.area_name.notna()]
         b = g[g.level == "barangay"]
-        self.bgy_names = defaultdict(set)            # lgu code -> barangay place names
+        self.bgy_names = defaultdict(set)  # lgu code -> barangay place names
         for c, nm in zip(b.psgc_code, b.area_name):
             self.bgy_names[fac_lgu(c[:7] + "000")].add(fac_place(nm))
         self.bgy_prov = Counter(b.psgc_code.str[:5])
@@ -230,7 +345,7 @@ def candidate(geo, label, levels, region=None, province=None, allow_fuzzy=True):
     hint = city_hint(label)
     lv = ["city"] if hint and "city" in levels else levels
     if province:
-        region = None                       # the province is the narrower, already resolved parent
+        region = None  # the province is the narrower, already resolved parent
     scopes = [dict(region=region, province=province)] if (region or province) else []
     scopes.append({})
 
@@ -246,7 +361,11 @@ def candidate(geo, label, levels, region=None, province=None, allow_fuzzy=True):
     # ncr_district / not_a_province / label_part
     m = re.search(r"(SECOND|THIRD|FOURTH) DISTRICT", n)
     if "NCR" in n.split() and m:
-        return "ncr_district", None, "ncr-district:" + {"SECOND": "2", "THIRD": "3", "FOURTH": "4"}[m.group(1)]
+        return (
+            "ncr_district",
+            None,
+            "ncr-district:" + {"SECOND": "2", "THIRD": "3", "FOURTH": "4"}[m.group(1)],
+        )
     if "NCR" in n.split() and ("FIRST DISTRICT" in n or "CITY OF MANILA" in n):
         return "ncr_district", "1380600000", None
     if "NOT A PROVINCE" in n:
@@ -257,10 +376,14 @@ def candidate(geo, label, levels, region=None, province=None, allow_fuzzy=True):
     parts = [p for p in re.split(r"[(),]", str(label)) if p and p.strip()]
     if len(parts) > 1:
         provs = {p: geo.find(place_key(p), ["province"]) for p in parts}
-        for p, pr in provs.items():          # 'Balayan, Batangas': the province part scopes the other parts
+        for p, pr in provs.items():  # 'Balayan, Batangas': the province part scopes the other parts
             if len(pr) == 1:
-                rest = {geo.find(place_key(q), lv, province=pr.psgc_code.iloc[0]).psgc_code.iloc[0]
-                        for q in parts if q != p and len(geo.find(place_key(q), lv, province=pr.psgc_code.iloc[0])) == 1}
+                rest = {
+                    geo.find(place_key(q), lv, province=pr.psgc_code.iloc[0]).psgc_code.iloc[0]
+                    for q in parts
+                    if q != p
+                    and len(geo.find(place_key(q), lv, province=pr.psgc_code.iloc[0])) == 1
+                }
                 if len(rest) == 1:
                     return "label_part", rest.pop(), None
         hits = {unique(place_key(p)) for p in parts} - {None}
@@ -288,21 +411,31 @@ def candidate(geo, label, levels, region=None, province=None, allow_fuzzy=True):
     toks = n.split()
     for i, t in enumerate(toks):
         for full in ABBREVIATIONS.get(t, []):
-            c = unique(place_key(" ".join(toks[:i] + [full] + toks[i + 1:])))
+            c = unique(place_key(" ".join(toks[:i] + [full] + toks[i + 1 :])))
             if c:
                 return "abbreviation", c, None
     # acronym (SGA = Special Geographic Area), among areas of the parent region of any level
     if re.fullmatch(r"[A-Z]{2,5}", n) and region:
         pool = pd.concat([geo.scope(levels, region=region), geo.other[geo.other.region == region]])
-        hit = pool[pool.area_name.map(lambda x: "".join(w[0] for w in (fac_norm(x) or "").split()) == n)]
+        hit = pool[
+            pool.area_name.map(lambda x: "".join(w[0] for w in (fac_norm(x) or "").split()) == n)
+        ]
         if len(hit) == 1:
             return "acronym", hit.psgc_code.iloc[0], None
     # split_province: MAGUINDANAO = start of MAGUINDANAO DEL NORTE and MAGUINDANAO DEL SUR
     if "province" in levels and not hint:
         provs = geo.scope(["province"], region=region) if region else geo.scope(["province"])
-        starts = provs[provs.area_name.map(lambda x: (fac_place(x) or "").startswith((fac_place(label) or "#") + " "))]
+        starts = provs[
+            provs.area_name.map(
+                lambda x: (fac_place(x) or "").startswith((fac_place(label) or "#") + " ")
+            )
+        ]
         if len(starts) >= 2:
-            return "split_province", None, "hist:" + re.sub(r"[^a-z0-9]+", "_", (fac_place(label) or "").lower())
+            return (
+                "split_province",
+                None,
+                "hist:" + re.sub(r"[^a-z0-9]+", "_", (fac_place(label) or "").lower()),
+            )
     if not allow_fuzzy:
         return None, None, None
     # contained_name (whole words, in the parent scope only; 'Province of' dropped; a province wins
@@ -311,9 +444,11 @@ def candidate(geo, label, levels, region=None, province=None, allow_fuzzy=True):
     lw = set((fac_place(base) or "").split())
     if (region or province) and lw:
         a = geo.scope(lv, region=region, province=province)
+
         def contains(x):
             xw = set((fac_place(x) or "").split())
             return bool(xw) and xw != lw and (xw <= lw or lw <= xw)
+
         hit = a[a.area_name.map(contains)]
         if len(hit) > 1 and not hint and (hit.level == "province").sum() == 1:
             hit = hit[hit.level == "province"]
@@ -325,9 +460,11 @@ def candidate(geo, label, levels, region=None, province=None, allow_fuzzy=True):
         a = geo.scope(lv, **sc)
         if a.empty or not pk:
             continue
+
         def score(r):
             keys = [r.place] + ([r.place + "CITY"] if r.level == "city" else [])
             return max(difflib.SequenceMatcher(None, pk, k).ratio() for k in keys)
+
         s = a.assign(score=a.apply(score, axis=1)).sort_values("score", ascending=False)
         top = s.score.iloc[0]
         second = s.score.iloc[1] if len(s) > 1 else 0
@@ -375,8 +512,11 @@ def address_other_province(geo, label, rows, region, prov):
         text = " " + (fac_place(r.address) or "") + " "
         if f" {lab} " not in text:
             continue
-        hits = {c for c, pc in zip(cands.psgc_code, cands.province)
-                if fac_place(geo.name.get(pc)) and f" {fac_place(geo.name.get(pc))} " in text}
+        hits = {
+            c
+            for c, pc in zip(cands.psgc_code, cands.province)
+            if fac_place(geo.name.get(pc)) and f" {fac_place(geo.name.get(pc))} " in text
+        }
         if len(hits) == 1:
             ev[hits.pop()] += 1
     return ev
@@ -387,7 +527,7 @@ def address_other_province(geo, label, rows, region, prov):
 # ---------------------------------------------------------------------------------------------
 def province_of(geo, label, region):
     if "NOT A PROVINCE" in (fac_norm(label) or ""):
-        return None                          # '<city> (Not a Province)': the province of that name is wrong
+        return None  # '<city> (Not a Province)': the province of that name is wrong
     p = place_key(label)
     a = geo.find(p, ["province"], region=region)
     if len(a) == 1:
@@ -399,7 +539,9 @@ def province_of(geo, label, region):
     return None
 
 
-def silver_city(geo, label, region, prov, levels=("city", "municipality", "submunicipality"), prov_label=None):
+def silver_city(
+    geo, label, region, prov, levels=("city", "municipality", "submunicipality"), prov_label=None
+):
     """Mirror of the registry / BOR city step: candidates in the region (else the country), scored
     by province and level; resolved when the best score is unique. With prov_label (registry only):
     when the city label matches nothing anywhere, a province column that names one city resolves it."""
@@ -411,8 +553,12 @@ def silver_city(geo, label, region, prov, levels=("city", "municipality", "submu
     for sc in ([dict(region=region)] if region else []) + [{}]:
         a = geo.find(pk, list(levels), **sc)
         if len(a):
-            lvl_ok = (a.level == "city") if hint else a.level.isin(["municipality", "submunicipality"])
-            sc_ = ((a.province == prov) | (a.psgc_code == prov)).astype(int) * 2 + lvl_ok.astype(int)
+            lvl_ok = (
+                (a.level == "city") if hint else a.level.isin(["municipality", "submunicipality"])
+            )
+            sc_ = ((a.province == prov) | (a.psgc_code == prov)).astype(int) * 2 + lvl_ok.astype(
+                int
+            )
             best = sc_.max()
             return a.psgc_code[sc_ == best].iloc[0] if (sc_ == best).sum() == 1 else None
     return None
@@ -420,14 +566,21 @@ def silver_city(geo, label, region, prov, levels=("city", "municipality", "submu
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--catalog", default="public_health", help="'' for two-part names (local tests)")
+    ap.add_argument(
+        "--catalog", default="public_health", help="'' for two-part names (local tests)"
+    )
     ap.add_argument("--decisions", default=f"{REF_DIR}/facilities_area_decisions.csv")
     ap.add_argument("--out", default=f"{REF_DIR}/facilities_area_exceptions.csv")
-    ap.add_argument("--compare", default=None, help="an older exceptions CSV to compare with (report only)")
-    ap.add_argument("--geography_table", default="silver.geography_silver",
-                    help="geography silver table (schema.table): source of PSGC codes and names")
+    ap.add_argument(
+        "--compare", default=None, help="an older exceptions CSV to compare with (report only)"
+    )
+    ap.add_argument(
+        "--geography_table",
+        default="silver.geography_silver",
+        help="geography silver table (schema.table): source of PSGC codes and names",
+    )
     ap.add_argument("--skip_osm_evidence", type=lambda v: str(v).lower() == "true", default=False)
-    args, _ = ap.parse_known_args()      # parse_known_args: notebook kernels pass their own arguments
+    args, _ = ap.parse_known_args()  # parse_known_args: notebook kernels pass their own arguments
     pre = f"{args.catalog}." if args.catalog else ""
     spark = SparkSession.builder.getOrCreate()
     T = lambda t: spark.table(f"{pre}{t}").toPandas()
@@ -435,9 +588,15 @@ def main():
     geo_table = f"{pre}{args.geography_table}"
     if not spark.catalog.tableExists(geo_table):
         sys.exit(f"STOPPED: geography table not found: {geo_table}. Build geography silver first")
-    geo = Geo(spark.table(geo_table).select("psgc_code", "area_name", "geographic_level", "city_class",
-                                            "content_checksum").toPandas(), geo_table)
-    print(f"geography: {geo_table}, snapshot {geo.checksum[:12]}..., damaged names repaired here: {geo.repaired}")
+    geo = Geo(
+        spark.table(geo_table)
+        .select("psgc_code", "area_name", "geographic_level", "city_class", "content_checksum")
+        .toPandas(),
+        geo_table,
+    )
+    print(
+        f"geography: {geo_table}, snapshot {geo.checksum[:12]}..., damaged names repaired here: {geo.repaired}"
+    )
     rows = []
 
     succ = {"06": {"18"}, "07": {"18"}, "12": {"19"}, "09": {"19"}}
@@ -455,25 +614,48 @@ def main():
             return f"level_{lvl}"
         if not parent_code:
             return "ok"
-        if parent_code.endswith("00000000"):                    # parent is a region
+        if parent_code.endswith("00000000"):  # parent is a region
             ok = code[:2] == parent_code[:2] or code[:2] in succ.get(parent_code[:2], set())
             return "ok" if ok else f"region_{code[:2]}_not_{parent_code[:2]}"
-        ok = code[:5] == parent_code[:5] or fac_lgu(code)[:5] == parent_code[:5] or code == parent_code
+        ok = (
+            code[:5] == parent_code[:5]
+            or fac_lgu(code)[:5] == parent_code[:5]
+            or code == parent_code
+        )
         if not ok and geo.city_class.get(code) == "HUC" and code[:2] == parent_code[:2]:
-            ok = True                                   # an HUC has its own code but lies in the province
+            ok = True  # an HUC has its own code but lies in the province
         return "ok" if ok else f"province_{code[:5]}_not_{parent_code[:5]}"
 
-    def add(group, mtype, value, parent, label, rule, code, key, evidence, records, year_from=None, year_to=None,
-            named_level=None, parent_code=None):
+    def add(
+        group,
+        mtype,
+        value,
+        parent,
+        label,
+        rule,
+        code,
+        key,
+        evidence,
+        records,
+        year_from=None,
+        year_to=None,
+        named_level=None,
+        parent_code=None,
+    ):
         ev = Counter(evidence or {})
         n = sum(ev.values())
-        top, top_n = (ev.most_common(1)[0] if ev else (None, 0))
+        top, top_n = ev.most_common(1)[0] if ev else (None, 0)
         share = round(top_n / n, 3) if n else None
         target = key or code
-        if rule is None and n >= 1 and (share or 0) >= (0.8 if group == "osm" else 1.0) and n >= (3 if group == "osm" else 2):
+        if (
+            rule is None
+            and n >= 1
+            and (share or 0) >= (0.8 if group == "osm" else 1.0)
+            and n >= (3 if group == "osm" else 2)
+        ):
             rule, code, target = "evidence_only", top, top
         elif rule is None and target is None and n >= 1 and share == 1.0:
-            code = top                                 # shown as the proposal; too little evidence to use it
+            code = top  # shown as the proposal; too little evidence to use it
         if target is None or rule is None:
             status = "needs_review"
         elif n and top == target and share >= 2 / 3:
@@ -486,15 +668,33 @@ def main():
             status = "needs_review"
         check = geo_check(mtype, code, parent_code)
         if status in USABLE and check not in (None, "ok"):
-            status = "needs_review"                     # geography disagrees with the label's parent
-        rows.append(dict(source_group=group, match_type=mtype, match_value=value, parent_label_norm=parent,
-                         year_from=year_from, year_to=year_to, area_label_source=label,
-                         psgc_code=code, area_key=key, named_key_level=named_level, reason=rule,
-                         review_note=None, rule=rule,
-                         evidence="; ".join(f"{k}:{v}" for k, v in ev.most_common(3)) or None,
-                         evidence_n=n or None, evidence_share=share, review_status=status,
-                         proposed_psgc_code=code, proposed_area_name=geo.name.get(code) if code else key,
-                         geography_check=check, records=records, _parent_code=parent_code))
+            status = "needs_review"  # geography disagrees with the label's parent
+        rows.append(
+            dict(
+                source_group=group,
+                match_type=mtype,
+                match_value=value,
+                parent_label_norm=parent,
+                year_from=year_from,
+                year_to=year_to,
+                area_label_source=label,
+                psgc_code=code,
+                area_key=key,
+                named_key_level=named_level,
+                reason=rule,
+                review_note=None,
+                rule=rule,
+                evidence="; ".join(f"{k}:{v}" for k, v in ev.most_common(3)) or None,
+                evidence_n=n or None,
+                evidence_share=share,
+                review_status=status,
+                proposed_psgc_code=code,
+                proposed_area_name=geo.name.get(code) if code else key,
+                geography_check=check,
+                records=records,
+                _parent_code=parent_code,
+            )
+        )
 
     # ---- NHFR: municipality codes not in geography ----------------------------------------------
     nh = T("bronze.facilities_nhfr_bronze")
@@ -508,20 +708,48 @@ def main():
     for prefix, items in sorted(by_prefix.items()):
         targets, ev = Counter(), Counter()
         for code, nm in items:
-            same = geo.areas[(geo.areas.psgc_code.str[5:] == code[5:]) & geo.areas.level.isin(["city", "municipality"])]
+            same = geo.areas[
+                (geo.areas.psgc_code.str[5:] == code[5:])
+                & geo.areas.level.isin(["city", "municipality"])
+            ]
             same = same[same.place == place_key(nm)]
             if len(same) == 1:
                 targets[same.psgc_code.iloc[0][:5]] += 1
                 ev[same.psgc_code.iloc[0][:5]] += 1
         if len(targets) == 1:
             new = next(iter(targets))
-            add("nhfr", "code_prefix", prefix, None, f"NHFR codes {prefix}...", "code_prefix_same_name", new, None,
-                ev, len(items))
+            add(
+                "nhfr",
+                "code_prefix",
+                prefix,
+                None,
+                f"NHFR codes {prefix}...",
+                "code_prefix_same_name",
+                new,
+                None,
+                ev,
+                len(items),
+            )
         else:
-            add("nhfr", "code_prefix", prefix, None, f"NHFR codes {prefix}...", None, None, None, None, len(items))
+            add(
+                "nhfr",
+                "code_prefix",
+                prefix,
+                None,
+                f"NHFR codes {prefix}...",
+                None,
+                None,
+                None,
+                None,
+                len(items),
+            )
 
     nh_by_id = {}
-    remap = {r["match_value"]: r["psgc_code"] for r in rows if r["source_group"] == "nhfr" and r["psgc_code"]}
+    remap = {
+        r["match_value"]: r["psgc_code"]
+        for r in rows
+        if r["source_group"] == "nhfr" and r["psgc_code"]
+    }
     for d in nh.to_dict("records"):
         code = d["city_code"]
         if code[:5] in remap:
@@ -533,7 +761,9 @@ def main():
     for t in ("hospitals", "infirmaries", "primary_care", "dialysis_clinics"):
         d = T(f"bronze.facilities_hfsrb_{t}_bronze")
         d = d[d.region.notna() & d.city_municipality.notna()]
-        hf.append(d[["region", "province", "city_municipality", "nhfr_code", "facility_name", "address"]])
+        hf.append(
+            d[["region", "province", "city_municipality", "nhfr_code", "facility_name", "address"]]
+        )
     hf = pd.concat(hf)
     hf["region_psgc"] = hf.region.map(fac_region_psgc)
     hf["prov_norm"] = hf.province.map(fac_norm)
@@ -551,7 +781,7 @@ def main():
         label = hf[hf.prov_norm == pn].province.iloc[0]
         rule, code, key = candidate(geo, label, ["province"], region=reg)
         if code is None and rule is None:
-            continue                       # e.g. 'Davao City' in the province column: silver handles it
+            continue  # e.g. 'Davao City' in the province column: silver handles it
         ev = Counter()
         for r in hf[hf.prov_norm == pn].itertuples():
             m = nh_by_id.get(nhfr_id(r.nhfr_code))
@@ -559,23 +789,50 @@ def main():
                 pc = m[0][:5] + "00000"
                 if geo.level.get(pc) == "province":
                     ev[pc] += 1
-        add("hfsrb", "province_label", pn, None, label, rule, code, key, ev, int((hf.prov_norm == pn).sum()))
+        add(
+            "hfsrb",
+            "province_label",
+            pn,
+            None,
+            label,
+            rule,
+            code,
+            key,
+            ev,
+            int((hf.prov_norm == pn).sum()),
+        )
         prov_res[(reg, pn)] = code
     for (reg, pn, cn), g in hf.groupby(["region_psgc", "prov_norm", "city_norm"], dropna=False):
         prov = prov_res.get((reg, pn))
         label = g.city_municipality.iloc[0]
-        if silver_city(geo, label, reg, prov, prov_label=g.province.iloc[0] if isinstance(g.province.iloc[0], str) else "") is not None:
+        if (
+            silver_city(
+                geo,
+                label,
+                reg,
+                prov,
+                prov_label=g.province.iloc[0] if isinstance(g.province.iloc[0], str) else "",
+            )
+            is not None
+        ):
             continue
-        rule, code, key = candidate(geo, label, ["city", "municipality", "submunicipality"], region=reg, province=prov)
+        rule, code, key = candidate(
+            geo, label, ["city", "municipality", "submunicipality"], region=reg, province=prov
+        )
         ev = Counter()
-        lgus = geo.scope(["city", "municipality", "submunicipality"], province=prov) if prov else \
-               geo.scope(["city", "municipality", "submunicipality"], region=reg)
+        lgus = (
+            geo.scope(["city", "municipality", "submunicipality"], province=prov)
+            if prov
+            else geo.scope(["city", "municipality", "submunicipality"], region=reg)
+        )
         for r in g.itertuples():
             m = nh_by_id.get(nhfr_id(r.nhfr_code))
             if m and (name_similarity(m[1], r.facility_name) or 0) >= 0.5:
                 ev[m[0]] += 1
                 continue
-            hit = address_lgu(geo, r.address, lgus, exclude={place_key(label), place_key(r.province)})
+            hit = address_lgu(
+                geo, r.address, lgus, exclude={place_key(label), place_key(r.province)}
+            )
             if hit:
                 ev[hit] += 1
         if code:
@@ -587,16 +844,30 @@ def main():
             if len(other) == 1:
                 code = next(iter(other))
                 rule, ev, parent_code = "address_other_province", other, code[:5] + "00000"
-        add("hfsrb", "area_label", cn, pn, label, rule, code, key, ev, len(g), parent_code=parent_code)
+        add(
+            "hfsrb",
+            "area_label",
+            cn,
+            pn,
+            label,
+            rule,
+            code,
+            key,
+            ev,
+            len(g),
+            parent_code=parent_code,
+        )
 
     # ---- FHSIS: area labels under their region row, per file year -------------------------------
     fh = T("bronze.facilities_fhsis_primary_care_bronze")
     fh = fh[(fh._source_key == "doh_fhsis_demographic") & fh.area_name.notna()].copy()
     fh["year"] = fh._source_file.str.extract(r"_(\d{4})\.xlsx$")[0].astype(int)
-    fh["bgy"] = pd.to_numeric(fh.barangays_no.astype(str).str.replace(",", "").str.strip(), errors="coerce")
+    fh["bgy"] = pd.to_numeric(
+        fh.barangays_no.astype(str).str.replace(",", "").str.strip(), errors="coerce"
+    )
     fh = fh.sort_values(["_source_file", "_source_row_num"])
     prov_places = set(geo.areas.place[geo.areas.level == "province"])
-    units = []                                    # (year, file, row, label, label_norm, parent region, barangays)
+    units = []  # (year, file, row, label, label_norm, parent region, barangays)
     for f, g in fh.groupby("_source_file"):
         parent = None
         for d in g.to_dict("records"):
@@ -611,22 +882,32 @@ def main():
             if not re.search(r"\d", str(d["population"] or "")):
                 continue
             units.append((d["year"], f, d["_source_row_num"], lab, n, parent, d["bgy"]))
-    succ = {"0600000000": "1800000000", "0700000000": "1800000000", "1200000000": "1900000000",
-            "0900000000": "1900000000"}
-    resolved = {}                                 # mirror of the metric [3] name + level + parent step
-    for (yr, f, rn, lab, n, parent, bgy) in units:
+    succ = {
+        "0600000000": "1800000000",
+        "0700000000": "1800000000",
+        "1200000000": "1900000000",
+        "0900000000": "1900000000",
+    }
+    resolved = {}  # mirror of the metric [3] name + level + parent step
+    for yr, f, rn, lab, n, parent, bgy in units:
         pk, hint = place_key(lab), city_hint(lab)
         lv = ["city"] if hint else ["province", "city", "municipality"]
         code = None
-        for sc in ([dict(region=parent)] if parent else []) + ([dict(region=succ[parent])] if parent in succ else []) + [{}]:
+        for sc in (
+            ([dict(region=parent)] if parent else [])
+            + ([dict(region=succ[parent])] if parent in succ else [])
+            + [{}]
+        ):
             a = geo.find(pk, lv, **sc)
             if len(a):
-                s = a.level.map(lambda l: 2 if (hint and l == "city") or (not hint and l == "province") else 1)
+                s = a.level.map(
+                    lambda l: 2 if (hint and l == "city") or (not hint and l == "province") else 1
+                )
                 code = a.psgc_code[s == s.max()].iloc[0] if (s == s.max()).sum() == 1 else None
                 break
         resolved[(f, rn)] = code
-    listed = defaultdict(set)                     # file, region -> areas listed in it
-    for (yr, f, rn, lab, n, parent, bgy) in units:
+    listed = defaultdict(set)  # file, region -> areas listed in it
+    for yr, f, rn, lab, n, parent, bgy in units:
         if resolved[(f, rn)]:
             listed[(f, parent)].add(resolved[(f, rn)])
 
@@ -637,7 +918,11 @@ def main():
             return False
         exp = {geo.barangays(code)}
         if geo.level.get(code) == "province":
-            sub = [c for c in listed.get((f, parent), ()) if geo.level.get(c) == "city" and c[:5] == code[:5]]
+            sub = [
+                c
+                for c in listed.get((f, parent), ())
+                if geo.level.get(c) == "city" and c[:5] == code[:5]
+            ]
             exp.add(geo.barangays(code) - sum(geo.barangays(c) for c in sub))
         return any(e > 0 and abs(int(bgy) - e) / e <= BGY_TOLERANCE for e in exp)
 
@@ -659,40 +944,90 @@ def main():
             return None
         exp = {geo.barangays(code)}
         if geo.level.get(code) == "province":
-            sub = [c for c in listed.get((f, parent), ()) if geo.level.get(c) == "city" and c[:5] == code[:5]]
+            sub = [
+                c
+                for c in listed.get((f, parent), ())
+                if geo.level.get(c) == "city" and c[:5] == code[:5]
+            ]
             exp.add(geo.barangays(code) - sum(geo.barangays(c) for c in sub))
         return min(abs(int(bgy) - e) / e for e in exp if e > 0) if any(e > 0 for e in exp) else None
 
     groups = [(f, code, us) for (f, code), us in sorted(by_file_code.items()) if len(us) >= 2]
-    moved, used = {}, defaultdict(set)            # (file, row) -> area; file -> areas given out
-    for f in sorted({g[0] for g in groups}):      # pass 1: closest row per missing area, whole file
+    moved, used = {}, defaultdict(set)  # (file, row) -> area; file -> areas given out
+    for f in sorted({g[0] for g in groups}):  # pass 1: closest row per missing area, whole file
         pairs = []
-        for (_, code, us) in [g for g in groups if g[0] == f]:
+        for _, code, us in [g for g in groups if g[0] == f]:
             parent = us[0][5]
-            missing_here = [c for c in geo.scope(["province", "city", "municipality"], region=parent).psgc_code
-                            if c not in listed[(f, parent)]]
-            pairs += [(g_, u[2], c) for u in us for c in missing_here
-                      for g_ in [gap(c, u[6], f, parent)] if g_ is not None and g_ <= BGY_TOLERANCE]
+            missing_here = [
+                c
+                for c in geo.scope(["province", "city", "municipality"], region=parent).psgc_code
+                if c not in listed[(f, parent)]
+            ]
+            pairs += [
+                (g_, u[2], c)
+                for u in us
+                for c in missing_here
+                for g_ in [gap(c, u[6], f, parent)]
+                if g_ is not None and g_ <= BGY_TOLERANCE
+            ]
         for g_, rn, c in sorted(pairs):
             if (f, rn) not in moved and c not in used[f]:
                 moved[(f, rn)] = c
                 used[f].add(c)
-    for (f, code, us) in groups:                  # pass 2: rows
+    for f, code, us in groups:  # pass 2: rows
         parent = us[0][5]
         stay = [u for u in us if (f, u[2]) not in moved]
-        keep = min(stay, key=lambda u: gap(code, u[6], f, parent) if gap(code, u[6], f, parent) is not None else 9) if stay else None
-        left = [c for c in geo.scope(["province", "city", "municipality"], region=parent).psgc_code
-                if c not in listed[(f, parent)] and c not in used[f]]
+        keep = (
+            min(
+                stay,
+                key=lambda u: (
+                    gap(code, u[6], f, parent) if gap(code, u[6], f, parent) is not None else 9
+                ),
+            )
+            if stay
+            else None
+        )
+        left = [
+            c
+            for c in geo.scope(["province", "city", "municipality"], region=parent).psgc_code
+            if c not in listed[(f, parent)] and c not in used[f]
+        ]
         for u in us:
             yr, _, rn, lab, n, _, bgy = u
             if (f, rn) in moved:
-                add("fhsis", "area_label", n, parent, lab, "duplicate_in_file", moved[(f, rn)], None,
-                    Counter({moved[(f, rn)]: 1}), 1, yr, yr, parent_code=parent)
+                add(
+                    "fhsis",
+                    "area_label",
+                    n,
+                    parent,
+                    lab,
+                    "duplicate_in_file",
+                    moved[(f, rn)],
+                    None,
+                    Counter({moved[(f, rn)]: 1}),
+                    1,
+                    yr,
+                    yr,
+                    parent_code=parent,
+                )
             elif keep is not None and rn != keep[2]:
-                add("fhsis", "area_label", n, parent, lab, "duplicate_in_file", left[0] if len(left) == 1 else None,
-                    None, None, 1, yr, yr, parent_code=parent)
+                add(
+                    "fhsis",
+                    "area_label",
+                    n,
+                    parent,
+                    lab,
+                    "duplicate_in_file",
+                    left[0] if len(left) == 1 else None,
+                    None,
+                    None,
+                    1,
+                    yr,
+                    yr,
+                    parent_code=parent,
+                )
 
-    pending = defaultdict(list)                   # labels the name step does not resolve
+    pending = defaultdict(list)  # labels the name step does not resolve
     for u in units:
         if resolved[(u[1], u[2])] is None:
             pending[(u[4], u[5])].append(u)
@@ -702,7 +1037,7 @@ def main():
         pool = list(geo.scope(["province", "city"], region=parent).psgc_code) if parent else []
         ev = Counter(c for c in (bgy_fit(u[6], u[1], parent, pool) for u in us) if c)
         if code and ev and code not in ev and rule not in STRUCTURAL:
-            rule, code = None, None                   # the text guess is contradicted: let the evidence decide
+            rule, code = None, None  # the text guess is contradicted: let the evidence decide
         add("fhsis", "area_label", n, parent, lab, rule, code, key, ev, len(us), parent_code=parent)
 
     # ---- BOR: Province/District labels, then city labels under their province -------------------
@@ -722,44 +1057,85 @@ def main():
         done.add(pn)
         label = bo[bo.prov_norm == pn]["Province/District"].iloc[0]
         rule, code, key = candidate(geo, label, ["province", "city"], region=reg)
-        add("bor", "province_label", pn, None, label, rule, code, key, None, int((bo.prov_norm == pn).sum()),
-            named_level="ncr_district" if key and key.startswith("ncr-district") else None)
+        add(
+            "bor",
+            "province_label",
+            pn,
+            None,
+            label,
+            rule,
+            code,
+            key,
+            None,
+            int((bo.prov_norm == pn).sum()),
+            named_level="ncr_district" if key and key.startswith("ncr-district") else None,
+        )
         bprov[(reg, pn)] = code
     bc = bo[bo["City/Municipality"].notna()]
-    for (reg, pn, cl), g in bc.groupby(["region_psgc", "prov_norm", "City/Municipality"], dropna=False):
+    for (reg, pn, cl), g in bc.groupby(
+        ["region_psgc", "prov_norm", "City/Municipality"], dropna=False
+    ):
         prov = bprov.get((reg, pn))
         if silver_city(geo, cl, reg, prov) is not None:
             continue
-        rule, code, key = candidate(geo, cl, ["city", "municipality", "submunicipality"], region=reg, province=prov)
-        add("bor", "area_label", fac_norm(cl), pn, cl, rule, code, key, None, len(g), parent_code=prov)
+        rule, code, key = candidate(
+            geo, cl, ["city", "municipality", "submunicipality"], region=reg, province=prov
+        )
+        add(
+            "bor",
+            "area_label",
+            fac_norm(cl),
+            pn,
+            cl,
+            rule,
+            code,
+            key,
+            None,
+            len(g),
+            parent_code=prov,
+        )
 
     # ---- OSM: addr:city of points without coordinates -------------------------------------------
     hs = T("bronze.facilities_hdx_healthsites_bronze")
     hs = hs[hs._source_key == "hdx_healthsites"].copy()
-    hs["has_xy"] = pd.to_numeric(hs.X, errors="coerce").notna() & pd.to_numeric(hs.Y, errors="coerce").notna()
+    hs["has_xy"] = (
+        pd.to_numeric(hs.X, errors="coerce").notna() & pd.to_numeric(hs.Y, errors="coerce").notna()
+    )
     pip = {}
     try:
         import json
+
         from shapely import STRtree, points
         from shapely.geometry import shape
-        bnd = spark.table(f"{pre}silver.facilities_area_boundary") \
-                   .select("psgc_code", "boundary_rule", "geometry_json", "geography_checksum").toPandas()
+
+        bnd = (
+            spark.table(f"{pre}silver.facilities_area_boundary")
+            .select("psgc_code", "boundary_rule", "geometry_json", "geography_checksum")
+            .toPandas()
+        )
         bsum = bnd.geography_checksum.dropna().unique()
         if len(bsum) != 1 or bsum[0] != geo.checksum:
-            raise ValueError("silver.facilities_area_boundary was not built from this geography snapshot "
-                             "(geography_checksum differs): run facilities_silver_00a_area_boundary.sql first")
-        bnd = bnd[(bnd.boundary_rule == "hdx") & bnd.geometry_json.notna()][["psgc_code", "geometry_json"]] \
-            .reset_index(drop=True)
+            raise ValueError(
+                "silver.facilities_area_boundary was not built from this geography snapshot "
+                "(geography_checksum differs): run facilities_silver_00a_area_boundary.sql first"
+            )
+        bnd = bnd[(bnd.boundary_rule == "hdx") & bnd.geometry_json.notna()][
+            ["psgc_code", "geometry_json"]
+        ].reset_index(drop=True)
         tree = STRtree([shape(json.loads(w)) for w in bnd.geometry_json])
         xy = hs[hs.has_xy]
-        pi, gi = tree.query(points(pd.to_numeric(xy.X).values, pd.to_numeric(xy.Y).values), predicate="intersects")
+        pi, gi = tree.query(
+            points(pd.to_numeric(xy.X).values, pd.to_numeric(xy.Y).values), predicate="intersects"
+        )
         for i, g in zip(pi, gi):
             pip[xy.index[i]] = bnd.psgc_code.iloc[g]
     except Exception as e:
         # Without the OSM evidence the OSM rows would come out needs_review: a different file, silently.
         if not args.skip_osm_evidence:
-            sys.exit(f"STOPPED: OSM point-in-polygon evidence unavailable ({type(e).__name__}: {e}). "
-                     "Install shapely and run facilities_silver_00a_area_boundary.sql, or pass --skip_osm_evidence true")
+            sys.exit(
+                f"STOPPED: OSM point-in-polygon evidence unavailable ({type(e).__name__}: {e}). "
+                "Install shapely and run facilities_silver_00a_area_boundary.sql, or pass --skip_osm_evidence true"
+            )
         print(f"note: OSM point-in-polygon evidence skipped ({type(e).__name__}: {e})")
     hs["pip"] = hs.index.map(pip)
     hs["label_key"] = hs.addr_city.map(place_key)
@@ -772,7 +1148,7 @@ def main():
         hint = city_hint(label)
         a = geo.find(lk, ["city"] if hint else ["city", "municipality"])
         if len(a) == 1:
-            continue                              # silver resolves it by name
+            continue  # silver resolves it by name
         ev = Counter(fac_lgu(c) for c in g.pip.dropna())
         rule, code, key = candidate(geo, label, ["city", "municipality"], allow_fuzzy=False)
         if code is None and len(a) > 1 and ev:
@@ -786,13 +1162,31 @@ def main():
     try:
         dec = pd.read_csv(args.decisions, dtype=str)
     except FileNotFoundError:
-        dec = pd.DataFrame(columns=["source_group", "match_type", "match_value", "parent_label_norm", "year_from",
-                                    "decision", "psgc_code", "area_key", "reviewed_by", "reviewed_on", "note"])
+        dec = pd.DataFrame(
+            columns=[
+                "source_group",
+                "match_type",
+                "match_value",
+                "parent_label_norm",
+                "year_from",
+                "decision",
+                "psgc_code",
+                "area_key",
+                "reviewed_by",
+                "reviewed_on",
+                "note",
+            ]
+        )
     keycols = ["source_group", "match_type", "match_value", "parent_label_norm", "year_from"]
     out[keycols] = out[keycols].astype(object).where(out[keycols].notna(), None)
+
     def keyval(x):
         """Comparable text for a key cell: None for blanks, 2022 for 2022 / 2022.0 / '2022'."""
-        if x is None or (isinstance(x, float) and x != x) or (isinstance(x, str) and x.strip() == ""):
+        if (
+            x is None
+            or (isinstance(x, float) and x != x)
+            or (isinstance(x, str) and x.strip() == "")
+        ):
             return None
         if isinstance(x, float) and x.is_integer():
             return str(int(x))
@@ -808,7 +1202,9 @@ def main():
         if decision not in ("accept", "set", "reject"):
             sys.exit(f"STOPPED: decision must be accept / set / reject: {d}")
         if decision in ("accept", "set") and not (dcode or dkey):
-            sys.exit(f"STOPPED: an accept / set decision must carry the psgc_code or area_key it approves: {d}")
+            sys.exit(
+                f"STOPPED: an accept / set decision must carry the psgc_code or area_key it approves: {d}"
+            )
         m = pd.Series(True, index=out.index)
         for k in keycols:
             v = keyval(d.get(k))
@@ -816,17 +1212,25 @@ def main():
         if not m.any():
             unmatched.append(d)
             continue
-        note = f"{decision} by {d.get('reviewed_by')} on {d.get('reviewed_on')}: {d.get('note') or ''}"
+        note = (
+            f"{decision} by {d.get('reviewed_by')} on {d.get('reviewed_on')}: {d.get('note') or ''}"
+        )
         if decision == "reject":
             out.loc[m, ["review_status", "review_note"]] = ["rejected", note]
             continue
         if decision == "accept":
-            gen = out.loc[m, "proposed_psgc_code"].map(keyval) if dcode else out.loc[m, "area_key"].map(keyval)
+            gen = (
+                out.loc[m, "proposed_psgc_code"].map(keyval)
+                if dcode
+                else out.loc[m, "area_key"].map(keyval)
+            )
             if not (gen == (dcode or dkey)).all():
                 now = ", ".join(sorted({str(x) for x in gen}))
                 out.loc[m, ["review_status", "review_note"]] = [
-                    "needs_review", f"stale decision: {d.get('reviewed_by')} accepted {dcode or dkey} on "
-                                    f"{d.get('reviewed_on')}; the generator now proposes {now}"]
+                    "needs_review",
+                    f"stale decision: {d.get('reviewed_by')} accepted {dcode or dkey} on "
+                    f"{d.get('reviewed_on')}; the generator now proposes {now}",
+                ]
                 stale.append((d, now))
                 continue
         out.loc[m, "psgc_code"] = dcode
@@ -837,26 +1241,36 @@ def main():
     bad = []
     for i in out.index[out.review_status == "reviewed"]:
         r = out.loc[i]
-        chk = geo_check(r.match_type, keyval(r.psgc_code), keyval(r._parent_code)) if keyval(r.psgc_code) else "ok"
+        chk = (
+            geo_check(r.match_type, keyval(r.psgc_code), keyval(r._parent_code))
+            if keyval(r.psgc_code)
+            else "ok"
+        )
         out.loc[i, "geography_check"] = chk
         if chk not in (None, "ok"):
             bad.append((r.source_group, r.area_label_source, r.psgc_code, chk))
     # Final gate: every code silver will use exists in geography_silver.
-    usable = out[out.review_status.isin(USABLE) & (out.match_type != "code_prefix") & out.psgc_code.notna()]
+    usable = out[
+        out.review_status.isin(USABLE) & (out.match_type != "code_prefix") & out.psgc_code.notna()
+    ]
     missing = usable[~usable.psgc_code.isin(geo.level.keys())]
     for r in missing.itertuples():
         bad.append((r.source_group, r.area_label_source, r.psgc_code, "code_not_in_geography"))
     if bad:
         for b in bad:
             print("  geography check failed:", b)
-        sys.exit(f"STOPPED: {len(bad)} usable row(s) fail the geography check. Fix the decision or the rule; "
-                 "nothing written")
+        sys.exit(
+            f"STOPPED: {len(bad)} usable row(s) fail the geography check. Fix the decision or the rule; "
+            "nothing written"
+        )
     out = out.drop(columns="_parent_code")
     out["geography_checksum"] = geo.checksum
 
     for c in ("year_from", "year_to", "evidence_n", "records"):
         out[c] = pd.to_numeric(out[c], errors="coerce").astype("Int64")
-    out = out.sort_values(["source_group", "match_type", "match_value", "parent_label_norm"], na_position="first")
+    out = out.sort_values(
+        ["source_group", "match_type", "match_value", "parent_label_norm"], na_position="first"
+    )
     out.to_csv(args.out, index=False, quoting=csv.QUOTE_MINIMAL)
 
     # ---- report ----------------------------------------------------------------------------------
@@ -864,32 +1278,51 @@ def main():
     print(out.groupby(["source_group", "review_status"]).size().unstack(fill_value=0).to_string())
     print("\nby rule:", out.groupby("rule", dropna=False).size().to_dict())
     for d, now in stale:
-        print(f"STALE decision (row back to needs_review): {d.get('source_group')} {d.get('match_value')!r} "
-              f"accepted {d.get('psgc_code') or d.get('area_key')}, now proposed {now}")
+        print(
+            f"STALE decision (row back to needs_review): {d.get('source_group')} {d.get('match_value')!r} "
+            f"accepted {d.get('psgc_code') or d.get('area_key')}, now proposed {now}"
+        )
     for d in unmatched:
-        print(f"decision matches no generated row (label gone from the data; can be removed): "
-              f"{d.get('source_group')} {d.get('match_value')!r} parent={d.get('parent_label_norm')}")
+        print(
+            f"decision matches no generated row (label gone from the data; can be removed): "
+            f"{d.get('source_group')} {d.get('match_value')!r} parent={d.get('parent_label_norm')}"
+        )
     nr = out[~out.review_status.isin(USABLE)]
     if len(nr):
-        print(f"\n{len(nr)} rows are not used by silver (records quarantined) until decided in {args.decisions}:")
+        print(
+            f"\n{len(nr)} rows are not used by silver (records quarantined) until decided in {args.decisions}:"
+        )
         for r in nr.itertuples():
-            print(f"  {r.source_group} {r.match_type} {r.area_label_source!r} parent={r.parent_label_norm} "
-                  f"year={r.year_from} rule={r.rule} proposed={r.proposed_psgc_code} {r.proposed_area_name or ''} "
-                  f"evidence={r.evidence} records={r.records}")
+            print(
+                f"  {r.source_group} {r.match_type} {r.area_label_source!r} parent={r.parent_label_norm} "
+                f"year={r.year_from} rule={r.rule} proposed={r.proposed_psgc_code} {r.proposed_area_name or ''} "
+                f"evidence={r.evidence} records={r.records}"
+            )
     if args.compare:
         old = pd.read_csv(args.compare, dtype=str)
         print("\ncomparison with", args.compare)
         for r in old.itertuples():
-            m = out[(out.source_group == r.source_group) & (out.match_type == r.match_type)
-                    & (out.match_value.map(lambda x: place_key(x)) == place_key(r.match_value))]
+            m = out[
+                (out.source_group == r.source_group)
+                & (out.match_type == r.match_type)
+                & (out.match_value.map(lambda x: place_key(x)) == place_key(r.match_value))
+            ]
             if r.parent_label_norm == r.parent_label_norm and r.parent_label_norm:
-                m = m[m.parent_label_norm.map(lambda x: str(x)) == str(r.parent_label_norm)] if len(m) > 1 else m
+                m = (
+                    m[m.parent_label_norm.map(lambda x: str(x)) == str(r.parent_label_norm)]
+                    if len(m) > 1
+                    else m
+                )
             new = m.iloc[0] if len(m) else None
-            same = new is not None and ((new.proposed_psgc_code == r.psgc_code) or (new.area_key == r.area_key))
-            print(f"  {'SAME' if same else 'DIFF':4s} {r.source_group:5s} {r.match_type:14s} {r.area_label_source!r}: "
-                  f"old {r.psgc_code if r.psgc_code == r.psgc_code else r.area_key} | new "
-                  f"{(new.proposed_psgc_code if new is not None else 'no row')} "
-                  f"{(new.review_status if new is not None else '')} {(new.rule if new is not None else '')}")
+            same = new is not None and (
+                (new.proposed_psgc_code == r.psgc_code) or (new.area_key == r.area_key)
+            )
+            print(
+                f"  {'SAME' if same else 'DIFF':4s} {r.source_group:5s} {r.match_type:14s} {r.area_label_source!r}: "
+                f"old {r.psgc_code if r.psgc_code == r.psgc_code else r.area_key} | new "
+                f"{(new.proposed_psgc_code if new is not None else 'no row')} "
+                f"{(new.review_status if new is not None else '')} {(new.rule if new is not None else '')}"
+            )
 
 
 if __name__ == "__main__":
