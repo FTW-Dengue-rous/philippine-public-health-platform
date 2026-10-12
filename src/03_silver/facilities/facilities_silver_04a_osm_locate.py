@@ -1,5 +1,12 @@
-%pip install shapely
-%restart_python
+# Databricks notebook source
+# MAGIC %pip install shapely
+
+# COMMAND ----------
+
+# MAGIC %restart_python
+
+# COMMAND ----------
+
 # =============================================================================
 # facilities_silver_04a_osm_locate.py
 #
