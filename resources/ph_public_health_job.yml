@@ -36,12 +36,15 @@ resources:
             dependencies:
               - pyyaml
               - openpyxl
+              - shapely        # silver geometry (facilities 04a point-in-polygon)
 
       tasks:
         # ================================================================
         # 0. SETUP — idempotent only
-        #    Skipped: ingestion_metadata.sql, quality_migrate_bronze_qc.sql
-        #    (one-time migrations), silver_setup.sql / gold_setup.sql (empty)
+        #    schemas -> {ingestion_metadata, quality -> quality_registry}
+        #    Skipped: quality_migrate_bronze_qc.sql (one-time migration),
+        #    silver_setup.sql / gold_setup.sql (empty).
+        #    bronze_setup.sql is not used: geography_bronze creates its own table.
         # ================================================================
         - task_key: setup_schemas
           sql_task:
@@ -49,13 +52,13 @@ resources:
             file:
               path: ../src/00_setup/schema_setup.sql
 
-        - task_key: setup_bronze
+        - task_key: setup_ingestion_metadata    # shared ingestion log, bronze loaders append
           depends_on:
             - task_key: setup_schemas
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/00_setup/bronze_setup.sql
+              path: ../src/00_setup/ingestion_metadata.sql
 
         - task_key: setup_quality
           depends_on:
@@ -75,24 +78,25 @@ resources:
 
         # ================================================================
         # 1. BRONZE (landing -> bronze), all in parallel after setup
+        #    geography_bronze must CREATE its own table (moved from bronze_setup.sql)
         # ================================================================
         - task_key: bronze_geography            # PSGC geography + population payload
           depends_on:
-            - task_key: setup_bronze
+            - task_key: setup_ingestion_metadata
             - task_key: setup_quality_registry
           notebook_task:
             notebook_path: ../src/02_bronze/geography_bronze.ipynb
 
         - task_key: bronze_admin_boundaries
           depends_on:
-            - task_key: setup_bronze
+            - task_key: setup_ingestion_metadata
             - task_key: setup_quality_registry
           notebook_task:
             notebook_path: ../src/02_bronze/admin_boundaries_bronze.ipynb
 
         - task_key: bronze_diseases
           depends_on:
-            - task_key: setup_bronze
+            - task_key: setup_ingestion_metadata
             - task_key: setup_quality_registry
           environment_key: default
           spark_python_task:
@@ -100,7 +104,7 @@ resources:
 
         - task_key: bronze_facilities
           depends_on:
-            - task_key: setup_bronze
+            - task_key: setup_ingestion_metadata
             - task_key: setup_quality_registry
           environment_key: default
           spark_python_task:
@@ -108,7 +112,7 @@ resources:
 
         - task_key: bronze_socioeconomic
           depends_on:
-            - task_key: setup_bronze
+            - task_key: setup_ingestion_metadata
             - task_key: setup_quality_registry
           environment_key: default
           spark_python_task:
@@ -116,7 +120,7 @@ resources:
 
         - task_key: bronze_workforce
           depends_on:
-            - task_key: setup_bronze
+            - task_key: setup_ingestion_metadata
             - task_key: setup_quality_registry
           environment_key: default
           spark_python_task:
@@ -317,8 +321,9 @@ resources:
           depends_on:
             - task_key: qc_bronze_facilities
             - task_key: silver_facilities_00a_area_boundary
-          notebook_task:
-            notebook_path: ../src/03_silver/facilities/facilities_silver_04a_osm_locate.py
+          environment_key: default             # gets shapely from the job environment
+          spark_python_task:
+            python_file: ../src/03_silver/facilities/facilities_silver_04a_osm_locate.py
 
         - task_key: silver_facilities_04_osm_point
           depends_on:
