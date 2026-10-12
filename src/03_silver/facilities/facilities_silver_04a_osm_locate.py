@@ -1,12 +1,3 @@
-# Databricks notebook source
-# MAGIC %pip install shapely
-
-# COMMAND ----------
-
-# MAGIC %restart_python
-
-# COMMAND ----------
-
 # =============================================================================
 # facilities_silver_04a_osm_locate.py
 #
@@ -76,9 +67,9 @@
 #   Use --catalog '' for two-part names in local tests.
 # =============================================================================
 
-# Databricks: install shapely first (cluster library, or run in a separate cell):
-#   %pip install shapely
-#   %restart_python
+# Shapely: in the job it comes from the "default" environment
+# (resources/ph_public_health_job.yml). For an interactive run, install it first
+# in a separate cell: %pip install shapely, then %restart_python.
 
 # =============================================================================
 # facilities_silver_04a_osm_locate.py
