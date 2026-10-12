@@ -128,10 +128,14 @@ resources:
 
         # ================================================================
         # 2. BRONZE QC
-        #    TODO: geography_bronze_qc.py is still a placeholder. When it has checks,
-        #    add qc_bronze_geography (depends_on bronze_geography) and put it in
-        #    silver_geography's depends_on.
         # ================================================================
+        - task_key: qc_bronze_geography        # placeholder for now (passes), checks to follow
+          depends_on:
+            - task_key: bronze_geography
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/geography_bronze_qc.py
+
         - task_key: qc_bronze_admin_boundaries
           depends_on:
             - task_key: bronze_admin_boundaries
@@ -179,7 +183,7 @@ resources:
         # ================================================================
         - task_key: silver_geography
           depends_on:
-            - task_key: bronze_geography
+            - task_key: qc_bronze_geography
           notebook_task:
             notebook_path: ../src/03_silver/geography_silver.ipynb
 
