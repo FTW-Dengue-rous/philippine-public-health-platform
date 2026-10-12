@@ -542,9 +542,9 @@ def codes_2025(spark, bronze, geo, override_rows):
     )
     f = f[f._source_file.str.contains(r"_2025\.xlsx$")]
     f["code10"] = f.psgc_code.map(code10)
-    names = dict(zip(geo.psgc_code, geo.name_loose))
-    shown = dict(zip(geo.psgc_code, geo.geo_name))
-    level = dict(zip(geo.psgc_code, geo.geo_level))
+    names = dict(zip(geo.psgc_code, geo.name_loose, strict=False))
+    shown = dict(zip(geo.psgc_code, geo.geo_name, strict=False))
+    level = dict(zip(geo.psgc_code, geo.geo_level, strict=False))
     out = []
     for r in f.itertuples(index=False):
         if (
@@ -663,7 +663,7 @@ def main():
     spark = SparkSession.builder.getOrCreate()
 
     geo = load_geography(spark, f"{prefix}{args.geography_table}")
-    level_of = dict(zip(geo.psgc_code, geo.geo_level))
+    level_of = dict(zip(geo.psgc_code, geo.geo_level, strict=False))
     unresolved, code_problems = [], []
 
     def check_code(code, level, where):
