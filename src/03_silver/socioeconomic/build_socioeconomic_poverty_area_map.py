@@ -1,6 +1,6 @@
 # =============================================================================
-# Drafts socioeconomic_poverty_area_map.csv from the PSA poverty workbook and the
-# PSGC datafile.
+# Drafts socioeconomic_poverty_area_map.csv from the PSA poverty workbook, the
+# PSGC datafile and the geography_silver snapshot.
 #
 # What it does
 #   Lists the areas published in the poverty workbook (sheet tab2), gives each one a
@@ -9,26 +9,40 @@
 #
 # This is a DRAFTING tool, not a pipeline step
 #   The CSV it writes is a reviewed contract kept in the repo. Run this script when PSA
-#   publishes a new release, compare the output with the CSV in the repo, and review
-#   every difference before committing. The silver job reads the CSV, never this script.
+#   publishes a new release or geography_silver gets a new snapshot, compare the output
+#   with the CSV in the repo, and review every difference before committing. The silver
+#   job reads the CSV, never this script.
 #
-# How to run (laptop, or a Databricks notebook cell with the Volume paths)
-#   python build_socioeconomic_poverty_area_map.py \
-#       --poverty  <landing_root>/socioeconomic/psa_poverty/psa_poverty_province_biennial_2021_2025.xlsx \
-#       --psgc     <landing_root>/geography/psa_psgc/psa_psgc_barangay_asof_20260713.xlsx \
-#       --out      socioeconomic_poverty_area_map.csv
-#   Then copy the reviewed CSV to <landing_root>/reference/socioeconomic/, which is the folder
-#   socioeconomic_silver_00_reference.sql reads.
+# How to run
+#   Databricks notebook cell (reads geography_silver itself):
+#     %run or python build_socioeconomic_poverty_area_map.py \
+#         --poverty  <landing_root>/socioeconomic/psa_poverty/psa_poverty_province_biennial_2021_2025.xlsx \
+#         --psgc     <landing_root>/geography/psa_psgc/psa_psgc_barangay_asof_20260713.xlsx \
+#         --out      <landing_root>/reference/socioeconomic/socioeconomic_poverty_area_map.csv
+#   Laptop (no Spark): export the snapshot first and pass it with --geography
+#     SELECT psgc_code, area_name, geographic_level FROM public_health.silver.geography_silver
+#     WHERE content_checksum = (SELECT max_by(content_checksum, silver_processed_at)
+#                               FROM public_health.silver.geography_silver)
+#       AND geographic_level IN ('Reg', 'Prov', 'City')
+#   The CSV must end up in <landing_root>/reference/socioeconomic/, the folder
+#   socioeconomic_silver_00_reference.sql reads. Keep the same copy in the repo.
 #
-# What checks the codes afterwards
-#   This script takes PSGC codes from the PSGC datafile. The codes are then validated against
-#   public_health.silver.geography_silver by socioeconomic_silver_05_poverty_geography_check.sql
-#   and by socioeconomic_silver_qc.py (S04, S93).
+# Where the codes come from
+#   Names and population notes come from the PSGC datafile. The CODE written to the CSV is
+#   always the one public_health.silver.geography_silver holds (decision D-30: geography_silver
+#   is the only source of PSGC codes). The two can differ: the PSGC datafile may be a newer
+#   release than the snapshot in silver. align_to_snapshot() replaces a code the snapshot does
+#   not have with the snapshot's code for the same name and level, and prints every change.
+#   The codes are checked again by socioeconomic_silver_00_reference.sql,
+#   socioeconomic_silver_05_poverty_geography_check.sql and socioeconomic_silver_qc.py.
 #
 # 2026-10-11: Isabela City now maps to 0990101000 (the PSGC city row), the same code the diseases
 #   area map uses. Every code written must now sit at the expected PSGC level.
+# 2026-10-13: codes are aligned to the geography_silver snapshot. Found by the gold build:
+#   Sulu was written as 0906600000 (PSGC file of 13 Jul 2026, Region IX) while geography_silver
+#   (Q2 2024) has 1906600000, so fact_poverty could not find its area. See docs/runbook.md.
 #
-# Requires: openpyxl.
+# Requires: openpyxl. Spark only when --geography is not given.
 # =============================================================================
 
 import argparse
@@ -41,6 +55,8 @@ import openpyxl
 DATA_START_ROW = 7  # 0-based, same as data_start_row in sources_socioeconomic.yaml
 YEARS = (2021, 2023, 2025)
 INCIDENCE_COL = {2021: 4, 2023: 5, 2025: 6}  # positions in tab2 (poverty_tab2 layout in the YAML)
+GEOGRAPHY_TABLE = "public_health.silver.geography_silver"
+SNAPSHOT_LEVEL = {"region": "Reg", "province": "Prov", "city": "City"}  # map level -> PSGC level
 
 # Manual decisions. Every entry here is a judgement that a person reviewed.
 PROVINCE_NAME_FIXES = {"mt. province": "mountain province"}  # poverty name -> PSGC name
@@ -99,6 +115,33 @@ def read_psgc(path):
     provinces = {norm(r[1]): (str(r[0]), r[9]) for r in rows if r[3] == "Prov"}
     levels = {str(r[0]): r[3] for r in rows}  # code -> PSGC level (Reg, Prov, City, ...)
     return regions, provinces, levels
+
+
+def read_snapshot(path=None):
+    # The latest geography_silver snapshot, region, province and city rows:
+    # code -> level, and (level, name) -> code. From a CSV export when a path is given,
+    # otherwise from the table through Spark.
+    if path:
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            rows = [
+                (r["psgc_code"], r["area_name"], r["geographic_level"]) for r in csv.DictReader(f)
+            ]
+    else:
+        from pyspark.sql import SparkSession
+
+        spark = SparkSession.builder.getOrCreate()
+        rows = [
+            tuple(r)
+            for r in spark.sql(f"""
+            SELECT psgc_code, area_name, geographic_level FROM {GEOGRAPHY_TABLE}
+            WHERE content_checksum = (SELECT max_by(content_checksum, silver_processed_at) FROM {GEOGRAPHY_TABLE})
+              AND geographic_level IN ('Reg', 'Prov', 'City')""").collect()
+        ]
+    if not rows:
+        raise ValueError("the geography snapshot has no region, province or city rows")
+    by_code = {str(c).strip().zfill(10): lvl for c, _, lvl in rows}
+    by_name = {(lvl, norm(name)): str(c).strip().zfill(10) for c, name, lvl in rows}
+    return by_code, by_name
 
 
 def build(areas, regions, provinces, levels):
@@ -174,6 +217,31 @@ def build(areas, regions, provinces, levels):
     return out
 
 
+def align_to_snapshot(rows, by_code, by_name):
+    # Every PSGC code written must be the one geography_silver holds, at the expected level.
+    # A code the snapshot does not have (an area PSA has since moved or recoded, e.g. Sulu) is
+    # replaced by the snapshot's code for the same name and level. No match: stop, do not guess.
+    # parent_geo_name_source is NOT changed: it stays the region as PSA published it.
+    changed = []
+    for r in rows:
+        code, want = r["psgc_code"], SNAPSHOT_LEVEL.get(r["geo_level"])
+        if not code or by_code.get(code) == want:
+            continue
+        name = norm(r["geo_name_source"])
+        new = by_name.get((want, PROVINCE_NAME_FIXES.get(name, name)))
+        if new is None:
+            raise ValueError(
+                f"{r['geo_name_source']}: code {code} is not a {want} row in geography_silver, "
+                "and no area of that name and level exists there. Review it by hand."
+            )
+        changed.append((r["geo_name_source"], code, new))
+        r["psgc_code"], r["area_key"] = new, "psgc:" + new
+    print(f"codes aligned to the geography_silver snapshot: {len(changed)}")
+    for name, old, new in changed:
+        print(f"  {name}: {old} -> {new}")
+    return rows
+
+
 def check(rows):
     # Stop on duplicate keys or codes; print a summary to review.
     for field in ("area_key", "geo_name_source"):
@@ -207,12 +275,19 @@ def main():
     )
     p.add_argument("--poverty", required=True, help="Path to the PSA poverty workbook")
     p.add_argument("--psgc", required=True, help="Path to the PSGC datafile")
+    p.add_argument(
+        "--geography",
+        default=None,
+        help="CSV export of the geography_silver snapshot (psgc_code, area_name, "
+        "geographic_level). Leave out on Databricks: the table is read through Spark",
+    )
     p.add_argument("--out", default="socioeconomic_poverty_area_map.csv", help="CSV to write")
     args = p.parse_args()
 
     areas = read_poverty_areas(args.poverty)
     regions, provinces, levels = read_psgc(args.psgc)
     rows = build(areas, regions, provinces, levels)
+    rows = align_to_snapshot(rows, *read_snapshot(args.geography))
     check(rows)
     with open(args.out, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
