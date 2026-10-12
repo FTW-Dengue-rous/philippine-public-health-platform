@@ -84,6 +84,7 @@ def _add_dq_utils_to_path():
     # any *quality* folder there (e.g. src/05_quality/). Works when __file__ is not set.
     # Already importable (on sys.path, or a job's library): nothing to do.
     import importlib.util
+
     if importlib.util.find_spec("dq_utils") is not None:
         return None
     starts = [os.getcwd()]
@@ -98,8 +99,11 @@ def _add_dq_utils_to_path():
             candidates = [folder]
             for base in (folder, os.path.join(folder, "src")):
                 try:
-                    candidates += [os.path.join(base, d) for d in sorted(os.listdir(base))
-                                   if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))]
+                    candidates += [
+                        os.path.join(base, d)
+                        for d in sorted(os.listdir(base))
+                        if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))
+                    ]
                 except OSError:
                     pass
             for c in candidates:
@@ -114,7 +118,8 @@ def _add_dq_utils_to_path():
             folder = parent
     raise ModuleNotFoundError(
         "dq_utils.py not found. It must be a Python FILE named dq_utils.py (not a notebook) in "
-        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched)))
+        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 _add_dq_utils_to_path()
@@ -126,13 +131,23 @@ SCRIPT_NAME = "facilities_silver_qc.py"
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--catalog", default="public_health", help="'' gives two-part names (local tests)")
-    p.add_argument("--tables", default="ALL", help="ALL, or any of: registry,id_map,metric,bed_occupancy,osm_point")
-    p.add_argument("--fail_on_error", default="true", help="false = record results but do not raise")
-    p.add_argument("--profile", default="true", help="Also write a column profile (never for bed occupancy)")
+    p.add_argument(
+        "--catalog", default="public_health", help="'' gives two-part names (local tests)"
+    )
+    p.add_argument(
+        "--tables",
+        default="ALL",
+        help="ALL, or any of: registry,id_map,metric,bed_occupancy,osm_point",
+    )
+    p.add_argument(
+        "--fail_on_error", default="true", help="false = record results but do not raise"
+    )
+    p.add_argument(
+        "--profile", default="true", help="Also write a column profile (never for bed occupancy)"
+    )
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--code_version", default=None)
-    a, _ = p.parse_known_args()       # parse_known_args: notebook kernels pass their own arguments
+    a, _ = p.parse_known_args()  # parse_known_args: notebook kernels pass their own arguments
     return a
 
 
@@ -164,8 +179,16 @@ CHECKS = {
     "S13": ("lineage columns not null", "COMPLETENESS", "FAIL"),
     "S14": ("every lineage reference has one build input", "CONSISTENCY", "FAIL"),
     "S15": ("table written by a succeeded build", "CONSISTENCY", "FAIL"),
-    "S16": ("silver built from the current bronze loads and reference versions", "CONSISTENCY", "FAIL"),
-    "S17": ("one processed ingestion_metadata row and one load time per input", "CONSISTENCY", "FAIL"),
+    "S16": (
+        "silver built from the current bronze loads and reference versions",
+        "CONSISTENCY",
+        "FAIL",
+    ),
+    "S17": (
+        "one processed ingestion_metadata row and one load time per input",
+        "CONSISTENCY",
+        "FAIL",
+    ),
     "S18": ("each NHFR id in at most one registry facility", "UNIQUENESS", "FAIL"),
     "S19": ("registry lineage groups follow in_nhfr / in_hfsrb", "COMPLETENESS", "FAIL"),
     "S20": ("every MAP key has a lineage group", "CONSISTENCY", "FAIL"),
@@ -175,25 +198,39 @@ CHECKS = {
     "S24": ("bed occupancy eligibility follows the named rules", "CONSISTENCY", "FAIL"),
     "S25": ("bed occupancy rate above 100 or above the baseline maximum", "VALIDITY", "WARN"),
     "S26": ("FHSIS region equals its provinces and listed cities", "RECONCILIATION", "WARN"),
-    "S27": ("OSM points placed by city tag only, or tag disagrees with coordinates", "COMPLETENESS", "WARN"),
+    "S27": (
+        "OSM points placed by city tag only, or tag disagrees with coordinates",
+        "COMPLETENESS",
+        "WARN",
+    ),
     "S28": ("quarantined bronze rows", "COMPLETENESS", "WARN"),
 }
 
 # Declared bronze inputs per table: (bronze table, _source_key). Used by S09, S16 and S29.
-HFSRB = [("facilities_hfsrb_hospitals_bronze", "doh_hfsrb_hospitals"),
-         ("facilities_hfsrb_infirmaries_bronze", "doh_hfsrb_infirmaries"),
-         ("facilities_hfsrb_primary_care_bronze", "doh_hfsrb_primary_care"),
-         ("facilities_hfsrb_dialysis_clinics_bronze", "doh_hfsrb_dialysis_clinics")]
+HFSRB = [
+    ("facilities_hfsrb_hospitals_bronze", "doh_hfsrb_hospitals"),
+    ("facilities_hfsrb_infirmaries_bronze", "doh_hfsrb_infirmaries"),
+    ("facilities_hfsrb_primary_care_bronze", "doh_hfsrb_primary_care"),
+    ("facilities_hfsrb_dialysis_clinics_bronze", "doh_hfsrb_dialysis_clinics"),
+]
 DECLARED_INPUTS = {
     REG: [("facilities_nhfr_bronze", "doh_nhfr")] + HFSRB,
     IDMAP: [("facilities_nhfr_bronze", "doh_nhfr")] + HFSRB,
-    MET: [("facilities_psa_hospitals_region_annual_bronze", "psa_hospitals_region_annual"),
-          ("facilities_psa_beds_region_annual_bronze", "psa_beds_region_annual"),
-          ("facilities_psa_hospitals_national_annual_bronze", "psa_hospitals_national_annual"),
-          ("facilities_psa_hospitals_beds_national_annual_bronze", "psa_hospitals_beds_national_annual"),
-          ("facilities_psa_hospitals_region_annual_legacy_bronze", "psa_hospitals_region_annual_legacy"),
-          ("facilities_psa_bhs_region_annual_bronze", "psa_bhs_region_annual"),
-          ("facilities_fhsis_primary_care_bronze", "doh_fhsis_demographic")],
+    MET: [
+        ("facilities_psa_hospitals_region_annual_bronze", "psa_hospitals_region_annual"),
+        ("facilities_psa_beds_region_annual_bronze", "psa_beds_region_annual"),
+        ("facilities_psa_hospitals_national_annual_bronze", "psa_hospitals_national_annual"),
+        (
+            "facilities_psa_hospitals_beds_national_annual_bronze",
+            "psa_hospitals_beds_national_annual",
+        ),
+        (
+            "facilities_psa_hospitals_region_annual_legacy_bronze",
+            "psa_hospitals_region_annual_legacy",
+        ),
+        ("facilities_psa_bhs_region_annual_bronze", "psa_bhs_region_annual"),
+        ("facilities_fhsis_primary_care_bronze", "doh_fhsis_demographic"),
+    ],
     BOR: [("facilities_bed_occupancy_bronze", "bed_occupancy")],
     OSM: [("facilities_hdx_healthsites_bronze", "hdx_healthsites")],
 }
@@ -207,11 +244,11 @@ SELF_INPUTS = {REG: {REG, IDMAP}, IDMAP: {IDMAP}}
 #   checksum set:  a build that read another file gives WARN "new artifact, update control" instead
 #                  of comparing (a new file is expected to change the value).
 CONTROLS = {
-    "nhfr_facilities": ("doh_nhfr", 1359, None),        # NHFR rows = registry facilities with in_nhfr
-    "nhfr_beds": ("doh_nhfr", 119862, None),            # sum of NHFR Bed_Capacity
-    "bor_rows": ("bed_occupancy", 1977, None),          # bed occupancy data rows (anonymous records)
+    "nhfr_facilities": ("doh_nhfr", 1359, None),  # NHFR rows = registry facilities with in_nhfr
+    "nhfr_beds": ("doh_nhfr", 119862, None),  # sum of NHFR Bed_Capacity
+    "bor_rows": ("bed_occupancy", 1977, None),  # bed occupancy data rows (anonymous records)
 }
-BOR_BASELINE_MAX = 150               # same as the variable bor_baseline_max in 03
+BOR_BASELINE_MAX = 150  # same as the variable bor_baseline_max in 03
 
 
 # ----------------------------------------------------------------------------------
@@ -253,14 +290,14 @@ def latest_geography():
                WHERE content_checksum = (SELECT max_by(content_checksum, silver_processed_at) FROM {GEO}))"""
 
 
-SGA_CODE = "1999900000"      # Special Geographic Area: a geography row with no level
+SGA_CODE = "1999900000"  # Special Geographic Area: a geography row with no level
 
 
 def level_check(table, levels, named_keys=None):
     """S05 (plan 6.3 'PSGC completeness'): a row with a code has area_key psgc:<code> and a
     geography level allowed for the table; a row without a code has one of the named keys."""
     lv = ", ".join(f"'{x}'" for x in levels)
-    named = (f"t.area_key RLIKE '{named_keys}'" if named_keys else "false")
+    named = f"t.area_key RLIKE '{named_keys}'" if named_keys else "false"
     return f"""SELECT count(*) FROM {table} t
                LEFT JOIN {latest_geography()} g ON g.psgc_code = t.psgc_code
                WHERE CASE WHEN t.psgc_code IS NULL THEN NOT ({named})
@@ -288,11 +325,14 @@ class TableQC:
         """content_checksum(s) of one source as read by this build (build_inputs)."""
         if self.build_id is None:
             return []
-        return [r[0] for r in spark.sql(f"""
+        return [
+            r[0]
+            for r in spark.sql(f"""
             SELECT DISTINCT content_checksum FROM {QUALITY}.build_inputs
             WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
               AND input_kind = 'bronze_source' AND source_key = '{source_key}'
-              AND content_checksum IS NOT NULL ORDER BY 1""").collect()]
+              AND content_checksum IS NOT NULL ORDER BY 1""").collect()
+        ]
 
     def _rec(self, check_id, **kw):
         """Plan 6.4: a check about one input of a published table is identified by that input,
@@ -305,8 +345,15 @@ class TableQC:
             sums = self.checksums(sk)
             if len(sums) == 1:
                 batch = f"{sk}:{sums[0]}"
-        return self.dq.record(check_id, table_name=self.table, batch_id=batch,
-                              check_name=name, check_type=ctype, severity=severity, **kw)
+        return self.dq.record(
+            check_id,
+            table_name=self.table,
+            batch_id=batch,
+            check_name=name,
+            check_type=ctype,
+            severity=severity,
+            **kw,
+        )
 
     def count(self, check_id, fail_sql, total_sql=None, **kw):
         """A check that counts failing rows (or groups). PASS when the count is 0."""
@@ -317,8 +364,13 @@ class TableQC:
     def value(self, check_id, observed, expected, ok=None, **kw):
         """A check that compares one observed value with an expected one."""
         ok = same_number(observed, expected) if ok is None else ok
-        return self._rec(check_id, status="PASS" if ok else CHECKS[check_id][2],
-                         observed=observed, expected=expected, **kw)
+        return self._rec(
+            check_id,
+            status="PASS" if ok else CHECKS[check_id][2],
+            observed=observed,
+            expected=expected,
+            **kw,
+        )
 
     def control(self, name, observed, column_name=None, detail=None):
         """S21: control total of one source file (plan 6.3)."""
@@ -326,21 +378,42 @@ class TableQC:
         sums = self.checksums(source_key)
         now = ", ".join(c[:12] for c in sums) or "none"
         if checksum and checksum not in sums:
-            return self._rec("S21", status="WARN", observed=observed, expected=expected, source_key=source_key,
-                             column_name=column_name,
-                             detail=f"new artifact {now}: check the value, then update CONTROLS['{name}']")
-        return self.value("S21", observed, expected, source_key=source_key, column_name=column_name,
-                          detail=f"{detail}; file checksum {now}" + ("" if checksum else " (control checksum not set)"))
+            return self._rec(
+                "S21",
+                status="WARN",
+                observed=observed,
+                expected=expected,
+                source_key=source_key,
+                column_name=column_name,
+                detail=f"new artifact {now}: check the value, then update CONTROLS['{name}']",
+            )
+        return self.value(
+            "S21",
+            observed,
+            expected,
+            source_key=source_key,
+            column_name=column_name,
+            detail=f"{detail}; file checksum {now}"
+            + ("" if checksum else " (control checksum not set)"),
+        )
 
     # ---- checks shared by the tables ---------------------------------------------
     def basics(self, key):
         total = self.dq.capture_table_stats(self.table)
         self.value("S01", total, "> 0", ok=total > 0)
-        self.count("S02", f"SELECT count(*) FROM {self.table} WHERE " + " OR ".join(f"{c} IS NULL" for c in key),
-                   self.total_sql, column_name=", ".join(key))
-        self.count("S03", f"""SELECT count(*) FROM (SELECT 1 FROM {self.table}
-                                                    GROUP BY {', '.join(key)} HAVING count(*) > 1)""",
-                   self.total_sql, column_name=", ".join(key))
+        self.count(
+            "S02",
+            f"SELECT count(*) FROM {self.table} WHERE " + " OR ".join(f"{c} IS NULL" for c in key),
+            self.total_sql,
+            column_name=", ".join(key),
+        )
+        self.count(
+            "S03",
+            f"""SELECT count(*) FROM (SELECT 1 FROM {self.table}
+                                                    GROUP BY {", ".join(key)} HAVING count(*) > 1)""",
+            self.total_sql,
+            column_name=", ".join(key),
+        )
         return total
 
     def build_record(self, carried_ok_sql=None):
@@ -352,23 +425,36 @@ class TableQC:
             return
         n = scalar(self.total_sql)
         other = scalar(f"SELECT count(*) FROM {self.table} WHERE NOT ({self.this_build})")
-        bad_other = scalar(f"SELECT count(*) FROM {self.table} WHERE NOT ({self.this_build})"
-                           + (f" AND NOT ({carried_ok_sql})" if carried_ok_sql else ""))
+        bad_other = scalar(
+            f"SELECT count(*) FROM {self.table} WHERE NOT ({self.this_build})"
+            + (f" AND NOT ({carried_ok_sql})" if carried_ok_sql else "")
+        )
         ok = self.logged_rows == n and bad_other == 0
-        self.value("S15", f"build_log {self.logged_rows} rows; table {n} rows, {other} from earlier builds"
-                          f" ({bad_other} not allowed)", f"{n} rows, earlier-build rows only where allowed", ok=ok)
+        self.value(
+            "S15",
+            f"build_log {self.logged_rows} rows; table {n} rows, {other} from earlier builds"
+            f" ({bad_other} not allowed)",
+            f"{n} rows, earlier-build rows only where allowed",
+            ok=ok,
+        )
 
     def lineage_not_null(self, cols, where=None):
         """S13: lineage columns not null (on rows of this build, or the rows `where` selects)."""
         cond = " OR ".join(f"{c} IS NULL" for c in cols)
         flt = f" AND ({where})" if where else ""
-        self.count("S13", f"SELECT count(*) FROM {self.table} WHERE ({cond}){flt}",
-                   f"SELECT count(*) FROM {self.table} WHERE true{flt}", column_name=", ".join(cols))
+        self.count(
+            "S13",
+            f"SELECT count(*) FROM {self.table} WHERE ({cond}){flt}",
+            f"SELECT count(*) FROM {self.table} WHERE true{flt}",
+            column_name=", ".join(cols),
+        )
 
     def build_inputs_cover(self, refs_sql):
         """S14: every (source_key, file, sheet) the rows point to has exactly one build_inputs row.
         refs_sql returns columns build_id, source_key, source_file, sheet."""
-        self.count("S14", f"""
+        self.count(
+            "S14",
+            f"""
             SELECT count(*) FROM (
               SELECT s.source_key, s.source_file, s.sheet, count(v.build_id) AS n
               FROM ({refs_sql}) s
@@ -376,8 +462,9 @@ class TableQC:
                 ON v.build_id = s.build_id AND v.target_table = '{self.table}'
                AND v.source_key = s.source_key AND v.source_file = s.source_file AND v.source_sheet <=> s.sheet
               GROUP BY s.source_key, s.source_file, s.sheet) WHERE n <> 1""",
-                   f"SELECT count(*) FROM ({refs_sql})",
-                   detail="files or sheets referenced by silver rows without exactly one build_inputs row")
+            f"SELECT count(*) FROM ({refs_sql})",
+            detail="files or sheets referenced by silver rows without exactly one build_inputs row",
+        )
 
     def freshness(self):
         """S16, per source: the files, sheets and load times in bronze now are the ones the build
@@ -399,10 +486,15 @@ class TableQC:
             consumed = scalar(f"""SELECT count(*) FROM {QUALITY}.build_inputs
                                   WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
                                     AND input_kind = 'bronze_source' AND source_key = '{source_key}'""")
-            self._rec("S16", source_key=source_key, fail_count=mismatches + (1 if consumed == 0 else 0),
-                      total_count=max(consumed, 1),
-                      detail=None if (mismatches == 0 and consumed > 0) else
-                      "bronze has a new, removed or reloaded file or sheet since the build: rebuild silver")
+            self._rec(
+                "S16",
+                source_key=source_key,
+                fail_count=mismatches + (1 if consumed == 0 else 0),
+                total_count=max(consumed, 1),
+                detail=None
+                if (mismatches == 0 and consumed > 0)
+                else "bronze has a new, removed or reloaded file or sheet since the build: rebuild silver",
+            )
         stale, soft, skipped = [], [], SELF_INPUTS.get(self.table, set())
         for r in spark.sql(f"""SELECT input_table, input_table_version, content_checksum, input_rows
                                FROM {QUALITY}.build_inputs
@@ -419,18 +511,32 @@ class TableQC:
                     stale.append(f"{name} snapshot {r['content_checksum'][:12]} -> {str(now)[:12]}")
                 continue
             now = table_version(name)
-            if r["input_table_version"] is not None and now is not None and now != r["input_table_version"]:
+            if (
+                r["input_table_version"] is not None
+                and now is not None
+                and now != r["input_table_version"]
+            ):
                 # a rerun of 00 / 00a with CREATE OR REPLACE writes a new version with the same rows
                 rows_now = scalar(f"SELECT count(*) FROM {name}")
                 if rows_now != r["input_rows"]:
                     stale.append(f"{name} {r['input_table_version']} -> {now}")
                 else:
                     soft.append(f"{name} {r['input_table_version']} -> {now} ({rows_now} rows)")
-        self._rec("S16", fail_count=len(stale), total_count=None, column_name="input_table_version",
-                  detail="; ".join(stale) or None)
+        self._rec(
+            "S16",
+            fail_count=len(stale),
+            total_count=None,
+            column_name="input_table_version",
+            detail="; ".join(stale) or None,
+        )
         if soft:
-            self._rec("S16", status="WARN", column_name="input_table_version",
-                      detail="new version, same row count (rebuilt with the same rows?): " + "; ".join(soft))
+            self._rec(
+                "S16",
+                status="WARN",
+                column_name="input_table_version",
+                detail="new version, same row count (rebuilt with the same rows?): "
+                + "; ".join(soft),
+            )
 
     def ingestion(self):
         """S17, per source (plan 6.3, contract 3.5): every file or sheet in bronze has one load time
@@ -455,8 +561,13 @@ class TableQC:
                          concat(_source_file, coalesce(concat(' / ', _source_sheet), ''),
                                 ' loads=', loads, ' metadata rows=', n) END), 1, 5)) AS detail
                 FROM matched""").collect()[0]
-            self._rec("S17", source_key=source_key, fail_count=r["bad"], total_count=r["total"],
-                      detail=r["detail"] or None)
+            self._rec(
+                "S17",
+                source_key=source_key,
+                fail_count=r["bad"],
+                total_count=r["total"],
+                detail=r["detail"] or None,
+            )
 
     def reconcile(self, referenced_sql_by_source):
         """S09, per source. row_disposition holds only the rows that were NOT loaded (contract v1.3,
@@ -464,7 +575,9 @@ class TableQC:
              rows the build read (build_inputs.input_rows) = bronze rows now
              rows silver points to = rows read - rows not loaded (merged_into counts as loaded)"""
         for bronze, source_key in DECLARED_INPUTS[self.table]:
-            bronze_rows = scalar(f"SELECT count(*) FROM {BRONZE}.{bronze} WHERE _source_key = '{source_key}'")
+            bronze_rows = scalar(
+                f"SELECT count(*) FROM {BRONZE}.{bronze} WHERE _source_key = '{source_key}'"
+            )
             read = scalar(f"""SELECT coalesce(sum(input_rows), 0) FROM {QUALITY}.build_inputs
                               WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
                                 AND input_kind = 'bronze_source' AND source_key = '{source_key}'""")
@@ -479,10 +592,15 @@ class TableQC:
             referenced = scalar(referenced_sql_by_source(source_key))
             loaded = read - d["not_loaded"]
             ok = (read == bronze_rows) and (referenced == loaded)
-            self.value("S09", f"rows read {read}, silver references {referenced}",
-                       f"bronze rows {bronze_rows}, loaded {loaded}", ok=ok, source_key=source_key,
-                       detail=f"loaded {loaded} (of which merged {d['merged']}), duplicate {d['dup']}, "
-                              f"dropped {d['dropped']}, quarantined {d['quar']}")
+            self.value(
+                "S09",
+                f"rows read {read}, silver references {referenced}",
+                f"bronze rows {bronze_rows}, loaded {loaded}",
+                ok=ok,
+                source_key=source_key,
+                detail=f"loaded {loaded} (of which merged {d['merged']}), duplicate {d['dup']}, "
+                f"dropped {d['dropped']}, quarantined {d['quar']}",
+            )
 
     def quarantined(self, copy_rows=True):
         """S28: quarantined bronze rows, per source, with reasons; copied to quality.quarantine
@@ -492,14 +610,22 @@ class TableQC:
                                      concat_ws('; ', collect_set(reason)) AS reasons
                               FROM {QUALITY}.row_disposition
                               WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
-                                AND source_key = '{source_key}' AND disposition = 'quarantined'""").collect()[0]
+                                AND source_key = '{source_key}' AND disposition = 'quarantined'""").collect()[
+                0
+            ]
             by_reason = listing(f"""SELECT reason, count(*) FROM {QUALITY}.row_disposition
                                     WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
                                       AND source_key = '{source_key}' AND disposition = 'quarantined'
                                     GROUP BY reason ORDER BY 2 DESC""")
-            self._rec("S28", source_key=source_key, fail_count=q["n"],
-                      total_count=scalar(f"SELECT count(*) FROM {BRONZE}.{bronze} WHERE _source_key = '{source_key}'"),
-                      detail=by_reason)
+            self._rec(
+                "S28",
+                source_key=source_key,
+                fail_count=q["n"],
+                total_count=scalar(
+                    f"SELECT count(*) FROM {BRONZE}.{bronze} WHERE _source_key = '{source_key}'"
+                ),
+                detail=by_reason,
+            )
             if copy_rows:
                 rows = spark.sql(f"""
                     SELECT b.*, d.reason AS _quarantine_reason FROM {QUALITY}.row_disposition d
@@ -508,16 +634,25 @@ class TableQC:
                      AND b._source_sheet <=> d.source_sheet AND b._source_row_num = d.source_row_num
                     WHERE d.build_id = '{self.build_id}' AND d.target_table = '{self.table}'
                       AND d.source_key = '{source_key}' AND d.disposition = 'quarantined'""")
-                self.dq.quarantine(rows, self.table, "S28", "see _quarantine_reason (row_disposition.reason)",
-                                   key_cols=["_source_file", "_source_sheet", "_source_row_num"],
-                                   source_table=f"{BRONZE}.{bronze}")
+                self.dq.quarantine(
+                    rows,
+                    self.table,
+                    "S28",
+                    "see _quarantine_reason (row_disposition.reason)",
+                    key_cols=["_source_file", "_source_sheet", "_source_row_num"],
+                    source_table=f"{BRONZE}.{bronze}",
+                )
 
     def psgc_in_geography(self, col="psgc_code", where="true"):
         """S04: every PSGC code is in the latest geography snapshot."""
-        self.count("S04", f"""SELECT count(*) FROM {self.table} t
+        self.count(
+            "S04",
+            f"""SELECT count(*) FROM {self.table} t
                               LEFT ANTI JOIN {latest_geography()} g ON g.psgc_code = t.{col}
                               WHERE t.{col} IS NOT NULL AND {where}""",
-                   f"SELECT count(*) FROM {self.table} WHERE {col} IS NOT NULL AND {where}", column_name=col)
+            f"SELECT count(*) FROM {self.table} WHERE {col} IS NOT NULL AND {where}",
+            column_name=col,
+        )
 
 
 def side_refs(table, side, build_id, source_key=None):
@@ -533,14 +668,26 @@ def side_refs(table, side, build_id, source_key=None):
 # facilities_registry_silver
 # ----------------------------------------------------------------------------------
 NHFR_GROUP = ["_nhfr_source_key", "_nhfr_source_file", "_nhfr_source_row_num", "_nhfr_as_of_date"]
-HFSRB_GROUP = ["_hfsrb_source_key", "_hfsrb_source_file", "_hfsrb_source_sheet", "_hfsrb_source_row_num",
-               "_hfsrb_as_of_date"]
+HFSRB_GROUP = [
+    "_hfsrb_source_key",
+    "_hfsrb_source_file",
+    "_hfsrb_source_sheet",
+    "_hfsrb_source_row_num",
+    "_hfsrb_as_of_date",
+]
 # metric_groups (plan 5.4): MAP key -> side. Keys whose value names the side ('nhfr:...' /
 # 'hfsrb:...') take it from the value.
-REG_METRIC_GROUPS = {"nhfr_reported_beds": "nhfr", "nhfr_licensing_status": "nhfr",
-                     "hfsrb_abc": "hfsrb", "dialysis_stations": "hfsrb", "license_valid_until": "hfsrb",
-                     "blood_service_type": "hfsrb",
-                     "facility_name": "prefix", "ownership": "prefix", "service_level": "prefix"}
+REG_METRIC_GROUPS = {
+    "nhfr_reported_beds": "nhfr",
+    "nhfr_licensing_status": "nhfr",
+    "hfsrb_abc": "hfsrb",
+    "dialysis_stations": "hfsrb",
+    "license_valid_until": "hfsrb",
+    "blood_service_type": "hfsrb",
+    "facility_name": "prefix",
+    "ownership": "prefix",
+    "service_level": "prefix",
+}
 
 
 def check_registry(dq, profile):
@@ -548,7 +695,10 @@ def check_registry(dq, profile):
     total_sql = t.total_sql
     t.basics(["facility_key"])
     t.build_record(carried_ok_sql="facility_status = 'not_listed'")
-    t.lineage_not_null(["_silver_build_id", "_metric_source_columns", "_first_build_id", "_row_hash"])
+    t.lineage_not_null(
+        ["_silver_build_id", "_metric_source_columns", "_first_build_id", "_row_hash"]
+    )
+
     # S19: a side group is filled exactly when that side contributed (plan 5.4, contract section 4)
     def filled(cols):
         return " AND ".join(f"{c} IS NOT NULL" for c in cols)
@@ -556,41 +706,70 @@ def check_registry(dq, profile):
     def empty(cols):
         return " AND ".join(f"{c} IS NULL" for c in cols)
 
-    t.count("S19", f"""SELECT count(*) FROM {REG}
+    t.count(
+        "S19",
+        f"""SELECT count(*) FROM {REG}
                        WHERE NOT ((in_nhfr AND {filled(NHFR_GROUP)}) OR (NOT in_nhfr AND {empty(NHFR_GROUP)}))
                           OR NOT ((in_hfsrb AND {filled(HFSRB_GROUP)}) OR (NOT in_hfsrb AND {empty(HFSRB_GROUP)}))
-                          OR (facility_status = 'listed' AND NOT (in_nhfr OR in_hfsrb))""", total_sql,
-            column_name="_nhfr_*, _hfsrb_*, in_nhfr, in_hfsrb")
+                          OR (facility_status = 'listed' AND NOT (in_nhfr OR in_hfsrb))""",
+        total_sql,
+        column_name="_nhfr_*, _hfsrb_*, in_nhfr, in_hfsrb",
+    )
     # S20: every MAP key has a group, and that group is filled on the row
-    side_case = "CASE " + " ".join(
-        f"WHEN m.key = '{k}' THEN " + ("split_part(m.value, ':', 1)" if v == "prefix" else f"'{v}'")
-        for k, v in REG_METRIC_GROUPS.items()) + " END"
-    t.count("S20", f"""SELECT count(*) FROM (
+    side_case = (
+        "CASE "
+        + " ".join(
+            f"WHEN m.key = '{k}' THEN "
+            + ("split_part(m.value, ':', 1)" if v == "prefix" else f"'{v}'")
+            for k, v in REG_METRIC_GROUPS.items()
+        )
+        + " END"
+    )
+    t.count(
+        "S20",
+        f"""SELECT count(*) FROM (
                          SELECT r.in_nhfr, r.in_hfsrb, {side_case} AS side
                          FROM {REG} r LATERAL VIEW explode(r._metric_source_columns) m AS key, value)
                        WHERE side IS NULL OR side NOT IN ('nhfr', 'hfsrb')
                           OR (side = 'nhfr' AND NOT in_nhfr) OR (side = 'hfsrb' AND NOT in_hfsrb)""",
-            f"SELECT sum(size(_metric_source_columns)) FROM {REG}", column_name="_metric_source_columns",
-            detail="keys: " + ", ".join(f"{k}->{v}" for k, v in REG_METRIC_GROUPS.items()))
+        f"SELECT sum(size(_metric_source_columns)) FROM {REG}",
+        column_name="_metric_source_columns",
+        detail="keys: " + ", ".join(f"{k}->{v}" for k, v in REG_METRIC_GROUPS.items()),
+    )
     if t.build_id:
-        refs = f"""SELECT build_id, source_key, source_file, sheet FROM ({side_refs(REG, 'nhfr', t.build_id)})
-                   UNION SELECT build_id, source_key, source_file, sheet FROM ({side_refs(REG, 'hfsrb', t.build_id)})"""
+        refs = f"""SELECT build_id, source_key, source_file, sheet FROM ({side_refs(REG, "nhfr", t.build_id)})
+                   UNION SELECT build_id, source_key, source_file, sheet FROM ({side_refs(REG, "hfsrb", t.build_id)})"""
         t.build_inputs_cover(f"SELECT DISTINCT * FROM ({refs})")
         t.freshness()
         t.ingestion()
-        t.reconcile(lambda sk: f"""SELECT count(*) FROM (
-                                     {side_refs(REG, 'nhfr' if sk == 'doh_nhfr' else 'hfsrb', t.build_id, sk)})""")
+        t.reconcile(
+            lambda sk: (
+                f"""SELECT count(*) FROM (
+                                     {side_refs(REG, "nhfr" if sk == "doh_nhfr" else "hfsrb", t.build_id, sk)})"""
+            )
+        )
         t.quarantined()
     t.psgc_in_geography()
     # S05: a facility is placed in a city / municipality. Manila keeps its district code (SubMun,
     # NHFR's level), rolled up to the city where LGUs are compared (plan 11.4).
-    t.count("S05", level_check(REG, ["City", "Mun", "SubMun"]), total_sql, column_name="psgc_code, area_key",
-            detail="registry facilities need a city / municipality / Manila district code")
-    t.count("S06", f"""SELECT count(*) FROM {REG}
+    t.count(
+        "S05",
+        level_check(REG, ["City", "Mun", "SubMun"]),
+        total_sql,
+        column_name="psgc_code, area_key",
+        detail="registry facilities need a city / municipality / Manila district code",
+    )
+    t.count(
+        "S06",
+        f"""SELECT count(*) FROM {REG}
                        WHERE least(coalesce(nhfr_reported_beds, 0), coalesce(hfsrb_abc, 0), coalesce(authorized_beds, 0),
                                    coalesce(analysis_beds, 0), coalesce(dialysis_stations, 0)) < 0""",
-            total_sql, column_name="beds, dialysis_stations")
-    t.count("S11", f"""SELECT count(*) FROM {REG}
+        total_sql,
+        column_name="beds, dialysis_stations",
+    )
+    t.count(
+        "S11",
+        f"""SELECT count(*) FROM {REG}
                        WHERE facility_category NOT IN ('hospital', 'infirmary', 'primary_care', 'dialysis_clinic')
                           OR match_method NOT IN ('nhfr_id', 'name_municipality', 'nhfr_only', 'hfsrb_only', 'manual')
                           OR coalesce(analysis_beds_basis, 'authorized') NOT IN ('authorized', 'nhfr_reported')
@@ -598,22 +777,40 @@ def check_registry(dq, profile):
                           OR ownership NOT IN ('Government', 'Private')
                           OR geo_resolution_method NOT IN ('source_code', 'name_level_parent', 'name_level_other_region',
                                                            'city_in_province_column', 'exception')""",
-            total_sql, column_name="facility_category, match_method, analysis_beds_basis, facility_status, ownership, "
-                                   "geo_resolution_method")
-    t.count("S18", f"""SELECT count(*) FROM (SELECT nhfr_id FROM {REG} WHERE nhfr_id IS NOT NULL
+        total_sql,
+        column_name="facility_category, match_method, analysis_beds_basis, facility_status, ownership, "
+        "geo_resolution_method",
+    )
+    t.count(
+        "S18",
+        f"""SELECT count(*) FROM (SELECT nhfr_id FROM {REG} WHERE nhfr_id IS NOT NULL
                                              GROUP BY nhfr_id HAVING count(*) > 1)""",
-            f"SELECT count(DISTINCT nhfr_id) FROM {REG}", column_name="nhfr_id")
+        f"SELECT count(DISTINCT nhfr_id) FROM {REG}",
+        column_name="nhfr_id",
+    )
     # S23 (plan 2.8): authorized = ABC; analysis = ABC else NHFR; the basis names the side used
-    t.count("S23", f"""SELECT count(*) FROM {REG}
+    t.count(
+        "S23",
+        f"""SELECT count(*) FROM {REG}
                        WHERE NOT (authorized_beds <=> hfsrb_abc)
                           OR NOT (analysis_beds <=> coalesce(hfsrb_abc, nhfr_reported_beds))
                           OR NOT (analysis_beds_basis <=> CASE WHEN hfsrb_abc IS NOT NULL THEN 'authorized'
                                                                WHEN nhfr_reported_beds IS NOT NULL THEN 'nhfr_reported' END)""",
-            total_sql, column_name="authorized_beds, analysis_beds, analysis_beds_basis")
-    t.control("nhfr_facilities", scalar(f"SELECT count(*) FROM {REG} WHERE in_nhfr AND {t.this_build}"),
-              column_name="in_nhfr", detail="NHFR facilities in the registry = NHFR rows")
-    t.control("nhfr_beds", scalar(f"SELECT sum(nhfr_reported_beds) FROM {REG} WHERE in_nhfr AND {t.this_build}"),
-              column_name="nhfr_reported_beds", detail="sum of NHFR Bed_Capacity")
+        total_sql,
+        column_name="authorized_beds, analysis_beds, analysis_beds_basis",
+    )
+    t.control(
+        "nhfr_facilities",
+        scalar(f"SELECT count(*) FROM {REG} WHERE in_nhfr AND {t.this_build}"),
+        column_name="in_nhfr",
+        detail="NHFR facilities in the registry = NHFR rows",
+    )
+    t.control(
+        "nhfr_beds",
+        scalar(f"SELECT sum(nhfr_reported_beds) FROM {REG} WHERE in_nhfr AND {t.this_build}"),
+        column_name="nhfr_reported_beds",
+        detail="sum of NHFR Bed_Capacity",
+    )
     if profile:
         dq.profile_table(REG, exclude=("_silver_build_id", "_row_hash"))
 
@@ -625,35 +822,62 @@ def check_id_map(dq, profile):
     t = TableQC(dq, IDMAP)
     total_sql = t.total_sql
     t.basics(["_source_key", "source_record_id"])
-    t.build_record(carried_ok_sql="true")     # identifiers not read again keep their last build (plan 2.6)
-    t.lineage_not_null(["_silver_build_id", "_source_key", "_source_file", "_source_row_num", "_as_of_date",
-                        "facility_key", "_first_build_id"])
-    t.count("S13", f"""SELECT count(*) FROM {IDMAP} WHERE _source_key <> 'doh_nhfr' AND _source_sheet IS NULL""",
-            f"SELECT count(*) FROM {IDMAP} WHERE _source_key <> 'doh_nhfr'", column_name="_source_sheet",
-            detail="HFSRB identifiers come from workbook sheets")
+    t.build_record(
+        carried_ok_sql="true"
+    )  # identifiers not read again keep their last build (plan 2.6)
+    t.lineage_not_null(
+        [
+            "_silver_build_id",
+            "_source_key",
+            "_source_file",
+            "_source_row_num",
+            "_as_of_date",
+            "facility_key",
+            "_first_build_id",
+        ]
+    )
+    t.count(
+        "S13",
+        f"""SELECT count(*) FROM {IDMAP} WHERE _source_key <> 'doh_nhfr' AND _source_sheet IS NULL""",
+        f"SELECT count(*) FROM {IDMAP} WHERE _source_key <> 'doh_nhfr'",
+        column_name="_source_sheet",
+        detail="HFSRB identifiers come from workbook sheets",
+    )
     if t.build_id:
         t.build_inputs_cover(f"""SELECT DISTINCT _silver_build_id AS build_id, _source_key AS source_key,
                                         _source_file AS source_file, _source_sheet AS sheet
                                  FROM {IDMAP} WHERE {t.this_build}""")
         t.freshness()
         t.ingestion()
-    t.count("S11", f"""SELECT count(*) FROM {IDMAP}
+    t.count(
+        "S11",
+        f"""SELECT count(*) FROM {IDMAP}
                        WHERE match_status NOT IN ('matched', 'new_facility', 'ambiguous_code_own_facility',
                                                   'service_of_existing_facility', 'candidate', 'ambiguous')
                           OR match_method NOT IN ('nhfr_id', 'name_municipality', 'manual', 'new')
                           OR _source_key NOT IN ('doh_nhfr', 'doh_hfsrb_hospitals', 'doh_hfsrb_infirmaries',
                                                  'doh_hfsrb_primary_care', 'doh_hfsrb_dialysis_clinics')""",
-            total_sql, column_name="match_status, match_method, _source_key")
+        total_sql,
+        column_name="match_status, match_method, _source_key",
+    )
     # S22: every id map key is a registry facility, and every registry facility has an identifier
     if spark.catalog.tableExists(REG):
-        t.count("S22", f"""SELECT count(*) FROM (SELECT DISTINCT facility_key FROM {IDMAP}) m
+        t.count(
+            "S22",
+            f"""SELECT count(*) FROM (SELECT DISTINCT facility_key FROM {IDMAP}) m
                            LEFT ANTI JOIN {REG} r ON r.facility_key = m.facility_key""",
-                f"SELECT count(DISTINCT facility_key) FROM {IDMAP}", column_name="facility_key",
-                detail="id map keys missing from the registry")
-        t.count("S22", f"""SELECT count(*) FROM {REG} r
+            f"SELECT count(DISTINCT facility_key) FROM {IDMAP}",
+            column_name="facility_key",
+            detail="id map keys missing from the registry",
+        )
+        t.count(
+            "S22",
+            f"""SELECT count(*) FROM {REG} r
                            LEFT ANTI JOIN {IDMAP} m ON m.facility_key = r.facility_key""",
-                f"SELECT count(*) FROM {REG}", column_name="facility_key",
-                detail="registry facilities without an identifier in the id map")
+            f"SELECT count(*) FROM {REG}",
+            column_name="facility_key",
+            detail="registry facilities without an identifier in the id map",
+        )
     if profile:
         dq.profile_table(IDMAP, exclude=("_silver_build_id",))
 
@@ -661,7 +885,17 @@ def check_id_map(dq, profile):
 # ----------------------------------------------------------------------------------
 # facilities_metric_silver
 # ----------------------------------------------------------------------------------
-MEASURES = ["hospitals", "authorized_beds", "bhs", "rhu", "mhc", "chc", "health_centers_total", "barangays", "population"]
+MEASURES = [
+    "hospitals",
+    "authorized_beds",
+    "bhs",
+    "rhu",
+    "mhc",
+    "chc",
+    "health_centers_total",
+    "barangays",
+    "population",
+]
 
 
 def check_metric(dq, profile):
@@ -669,37 +903,70 @@ def check_metric(dq, profile):
     total_sql = t.total_sql
     t.basics(["area_key", "year", "ownership", "_source_key"])
     t.build_record()
-    t.lineage_not_null(["_silver_build_id", "_source_key", "_source_file", "_source_row_num", "_as_of_date",
-                        "_metric_source_columns"])
+    t.lineage_not_null(
+        [
+            "_silver_build_id",
+            "_source_key",
+            "_source_file",
+            "_source_row_num",
+            "_as_of_date",
+            "_metric_source_columns",
+        ]
+    )
     # S20: every MAP key is a measure column of the table
-    t.count("S20", f"""SELECT count(*) FROM (SELECT explode(map_keys(_metric_source_columns)) AS k FROM {MET})
+    t.count(
+        "S20",
+        f"""SELECT count(*) FROM (SELECT explode(map_keys(_metric_source_columns)) AS k FROM {MET})
                        WHERE k NOT IN ({", ".join(f"'{m}'" for m in MEASURES)})""",
-            f"SELECT sum(size(_metric_source_columns)) FROM {MET}", column_name="_metric_source_columns")
+        f"SELECT sum(size(_metric_source_columns)) FROM {MET}",
+        column_name="_metric_source_columns",
+    )
     if t.build_id:
         t.build_inputs_cover(f"""SELECT DISTINCT _silver_build_id AS build_id, _source_key AS source_key,
                                         _source_file AS source_file, _source_sheet AS sheet
                                  FROM {MET} WHERE {t.this_build}""")
         t.freshness()
         t.ingestion()
-        t.reconcile(lambda sk: f"""SELECT count(*) FROM (SELECT DISTINCT _source_file, _source_sheet, _source_row_num
-                                                         FROM {MET} WHERE _source_key = '{sk}')""")
+        t.reconcile(
+            lambda sk: (
+                f"""SELECT count(*) FROM (SELECT DISTINCT _source_file, _source_sheet, _source_row_num
+                                                         FROM {MET} WHERE _source_key = '{sk}')"""
+            )
+        )
         t.quarantined()
     t.psgc_in_geography()
-    t.count("S05", level_check(MET, ["Reg", "Prov", "City", "Mun"], "^(ph|hist:[a-z_]+|sga:[a-z]+)$"), total_sql,
-            column_name="psgc_code, area_key", detail="region, province or city / municipality code, or a named key")
-    t.count("S06", f"SELECT count(*) FROM {MET} WHERE least({', '.join(f'coalesce({m}, 0)' for m in MEASURES)}) < 0",
-            total_sql, column_name=", ".join(MEASURES))
-    t.count("S08", f"""SELECT count(*) FROM {MET}
+    t.count(
+        "S05",
+        level_check(MET, ["Reg", "Prov", "City", "Mun"], "^(ph|hist:[a-z_]+|sga:[a-z]+)$"),
+        total_sql,
+        column_name="psgc_code, area_key",
+        detail="region, province or city / municipality code, or a named key",
+    )
+    t.count(
+        "S06",
+        f"SELECT count(*) FROM {MET} WHERE least({', '.join(f'coalesce({m}, 0)' for m in MEASURES)}) < 0",
+        total_sql,
+        column_name=", ".join(MEASURES),
+    )
+    t.count(
+        "S08",
+        f"""SELECT count(*) FROM {MET}
                        WHERE year NOT BETWEEN 1990 AND 2025
                           OR (_source_key = 'doh_fhsis_demographic' AND year NOT BETWEEN 2018 AND 2025)""",
-            total_sql, column_name="year")
-    t.count("S11", f"""SELECT count(*) FROM {MET}
+        total_sql,
+        column_name="year",
+    )
+    t.count(
+        "S11",
+        f"""SELECT count(*) FROM {MET}
                        WHERE ownership NOT IN ('total', 'government', 'private')
                           OR coalesce(series_definition, 'none') NOT IN ('none', 'hospitals_incl_infirmaries',
                                                                           'general_and_specialty_hospitals')
                           OR NOT area_key RLIKE '^(psgc:[0-9]{{10}}|ph|hist:[a-z_]+|sga:[a-z]+)$'
                           OR (is_break_year AND year <> 2013)""",
-            total_sql, column_name="ownership, series_definition, area_key, is_break_year")
+        total_sql,
+        column_name="ownership, series_definition, area_key, is_break_year",
+    )
     # S26 (plan 4.3): FHSIS region row = its provinces (without their listed cities) + listed cities,
     # per file (one file per year), for bhs and barangays
     spark.sql(f"""
@@ -726,11 +993,15 @@ def check_metric(dq, profile):
             ON p._source_file = r._source_file AND p.year = r.year AND p.region_as_published = r.region_as_published
           WHERE r.region_row)
         SELECT * FROM cmp""").createOrReplaceTempView("fac_qc_fhsis_region")
-    t.count("S26", "SELECT count(*) FROM fac_qc_fhsis_region WHERE all_parts AND published <> parts",
-            "SELECT count(*) FROM fac_qc_fhsis_region WHERE all_parts", source_key="doh_fhsis_demographic",
-            column_name="bhs, barangays",
-            detail=listing("""SELECT year, region, measure, published, 'vs', parts FROM fac_qc_fhsis_region
-                              WHERE all_parts AND published <> parts ORDER BY year, region"""))
+    t.count(
+        "S26",
+        "SELECT count(*) FROM fac_qc_fhsis_region WHERE all_parts AND published <> parts",
+        "SELECT count(*) FROM fac_qc_fhsis_region WHERE all_parts",
+        source_key="doh_fhsis_demographic",
+        column_name="bhs, barangays",
+        detail=listing("""SELECT year, region, measure, published, 'vs', parts FROM fac_qc_fhsis_region
+                              WHERE all_parts AND published <> parts ORDER BY year, region"""),
+    )
     if profile:
         dq.profile_table(MET, exclude=("_silver_build_id",))
 
@@ -743,36 +1014,73 @@ def check_bed_occupancy(dq, profile):
     total_sql = t.total_sql
     t.basics(["_source_key", "_source_file", "_source_sheet", "_source_row_num"])
     t.build_record()
-    t.lineage_not_null(["_silver_build_id", "_source_key", "_source_file", "_source_sheet", "_source_row_num",
-                        "_as_of_date", "_metric_source_columns"])
+    t.lineage_not_null(
+        [
+            "_silver_build_id",
+            "_source_key",
+            "_source_file",
+            "_source_sheet",
+            "_source_row_num",
+            "_as_of_date",
+            "_metric_source_columns",
+        ]
+    )
     if t.build_id:
         t.build_inputs_cover(f"""SELECT DISTINCT _silver_build_id AS build_id, _source_key AS source_key,
                                         _source_file AS source_file, _source_sheet AS sheet
                                  FROM {BOR} WHERE {t.this_build}""")
         t.freshness()
         t.ingestion()
-        t.reconcile(lambda sk: f"""SELECT count(*) FROM (SELECT DISTINCT _source_file, _source_sheet, _source_row_num
-                                                         FROM {BOR} WHERE _source_key = '{sk}')""")
-        t.quarantined(copy_rows=False)          # restricted source: no row copies outside silver
+        t.reconcile(
+            lambda sk: (
+                f"""SELECT count(*) FROM (SELECT DISTINCT _source_file, _source_sheet, _source_row_num
+                                                         FROM {BOR} WHERE _source_key = '{sk}')"""
+            )
+        )
+        t.quarantined(copy_rows=False)  # restricted source: no row copies outside silver
     t.psgc_in_geography()
-    t.count("S05", level_check(BOR, ["Prov", "City", "Mun", "SubMun"], "^(hist:[a-z_]+|ncr-district:[1-4])$"),
-            total_sql, column_name="psgc_code, area_key", detail="province or city / municipality code, or a named key")
-    t.control("bor_rows", scalar(total_sql), detail="bed occupancy data rows (anonymous records, never de-duplicated)")
-    t.count("S06", f"""SELECT count(*) FROM {BOR}
+    t.count(
+        "S05",
+        level_check(BOR, ["Prov", "City", "Mun", "SubMun"], "^(hist:[a-z_]+|ncr-district:[1-4])$"),
+        total_sql,
+        column_name="psgc_code, area_key",
+        detail="province or city / municipality code, or a named key",
+    )
+    t.control(
+        "bor_rows",
+        scalar(total_sql),
+        detail="bed occupancy data rows (anonymous records, never de-duplicated)",
+    )
+    t.count(
+        "S06",
+        f"""SELECT count(*) FROM {BOR}
                        WHERE (bor_pct < 0 AND coalesce(exclusion_reason, '') <> 'bor_negative')
                           OR authorized_beds < 0 OR implementing_beds < 0""",
-            total_sql, column_name="bor_pct, authorized_beds, implementing_beds")
-    t.count("S08", f"SELECT count(*) FROM {BOR} WHERE year NOT BETWEEN 2020 AND 2025", total_sql, column_name="year")
-    t.count("S11", f"""SELECT count(*) FROM {BOR}
+        total_sql,
+        column_name="bor_pct, authorized_beds, implementing_beds",
+    )
+    t.count(
+        "S08",
+        f"SELECT count(*) FROM {BOR} WHERE year NOT BETWEEN 2020 AND 2025",
+        total_sql,
+        column_name="year",
+    )
+    t.count(
+        "S11",
+        f"""SELECT count(*) FROM {BOR}
                        WHERE sharing <> 'restricted'
                           OR ownership NOT IN ('government', 'private')
                           OR coalesce(service_level, 'Level 1') NOT IN ('Level 1', 'Level 2', 'Level 3')
                           OR coalesce(exclusion_reason, 'none') NOT IN ('none', 'bor_null', 'bor_negative', 'bor_gt_150',
                                                                          'level_missing', 'exact_duplicate', 'private_only_year')
                           OR bor_bed_basis NOT IN ('authorized', 'implementing')""",
-            total_sql, column_name="sharing, ownership, service_level, exclusion_reason, bor_bed_basis")
+        total_sql,
+        column_name="sharing, ownership, service_level, exclusion_reason, bor_bed_basis",
+    )
     # S24 (plan 3.3): eligibility is derived from exclusion_reason, and each reason matches the data
-    t.count("S24", f"""SELECT count(*) FROM {BOR}
+    t.count(
+        "S24",
+        f"""SELECT count(*) FROM {BOR}
                        WHERE NOT (baseline_eligible <=> (exclusion_reason IS NULL))
                           OR (exclusion_reason = 'bor_null' AND bor_pct IS NOT NULL)
                           OR (exclusion_reason = 'bor_gt_150' AND NOT bor_pct > {BOR_BASELINE_MAX})
@@ -781,13 +1089,21 @@ def check_bed_occupancy(dq, profile):
                           OR (exclusion_reason IS NULL AND (bor_pct IS NULL OR bor_pct > {BOR_BASELINE_MAX}
                                                             OR year < 2025 OR nullif(trim(service_level), '') IS NULL))
                           OR NOT (is_bor_over_100 <=> (bor_pct > 100))""",
-            total_sql, column_name="baseline_eligible, exclusion_reason, is_bor_over_100",
-            detail=listing(f"SELECT coalesce(exclusion_reason, 'eligible'), count(*) FROM {BOR} GROUP BY 1 ORDER BY 2 DESC"))
-    t.count("S25", f"SELECT count(*) FROM {BOR} WHERE bor_pct > 100", f"SELECT count(*) FROM {BOR} WHERE bor_pct IS NOT NULL",
-            column_name="bor_pct",
-            detail=listing(f"""SELECT year, CASE WHEN bor_pct > {BOR_BASELINE_MAX} THEN 'above {BOR_BASELINE_MAX}'
+        total_sql,
+        column_name="baseline_eligible, exclusion_reason, is_bor_over_100",
+        detail=listing(
+            f"SELECT coalesce(exclusion_reason, 'eligible'), count(*) FROM {BOR} GROUP BY 1 ORDER BY 2 DESC"
+        ),
+    )
+    t.count(
+        "S25",
+        f"SELECT count(*) FROM {BOR} WHERE bor_pct > 100",
+        f"SELECT count(*) FROM {BOR} WHERE bor_pct IS NOT NULL",
+        column_name="bor_pct",
+        detail=listing(f"""SELECT year, CASE WHEN bor_pct > {BOR_BASELINE_MAX} THEN 'above {BOR_BASELINE_MAX}'
                                                 ELSE '100 to {BOR_BASELINE_MAX}' END, count(*)
-                               FROM {BOR} WHERE bor_pct > 100 GROUP BY 1, 2 ORDER BY 1, 2"""))
+                               FROM {BOR} WHERE bor_pct > 100 GROUP BY 1, 2 ORDER BY 1, 2"""),
+    )
     # no profile: a column profile would copy min / max values of a restricted source
 
 
@@ -799,21 +1115,40 @@ def check_osm_point(dq, profile):
     total_sql = t.total_sql
     t.basics(["osm_type", "osm_id"])
     t.build_record()
-    t.lineage_not_null(["_silver_build_id", "_source_key", "_source_file", "_source_row_num", "_as_of_date",
-                        "_metric_source_columns"])
+    t.lineage_not_null(
+        [
+            "_silver_build_id",
+            "_source_key",
+            "_source_file",
+            "_source_row_num",
+            "_as_of_date",
+            "_metric_source_columns",
+        ]
+    )
     if t.build_id:
         t.build_inputs_cover(f"""SELECT DISTINCT _silver_build_id AS build_id, _source_key AS source_key,
                                         _source_file AS source_file, _source_sheet AS sheet
                                  FROM {OSM} WHERE {t.this_build}""")
         t.freshness()
         t.ingestion()
-        t.reconcile(lambda sk: f"""SELECT count(*) FROM (SELECT DISTINCT _source_file, _source_sheet, _source_row_num
-                                                         FROM {OSM} WHERE _source_key = '{sk}')""")
+        t.reconcile(
+            lambda sk: (
+                f"""SELECT count(*) FROM (SELECT DISTINCT _source_file, _source_sheet, _source_row_num
+                                                         FROM {OSM} WHERE _source_key = '{sk}')"""
+            )
+        )
         t.quarantined()
     t.psgc_in_geography()
-    t.count("S05", level_check(OSM, ["City", "Mun"]), total_sql, column_name="psgc_code, area_key",
-            detail="OSM points are placed in a city / municipality boundary")
-    t.count("S11", f"""SELECT count(*) FROM {OSM}
+    t.count(
+        "S05",
+        level_check(OSM, ["City", "Mun"]),
+        total_sql,
+        column_name="psgc_code, area_key",
+        detail="OSM points are placed in a city / municipality boundary",
+    )
+    t.count(
+        "S11",
+        f"""SELECT count(*) FROM {OSM}
                        WHERE location_precision NOT IN ('point', 'municipality')
                           OR (location_precision = 'point') <> (coordinate_status = 'ok')
                           OR (location_precision = 'point' AND (longitude NOT BETWEEN 114 AND 127
@@ -822,14 +1157,25 @@ def check_osm_point(dq, profile):
                           OR geo_resolution_method NOT IN ('point_in_polygon', 'nearest_boundary', 'exception', 'addr_city_name')
                           OR (geo_resolution_method IN ('point_in_polygon', 'nearest_boundary')) <> (location_precision = 'point')
                           OR sharing <> 'open' OR NOT license LIKE 'ODbL%'""",
-            total_sql, column_name="location_precision, coordinates, geo_resolution_method, sharing, license")
+        total_sql,
+        column_name="location_precision, coordinates, geo_resolution_method, sharing, license",
+    )
     t.count("S06", f"SELECT count(*) FROM {OSM} WHERE beds < 0", total_sql, column_name="beds")
-    t.count("S27", f"SELECT count(*) FROM {OSM} WHERE location_precision = 'municipality'", total_sql,
-            column_name="location_precision",
-            detail="placed by addr:city only (OSM ways without coordinates); decision D12 re-download fixes most")
-    t.count("S27", f"SELECT count(*) FROM {OSM} WHERE addr_city_conflict", total_sql, column_name="addr_city_conflict",
-            detail=listing(f"""SELECT geo_name_source, count(*) FROM {OSM} WHERE addr_city_conflict
-                               GROUP BY 1 ORDER BY 2 DESC"""))
+    t.count(
+        "S27",
+        f"SELECT count(*) FROM {OSM} WHERE location_precision = 'municipality'",
+        total_sql,
+        column_name="location_precision",
+        detail="placed by addr:city only (OSM ways without coordinates); decision D12 re-download fixes most",
+    )
+    t.count(
+        "S27",
+        f"SELECT count(*) FROM {OSM} WHERE addr_city_conflict",
+        total_sql,
+        column_name="addr_city_conflict",
+        detail=listing(f"""SELECT geo_name_source, count(*) FROM {OSM} WHERE addr_city_conflict
+                               GROUP BY 1 ORDER BY 2 DESC"""),
+    )
     if profile:
         dq.profile_table(OSM, exclude=("_silver_build_id",))
 
@@ -847,16 +1193,26 @@ TABLE_CHECKS = {
 
 
 def main():
-    wanted = list(TABLE_CHECKS) if ARGS.tables.strip().upper() == "ALL" else \
-        [t.strip() for t in ARGS.tables.split(",") if t.strip()]
+    wanted = (
+        list(TABLE_CHECKS)
+        if ARGS.tables.strip().upper() == "ALL"
+        else [t.strip() for t in ARGS.tables.split(",") if t.strip()]
+    )
     unknown = [t for t in wanted if t not in TABLE_CHECKS]
     if unknown:
         raise KeyError(f"Unknown table(s) {unknown}. Choose from {list(TABLE_CHECKS)}")
 
     # DQRun writes qc_results, table_stats, profile and run_log on exit, then raises if any FAIL.
-    with DQRun(layer="silver", domain=DOMAIN, script_name=SCRIPT_NAME, job_run_id=ARGS.job_run_id,
-               source_keys=ARGS.tables, fail_on_error=ARGS.fail_on_error == "true",
-               code_version=ARGS.code_version, dq_schema=QUALITY) as dq:
+    with DQRun(
+        layer="silver",
+        domain=DOMAIN,
+        script_name=SCRIPT_NAME,
+        job_run_id=ARGS.job_run_id,
+        source_keys=ARGS.tables,
+        fail_on_error=ARGS.fail_on_error == "true",
+        code_version=ARGS.code_version,
+        dq_schema=QUALITY,
+    ) as dq:
         for name in wanted:
             table, fn = TABLE_CHECKS[name]
             print(f"[{name}] {table}")
@@ -865,8 +1221,15 @@ def main():
             except Exception as e:  # noqa: BLE001
                 # One table erroring is recorded as a failed check; the others still run.
                 cname, ctype, severity = CHECKS["S00"]
-                dq.record("S00", table_name=table, status="FAIL", check_name=cname, check_type=ctype,
-                          severity=severity, detail=f"{type(e).__name__}: {e}")
+                dq.record(
+                    "S00",
+                    table_name=table,
+                    status="FAIL",
+                    check_name=cname,
+                    check_type=ctype,
+                    severity=severity,
+                    detail=f"{type(e).__name__}: {e}",
+                )
 
 
 if __name__ == "__main__":

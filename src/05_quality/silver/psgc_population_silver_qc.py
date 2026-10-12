@@ -128,7 +128,7 @@ REQUIRED_COLUMNS = [
 ]
 
 APPROVED_PARSE_STATUS = ("VALID", "VALID_WITH_NOTE", "MISSING", "INVALID")
-USABLE_PARSE_STATUS = ("VALID", "VALID_WITH_NOTE")      # population is a number
+USABLE_PARSE_STATUS = ("VALID", "VALID_WITH_NOTE")  # population is a number
 
 # S54 / S56 / S58 settings
 CENSUS_YEARS = (2015, 2020, 2024)
@@ -654,10 +654,16 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
 
     # S51 - lineage columns not null (auditability)
     lineage = ["source_version", "content_checksum", "batch_id", "silver_processed_at"]
-    missing_lineage = scalar(f"SELECT COUNT(*) FROM {table_name} WHERE "
-                             + " OR ".join(f"{c} IS NULL" for c in lineage))
-    rec("S51", status="PASS" if missing_lineage == 0 else "FAIL", fail_count=missing_lineage,
-        total_count=silver_count, column_name=", ".join(lineage))
+    missing_lineage = scalar(
+        f"SELECT COUNT(*) FROM {table_name} WHERE " + " OR ".join(f"{c} IS NULL" for c in lineage)
+    )
+    rec(
+        "S51",
+        status="PASS" if missing_lineage == 0 else "FAIL",
+        fail_count=missing_lineage,
+        total_count=silver_count,
+        column_name=", ".join(lineage),
+    )
 
     # S52 - value agrees with its parse status
     status_mismatch = scalar(f"""
@@ -665,17 +671,27 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
         WHERE (population IS NOT NULL) <> COALESCE({usable}, FALSE)
            OR ((population_parse_status = 'VALID_WITH_NOTE')
                <> (population_note IS NOT NULL AND TRIM(population_note) <> ''))""")
-    rec("S52", status="PASS" if status_mismatch == 0 else "FAIL", fail_count=status_mismatch,
-        total_count=silver_count, column_name="population, population_parse_status, population_note",
+    rec(
+        "S52",
+        status="PASS" if status_mismatch == 0 else "FAIL",
+        fail_count=status_mismatch,
+        total_count=silver_count,
+        column_name="population, population_parse_status, population_note",
         detail="VALID* rows need a number; MISSING / INVALID stay null (never 0); "
-               "VALID_WITH_NOTE exactly when a note was moved out")
+        "VALID_WITH_NOTE exactly when a note was moved out",
+    )
 
     # S53 - rows without a usable population (completeness, for a person to read)
     unusable = scalar(f"SELECT COUNT(*) FROM {table_name} WHERE NOT COALESCE({usable}, FALSE)")
-    rec("S53", status="PASS" if unusable == 0 else "WARN", fail_count=unusable, total_count=silver_count,
+    rec(
+        "S53",
+        status="PASS" if unusable == 0 else "WARN",
+        fail_count=unusable,
+        total_count=silver_count,
         column_name="population_parse_status",
         detail=listing(f"""SELECT population_parse_status, population_year, COUNT(*) FROM {table_name}
-                           WHERE NOT COALESCE({usable}, FALSE) GROUP BY 1, 2 ORDER BY 1, 2"""))
+                           WHERE NOT COALESCE({usable}, FALSE) GROUP BY 1, 2 ORDER BY 1, 2"""),
+    )
 
     # S54 - every geography area has a row for every census year
     spark.sql(f"""
@@ -685,12 +701,19 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
         LEFT ANTI JOIN {table_name} p ON p.psgc_code = g.psgc_code AND p.population_year = y.year
         WHERE g.geographic_level IN ({levels})""").createOrReplaceTempView("population_qc_gaps")
     gaps = scalar("SELECT COUNT(*) FROM population_qc_gaps")
-    expected_rows = scalar(f"SELECT COUNT(*) * {len(CENSUS_YEARS)} FROM {geo} WHERE geographic_level IN ({levels})")
-    rec("S54", status="PASS" if gaps == 0 else "WARN", fail_count=gaps, total_count=expected_rows,
+    expected_rows = scalar(
+        f"SELECT COUNT(*) * {len(CENSUS_YEARS)} FROM {geo} WHERE geographic_level IN ({levels})"
+    )
+    rec(
+        "S54",
+        status="PASS" if gaps == 0 else "WARN",
+        fail_count=gaps,
+        total_count=expected_rows,
         column_name="psgc_code, population_year",
         detail=listing("""SELECT level, year, COUNT(*) FROM population_qc_gaps GROUP BY 1, 2
                           ORDER BY CASE level WHEN 'Reg' THEN 1 WHEN 'Prov' THEN 2 WHEN 'City' THEN 3
-                                   WHEN 'Mun' THEN 4 WHEN 'SubMun' THEN 5 ELSE 6 END, year"""))
+                                   WHEN 'Mun' THEN 4 WHEN 'SubMun' THEN 5 ELSE 6 END, year"""),
+    )
 
     # S55 - totals equal their parts (the notebook's last cell, now recorded).
     # Parts are City + Mun rows (never SubMun: Manila's districts are inside the City of Manila).
@@ -712,14 +735,23 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
                  SUM(c.population) AS parts
           FROM v t JOIN parts c ON SUBSTR(c.psgc_code, 1, 2) = SUBSTR(t.psgc_code, 1, 2) AND c.year = t.year
           WHERE t.level = 'Reg' GROUP BY t.psgc_code, t.year, t.population)
-        SELECT * FROM prov UNION ALL SELECT * FROM reg""").createOrReplaceTempView("population_qc_rollup")
+        SELECT * FROM prov UNION ALL SELECT * FROM reg""").createOrReplaceTempView(
+        "population_qc_rollup"
+    )
     for kind, admin_level in (("province", 2), ("region", 1)):
-        bad = scalar(f"SELECT COUNT(*) FROM population_qc_rollup WHERE kind = '{kind}' AND published <> parts")
-        rec("S55", status="PASS" if bad == 0 else "WARN", fail_count=bad,
+        bad = scalar(
+            f"SELECT COUNT(*) FROM population_qc_rollup WHERE kind = '{kind}' AND published <> parts"
+        )
+        rec(
+            "S55",
+            status="PASS" if bad == 0 else "WARN",
+            fail_count=bad,
             total_count=scalar(f"SELECT COUNT(*) FROM population_qc_rollup WHERE kind = '{kind}'"),
-            column_name=f"population ({kind})", admin_level=admin_level,
+            column_name=f"population ({kind})",
+            admin_level=admin_level,
             detail=listing(f"""SELECT psgc_code, year, published, 'vs', parts FROM population_qc_rollup
-                               WHERE kind = '{kind}' AND published <> parts ORDER BY year, psgc_code"""))
+                               WHERE kind = '{kind}' AND published <> parts ORDER BY year, psgc_code"""),
+        )
 
     # S56 - national total vs the PSA census release (accuracy). Sum of region rows; a region
     # without a row that year (NIR 2015 / 2020) is filled with the sum of its cities and
@@ -739,21 +771,38 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
             FROM regions LEFT JOIN reg ON reg.r = regions.r LEFT JOIN lgu ON lgu.r = regions.r""")
         diff_pct = abs(observed - expected) * 100.0 / expected
         severity = "FAIL" if CONTROL_CONFIRMED else "WARN"
-        record(dq, "S56", table_name, SOURCE_KEY, skip, {**overrides, "S56": severity},
-               status="PASS" if diff_pct <= CONTROL_TOLERANCE_PCT else severity,
-               observed=observed, expected=expected, column_name="population", admin_level=0,
-               detail=f"{year}: difference {observed - expected:+,} ({diff_pct:.3f}%), tolerance "
-                      f"{CONTROL_TOLERANCE_PCT}%" + ("" if CONTROL_CONFIRMED else "; control not confirmed yet"))
+        record(
+            dq,
+            "S56",
+            table_name,
+            SOURCE_KEY,
+            skip,
+            {**overrides, "S56": severity},
+            status="PASS" if diff_pct <= CONTROL_TOLERANCE_PCT else severity,
+            observed=observed,
+            expected=expected,
+            column_name="population",
+            admin_level=0,
+            detail=f"{year}: difference {observed - expected:+,} ({diff_pct:.3f}%), tolerance "
+            f"{CONTROL_TOLERANCE_PCT}%"
+            + ("" if CONTROL_CONFIRMED else "; control not confirmed yet"),
+        )
 
     # S57 - one population snapshot, from the same PSGC release as geography Silver (timeliness)
     snapshots = scalar(f"SELECT COUNT(DISTINCT content_checksum) FROM {table_name}")
     pop_checksum = scalar(f"SELECT MAX(content_checksum) FROM {table_name}")
-    geo_checksum = scalar(f"SELECT max_by(content_checksum, silver_processed_at) FROM {geography_table}")
-    rec("S57", status="PASS" if snapshots == 1 and pop_checksum == geo_checksum else "WARN",
+    geo_checksum = scalar(
+        f"SELECT max_by(content_checksum, silver_processed_at) FROM {geography_table}"
+    )
+    rec(
+        "S57",
+        status="PASS" if snapshots == 1 and pop_checksum == geo_checksum else "WARN",
         observed=f"{snapshots} snapshot(s); population {str(pop_checksum)[:12]}, geography {str(geo_checksum)[:12]}",
-        expected="1 snapshot, same as geography Silver", column_name="content_checksum",
+        expected="1 snapshot, same as geography Silver",
+        column_name="content_checksum",
         detail="Population and geography come from the same PSGC payload: rerun the population "
-               "notebook after geography takes a new release")
+        "notebook after geography takes a new release",
+    )
 
     # S58 - business rule: plausible change between census years
     spark.sql(f"""
@@ -764,11 +813,15 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
     """).createOrReplaceTempView("population_qc_change")
     change = f"previous > 0 AND ABS(population - previous) * 100.0 / previous > {MAX_CHANGE_PCT}"
     jumps = scalar(f"SELECT COUNT(*) FROM population_qc_change WHERE {change} OR population = 0")
-    rec("S58", status="PASS" if jumps == 0 else "WARN", fail_count=jumps,
+    rec(
+        "S58",
+        status="PASS" if jumps == 0 else "WARN",
+        fail_count=jumps,
         total_count=scalar("SELECT COUNT(*) FROM population_qc_change WHERE previous IS NOT NULL"),
         column_name="population",
         detail=listing(f"""SELECT psgc_code, level, year, previous, 'to', population FROM population_qc_change
-                           WHERE {change} OR population = 0 ORDER BY year, psgc_code"""))
+                           WHERE {change} OR population = 0 ORDER BY year, psgc_code"""),
+    )
 
 
 def parse_args():

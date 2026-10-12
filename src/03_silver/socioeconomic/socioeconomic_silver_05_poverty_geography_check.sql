@@ -30,7 +30,7 @@ RETURN regexp_replace(
     trim(regexp_replace(regexp_replace(translate(upper(s), 'Ñ', 'N'), '[^A-Z0-9]', ' '), ' +', ' ')),
     '^CITY OF (.+)$', '$1 CITY'
 );
- 
+
 CREATE OR REPLACE TEMP VIEW poverty_geography_checks AS
 WITH g AS (
     SELECT
@@ -49,7 +49,7 @@ WITH g AS (
         FROM public_health.silver.geography_silver
     )
 ),
- 
+
 m AS (
     SELECT
         area_key,
@@ -59,7 +59,7 @@ m AS (
     FROM public_health.silver.socioeconomic_poverty_area_map
     WHERE psgc_code IS NOT NULL
 )
- 
+
 SELECT
     'S04' AS check_id,
     'PSGC code not found in geography' AS finding,
@@ -72,9 +72,9 @@ SELECT
     cast(NULL AS STRING) AS geography_name
 FROM m
 LEFT ANTI JOIN g ON m.psgc_code = g.psgc_code
- 
+
 UNION ALL
- 
+
 SELECT DISTINCT
     'S93' AS check_id,
     'PSGC code appears more than once in geography' AS finding,
@@ -88,9 +88,9 @@ SELECT DISTINCT
 FROM m
 INNER JOIN g ON m.psgc_code = g.psgc_code
 WHERE g.rows_for_code > 1
- 
+
 UNION ALL
- 
+
 SELECT
     'S93' AS check_id,
     'geographic level differs from geography' AS finding,
@@ -104,9 +104,9 @@ SELECT
 FROM m
 INNER JOIN g ON m.psgc_code = g.psgc_code
 WHERE g.geo_level IS NOT NULL AND g.geo_level != m.geo_level
- 
+
 UNION ALL
- 
+
 SELECT
     'S93' AS check_id,
     'geography has no level for this code (placeholder row)' AS finding,
@@ -120,9 +120,9 @@ SELECT
 FROM m
 INNER JOIN g ON m.psgc_code = g.psgc_code
 WHERE g.geo_level IS NULL
- 
+
 UNION ALL
- 
+
 SELECT
     'S04' AS check_id,
     'name differs from geography' AS finding,
@@ -136,7 +136,7 @@ SELECT
 FROM m
 INNER JOIN g ON m.psgc_code = g.psgc_code
 WHERE se_geo_name_key(m.geo_name_source) != se_geo_name_key(g.geo_name);
- 
+
 -- Findings, most serious first
 SELECT *
 FROM poverty_geography_checks
@@ -144,7 +144,7 @@ ORDER BY
     CASE severity WHEN 'FAIL' THEN 1 WHEN 'WARN' THEN 2 ELSE 3 END,
     finding,
     geo_name_source;
- 
+
 -- Stop if anything is a FAIL
 SELECT
     raise_error(

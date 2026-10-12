@@ -62,8 +62,11 @@ def _add_dq_utils_to_path():
             candidates = [folder]
             for base in (folder, os.path.join(folder, "src")):
                 try:
-                    candidates += [os.path.join(base, d) for d in sorted(os.listdir(base))
-                                   if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))]
+                    candidates += [
+                        os.path.join(base, d)
+                        for d in sorted(os.listdir(base))
+                        if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))
+                    ]
                 except OSError:
                     pass
             for c in candidates:
@@ -78,7 +81,8 @@ def _add_dq_utils_to_path():
             folder = parent
     raise ModuleNotFoundError(
         "dq_utils.py not found. It must be a Python FILE named dq_utils.py (not a notebook) in "
-        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched)))
+        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 _add_dq_utils_to_path()
@@ -90,12 +94,27 @@ SCRIPT_NAME = "diseases_silver_qc.py"
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--catalog", default="public_health", help="'' gives two-part names (local tests)")
-    p.add_argument("--tables", default="ALL", help="ALL, or any of: metric,deaths_age,hospital_encounters,coverage")
-    p.add_argument("--fail_on_error", default="true", help="false = record results but do not raise")
-    p.add_argument("--profile", default="true", help="Also write a column profile (never for restricted tables)")
-    p.add_argument("--geography_table", default="silver.geography_silver",
-                   help="schema.table of the PSGC geography table, without the catalog")
+    p.add_argument(
+        "--catalog", default="public_health", help="'' gives two-part names (local tests)"
+    )
+    p.add_argument(
+        "--tables",
+        default="ALL",
+        help="ALL, or any of: metric,deaths_age,hospital_encounters,coverage",
+    )
+    p.add_argument(
+        "--fail_on_error", default="true", help="false = record results but do not raise"
+    )
+    p.add_argument(
+        "--profile",
+        default="true",
+        help="Also write a column profile (never for restricted tables)",
+    )
+    p.add_argument(
+        "--geography_table",
+        default="silver.geography_silver",
+        help="schema.table of the PSGC geography table, without the catalog",
+    )
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--code_version", default=None)
     a, _ = p.parse_known_args()
@@ -153,34 +172,57 @@ CHECKS = {
 # Control values: the same numbers bronze QC checks (sources_diseases.yaml), read from silver.
 CONTROLS = [
     # (label, sql returning one number, expected)
-    *[(f"DOH FOI dengue cases {y}",
-       f"SELECT sum(value) FROM {METRIC} WHERE _source_key = 'doh_foi_dengue' AND measure = 'cases' AND year = {y}", n)
-      for y, n in [(2021, 80919), (2022, 264390), (2023, 214638), (2024, 413960), (2025, 240540)]],
-    *[(f"PSA all-cause deaths {y} (monthly table, year row)",
-       f"SELECT value FROM {METRIC} WHERE _source_key = 'psa_deaths_national_monthly' AND disease_key = 'all_causes' "
-       f"AND period_grain = 'year' AND year = {y}", n)
-      for y, n in [(2020, 613936), (2021, 879429), (2022, 679766), (2023, 694821), (2024, 701884)]],
-    *[(f"FHSIS TB notifications, all forms, Philippines {y}",
-       f"SELECT value FROM {METRIC} WHERE _source_key = 'doh_fhsis' AND disease_key = 'tb_all_forms' "
-       f"AND area_key = 'ph' AND year = {y}", n)
-      for y, n in [(2024, 544948), (2025, 535254)]],
+    *[
+        (
+            f"DOH FOI dengue cases {y}",
+            f"SELECT sum(value) FROM {METRIC} WHERE _source_key = 'doh_foi_dengue' AND measure = 'cases' AND year = {y}",
+            n,
+        )
+        for y, n in [(2021, 80919), (2022, 264390), (2023, 214638), (2024, 413960), (2025, 240540)]
+    ],
+    *[
+        (
+            f"PSA all-cause deaths {y} (monthly table, year row)",
+            f"SELECT value FROM {METRIC} WHERE _source_key = 'psa_deaths_national_monthly' AND disease_key = 'all_causes' "
+            f"AND period_grain = 'year' AND year = {y}",
+            n,
+        )
+        for y, n in [(2020, 613936), (2021, 879429), (2022, 679766), (2023, 694821), (2024, 701884)]
+    ],
+    *[
+        (
+            f"FHSIS TB notifications, all forms, Philippines {y}",
+            f"SELECT value FROM {METRIC} WHERE _source_key = 'doh_fhsis' AND disease_key = 'tb_all_forms' "
+            f"AND area_key = 'ph' AND year = {y}",
+            n,
+        )
+        for y, n in [(2024, 544948), (2025, 535254)]
+    ],
 ]
 
 # Expected inputs per silver table: (bronze table, _source_key). Step 1 of the freshness check.
 DECLARED_INPUTS = {
-    METRIC: [("diseases_doh_foi_dengue_bronze", "doh_foi_dengue"),
-             ("diseases_upnoah_dengue_regional_bronze", "upnoah"),
-             ("diseases_hdx_dengue_bronze", "hdx_dengue"),
-             ("diseases_psa_deaths_national_monthly_bronze", "psa_deaths_national_monthly"),
-             ("diseases_psa_deaths_region_annual_bronze", "psa_deaths_region_annual"),
-             ("diseases_psa_deaths_national_annual_bronze", "psa_deaths_national_annual"),
-             ("diseases_fhsis_tb_bronze", "doh_fhsis"),
-             ("diseases_ihme_gbd_bronze", "ihme_gbd")],
+    METRIC: [
+        ("diseases_doh_foi_dengue_bronze", "doh_foi_dengue"),
+        ("diseases_upnoah_dengue_regional_bronze", "upnoah"),
+        ("diseases_hdx_dengue_bronze", "hdx_dengue"),
+        ("diseases_psa_deaths_national_monthly_bronze", "psa_deaths_national_monthly"),
+        ("diseases_psa_deaths_region_annual_bronze", "psa_deaths_region_annual"),
+        ("diseases_psa_deaths_national_annual_bronze", "psa_deaths_national_annual"),
+        ("diseases_fhsis_tb_bronze", "doh_fhsis"),
+        ("diseases_ihme_gbd_bronze", "ihme_gbd"),
+    ],
     AGE: [("diseases_psa_deaths_region_annual_bronze", "psa_deaths_region_annual")],
     ENC: [("diseases_davao_hospital_pneumonia_bronze", "davao_hospital_pneumonia")],
 }
 
-LINEAGE_ALWAYS = ["_silver_build_id", "_source_key", "_source_file", "_source_row_num", "_as_of_date"]
+LINEAGE_ALWAYS = [
+    "_silver_build_id",
+    "_source_key",
+    "_source_file",
+    "_source_row_num",
+    "_as_of_date",
+]
 
 # Sources whose PSGC code is printed in the source file. Every other source gets its code from
 # diseases_area_map, which build_diseases_reference_maps.py already checks against geography.
@@ -188,8 +230,13 @@ SOURCE_PRINTED_AREA_CODES = ("doh_fhsis",)
 
 # Silver geo_level -> the geographic_level values geography silver may hold for that code.
 # Same mapping as GEO_LEVELS in build_diseases_reference_maps.py.
-GEO_LEVELS = {"region": ("Reg",), "province": ("Prov",), "city": ("City",), "municipality": ("Mun",),
-              "city_municipality": ("City", "Mun")}
+GEO_LEVELS = {
+    "region": ("Reg",),
+    "province": ("Prov",),
+    "city": ("City",),
+    "municipality": ("Mun",),
+    "city_municipality": ("City", "Mun"),
+}
 
 
 # ----------------------------------------------------------------------------------
@@ -218,8 +265,15 @@ class TableQC:
 
     def _rec(self, check_id, **kw):
         name, ctype, severity = CHECKS[check_id]
-        return self.dq.record(check_id, table_name=self.table, batch_id=self.batch,
-                              check_name=name, check_type=ctype, severity=severity, **kw)
+        return self.dq.record(
+            check_id,
+            table_name=self.table,
+            batch_id=self.batch,
+            check_name=name,
+            check_type=ctype,
+            severity=severity,
+            **kw,
+        )
 
     def count(self, check_id, fail_sql, total_sql=None, **kw):
         """A check that counts failing rows (or groups). PASS when the count is 0."""
@@ -230,18 +284,31 @@ class TableQC:
     def value(self, check_id, observed, expected, ok=None, **kw):
         """A check that compares one observed value with an expected one."""
         ok = same_number(observed, expected) if ok is None else ok
-        return self._rec(check_id, status="PASS" if ok else CHECKS[check_id][2],
-                         observed=observed, expected=expected, **kw)
+        return self._rec(
+            check_id,
+            status="PASS" if ok else CHECKS[check_id][2],
+            observed=observed,
+            expected=expected,
+            **kw,
+        )
 
     # ---- checks shared by the tables ---------------------------------------------
     def basics(self, key):
         total = self.dq.capture_table_stats(self.table)
         self.value("S01", total, "> 0", ok=total > 0)
-        self.count("S02", f"SELECT count(*) FROM {self.table} WHERE " + " OR ".join(f"{c} IS NULL" for c in key),
-                   f"SELECT count(*) FROM {self.table}", column_name=", ".join(key))
-        self.count("S03", f"""SELECT count(*) FROM (SELECT 1 FROM {self.table}
-                                                    GROUP BY {', '.join(key)} HAVING count(*) > 1)""",
-                   f"SELECT count(*) FROM {self.table}", column_name=", ".join(key))
+        self.count(
+            "S02",
+            f"SELECT count(*) FROM {self.table} WHERE " + " OR ".join(f"{c} IS NULL" for c in key),
+            f"SELECT count(*) FROM {self.table}",
+            column_name=", ".join(key),
+        )
+        self.count(
+            "S03",
+            f"""SELECT count(*) FROM (SELECT 1 FROM {self.table}
+                                                    GROUP BY {", ".join(key)} HAVING count(*) > 1)""",
+            f"SELECT count(*) FROM {self.table}",
+            column_name=", ".join(key),
+        )
         return total
 
     def build_record(self):
@@ -253,15 +320,26 @@ class TableQC:
                              WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'""").collect()
         n = scalar(f"SELECT count(*) FROM {self.table}")
         ok = len(rows) == 1 and rows[0]["status"] == "succeeded" and rows[0]["row_count"] == n
-        self.value("S32", f"{len(rows)} build_log row(s)" + (f", {rows[0]['status']}, {rows[0]['row_count']} rows" if rows else ""),
-                   f"1 row, succeeded, {n} rows", ok=ok)
+        self.value(
+            "S32",
+            f"{len(rows)} build_log row(s)"
+            + (f", {rows[0]['status']}, {rows[0]['row_count']} rows" if rows else ""),
+            f"1 row, succeeded, {n} rows",
+            ok=ok,
+        )
 
     def lineage(self, sheet_nullable=True, extra=()):
         cols = LINEAGE_ALWAYS + list(extra) + ([] if sheet_nullable else ["_source_sheet"])
-        self.count("S30", f"SELECT count(*) FROM {self.table} WHERE " + " OR ".join(f"{c} IS NULL" for c in cols),
-                   f"SELECT count(*) FROM {self.table}", column_name=", ".join(cols))
+        self.count(
+            "S30",
+            f"SELECT count(*) FROM {self.table} WHERE " + " OR ".join(f"{c} IS NULL" for c in cols),
+            f"SELECT count(*) FROM {self.table}",
+            column_name=", ".join(cols),
+        )
         # S31: every (source, file, sheet) the rows point to has exactly one row in build_inputs.
-        self.count("S31", f"""
+        self.count(
+            "S31",
+            f"""
             SELECT count(*) FROM (
               SELECT s._source_key, s._source_file, s._source_sheet, count(v.build_id) AS n
               FROM (SELECT DISTINCT _silver_build_id, _source_key, _source_file, _source_sheet FROM {self.table}) s
@@ -269,8 +347,9 @@ class TableQC:
                 ON v.build_id = s._silver_build_id AND v.target_table = '{self.table}'
                AND v.source_key = s._source_key AND v.source_file = s._source_file AND v.source_sheet <=> s._source_sheet
               GROUP BY s._source_key, s._source_file, s._source_sheet) WHERE n <> 1""",
-                   f"SELECT count(*) FROM (SELECT DISTINCT _source_key, _source_file, _source_sheet FROM {self.table})",
-                   detail="files or sheets referenced by silver rows without exactly one build_inputs row")
+            f"SELECT count(*) FROM (SELECT DISTINCT _source_key, _source_file, _source_sheet FROM {self.table})",
+            detail="files or sheets referenced by silver rows without exactly one build_inputs row",
+        )
 
     def freshness(self):
         """S33, per source: the files, sheets and load times in bronze now are the ones the build read.
@@ -293,17 +372,24 @@ class TableQC:
             consumed = scalar(f"""SELECT count(*) FROM {QUALITY}.build_inputs
                                   WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
                                     AND input_kind = 'bronze_source' AND source_key = '{source_key}'""")
-            self._rec("S33", source_key=source_key, fail_count=mismatches + (1 if consumed == 0 else 0),
-                      total_count=max(consumed, 1),
-                      detail=None if (mismatches == 0 and consumed > 0) else
-                      "bronze has a new, removed or reloaded file or sheet since the build: rebuild silver")
+            self._rec(
+                "S33",
+                source_key=source_key,
+                fail_count=mismatches + (1 if consumed == 0 else 0),
+                total_count=max(consumed, 1),
+                detail=None
+                if (mismatches == 0 and consumed > 0)
+                else "bronze has a new, removed or reloaded file or sheet since the build: rebuild silver",
+            )
 
     def reconcile(self):
         """S09, per source. row_disposition holds only the rows that were NOT loaded, so:
-             rows the build read (build_inputs.input_rows) = bronze rows now
-             rows silver points to                         = rows read - rows not loaded"""
+        rows the build read (build_inputs.input_rows) = bronze rows now
+        rows silver points to                         = rows read - rows not loaded"""
         for bronze_short, source_key in DECLARED_INPUTS[self.table]:
-            bronze_rows = scalar(f"SELECT count(*) FROM {BRONZE}.{bronze_short} WHERE _source_key = '{source_key}'")
+            bronze_rows = scalar(
+                f"SELECT count(*) FROM {BRONZE}.{bronze_short} WHERE _source_key = '{source_key}'"
+            )
             read = scalar(f"""SELECT coalesce(sum(input_rows), 0) FROM {QUALITY}.build_inputs
                               WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
                                 AND input_kind = 'bronze_source' AND source_key = '{source_key}'""")
@@ -318,9 +404,14 @@ class TableQC:
                                                           FROM {self.table} WHERE _source_key = '{source_key}')""")
             loaded = read - d["not_loaded"]
             ok = (read == bronze_rows) and (referenced == loaded)
-            self.value("S09", f"rows read {read}, silver references {referenced}",
-                       f"bronze rows {bronze_rows}, loaded {loaded}", ok=ok, source_key=source_key,
-                       detail=f"loaded {loaded}, dropped {d['dropped']}, duplicate {d['dup']}, quarantined {d['quar']}")
+            self.value(
+                "S09",
+                f"rows read {read}, silver references {referenced}",
+                f"bronze rows {bronze_rows}, loaded {loaded}",
+                ok=ok,
+                source_key=source_key,
+                detail=f"loaded {loaded}, dropped {d['dropped']}, duplicate {d['dup']}, quarantined {d['quar']}",
+            )
 
     def geography(self, has_level=True):
         """S49 and S50, per source: every psgc: area key exists in geography silver, and (when the
@@ -331,12 +422,22 @@ class TableQC:
           S50 WARN  sources that print their own code (FHSIS TB). A failure is a source code that
                     the PSGC snapshot does not hold, or a provisional level (01 section 4g)."""
         if not spark.catalog.tableExists(GEOGRAPHY):
-            self._rec("S49", status="FAIL", observed="table not found", expected=GEOGRAPHY,
-                      detail="geography silver is needed for S49 and S50: build it first, or pass --geography_table")
+            self._rec(
+                "S49",
+                status="FAIL",
+                observed="table not found",
+                expected=GEOGRAPHY,
+                detail="geography silver is needed for S49 and S50: build it first, or pass --geography_table",
+            )
             return
-        level_ok = " OR ".join(
-            f"(m.geo_level = '{silver_level}' AND g.level IN ({', '.join(repr(v) for v in geo_levels)}))"
-            for silver_level, geo_levels in GEO_LEVELS.items()) if has_level else "g.code IS NOT NULL"
+        level_ok = (
+            " OR ".join(
+                f"(m.geo_level = '{silver_level}' AND g.level IN ({', '.join(repr(v) for v in geo_levels)}))"
+                for silver_level, geo_levels in GEO_LEVELS.items()
+            )
+            if has_level
+            else "g.code IS NOT NULL"
+        )
         level_col = "geo_level" if has_level else "CAST(NULL AS STRING)"
         rows = spark.sql(f"""
             WITH g AS (
@@ -354,17 +455,26 @@ class TableQC:
         for source_key in sorted({r["_source_key"] for r in rows}):
             mine = [r for r in rows if r["_source_key"] == source_key]
             missing = sorted(r["area_key"] for r in mine if r["found"] == 0)
-            wrong_level = sorted(f"{r['area_key']} silver {r['geo_level']}, geography {r['geography_levels'] or 'no level'}"
-                                 for r in mine if r["found"] == 1 and r["level_agrees"] == 0)
+            wrong_level = sorted(
+                f"{r['area_key']} silver {r['geo_level']}, geography {r['geography_levels'] or 'no level'}"
+                for r in mine
+                if r["found"] == 1 and r["level_agrees"] == 0
+            )
             notes = []
             if missing:
                 notes.append(f"{len(missing)} not in geography, e.g. {', '.join(missing[:5])}")
             if wrong_level:
-                notes.append(f"{len(wrong_level)} at another level, e.g. {'; '.join(wrong_level[:5])}")
-            self._rec("S50" if source_key in SOURCE_PRINTED_AREA_CODES else "S49", source_key=source_key,
-                      fail_count=len(missing) + len(wrong_level), total_count=len(mine),
-                      column_name="area_key, geo_level" if has_level else "area_key",
-                      detail=" | ".join(notes) or None)
+                notes.append(
+                    f"{len(wrong_level)} at another level, e.g. {'; '.join(wrong_level[:5])}"
+                )
+            self._rec(
+                "S50" if source_key in SOURCE_PRINTED_AREA_CODES else "S49",
+                source_key=source_key,
+                fail_count=len(missing) + len(wrong_level),
+                total_count=len(mine),
+                column_name="area_key, geo_level" if has_level else "area_key",
+                detail=" | ".join(notes) or None,
+            )
 
 
 # ----------------------------------------------------------------------------------
@@ -382,7 +492,9 @@ def check_metric(dq, profile):
         t.reconcile()
 
     t.count("S06", f"SELECT count(*) FROM {METRIC} WHERE value < 0", total_sql, column_name="value")
-    t.count("S08", f"""
+    t.count(
+        "S08",
+        f"""
         SELECT count(*) FROM {METRIC}
         WHERE year IS NULL OR year NOT BETWEEN 2000 AND year(current_date())
            OR (period_grain = 'year'  AND NOT period_key RLIKE '^[0-9]{{4}}$')
@@ -391,33 +503,56 @@ def check_metric(dq, profile):
                AND (NOT period_key RLIKE '^[0-9]{{4}}-W[0-9]{{2}}$' OR week NOT BETWEEN 1 AND 53))
            OR (period_grain = 'week'  AND period_basis = 'source_date_unconfirmed'
                AND NOT period_key RLIKE '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$')
-           OR period_grain NOT IN ('year', 'month', 'week')""", total_sql, column_name="period_key")
-    t.count("S12", f"SELECT count(*) FROM {METRIC} WHERE value IS NULL", total_sql, column_name="value",
-            threshold=0.05)
-    t.count("S35", f"""SELECT count(*) FROM {METRIC}
+           OR period_grain NOT IN ('year', 'month', 'week')""",
+        total_sql,
+        column_name="period_key",
+    )
+    t.count(
+        "S12",
+        f"SELECT count(*) FROM {METRIC} WHERE value IS NULL",
+        total_sql,
+        column_name="value",
+        threshold=0.05,
+    )
+    t.count(
+        "S35",
+        f"""SELECT count(*) FROM {METRIC}
                        WHERE value_type = 'modelled' AND NOT (value_lower <= value AND value <= value_upper)""",
-            f"SELECT count(*) FROM {METRIC} WHERE value_type = 'modelled'", source_key="ihme_gbd",
-            column_name="value_lower, value, value_upper")
-    t.count("S36", f"""SELECT count(*) FROM {METRIC}
+        f"SELECT count(*) FROM {METRIC} WHERE value_type = 'modelled'",
+        source_key="ihme_gbd",
+        column_name="value_lower, value, value_upper",
+    )
+    t.count(
+        "S36",
+        f"""SELECT count(*) FROM {METRIC}
                        WHERE (value IS NULL) = (value_status = 'ok')
                           OR measure_definition IS NULL OR value_unit IS NULL OR location_basis IS NULL
-                          OR value_type IS NULL OR geo_level IS NULL""", total_sql,
-            column_name="value, value_status, measure_definition, value_unit, location_basis")
-    t.count("S37", f"""
+                          OR value_type IS NULL OR geo_level IS NULL""",
+        total_sql,
+        column_name="value, value_status, measure_definition, value_unit, location_basis",
+    )
+    t.count(
+        "S37",
+        f"""
         SELECT (SELECT count(*) FROM {METRIC} m LEFT ANTI JOIN {DIRECTORY} d ON d.disease_key = m.disease_key)
              + (SELECT count(*) FROM {METRIC}
-                WHERE NOT area_key RLIKE '^(psgc:[0-9]{{10}}|ph|foreign|hist:[a-z_]+)$')""", total_sql,
-            column_name="disease_key, area_key")
+                WHERE NOT area_key RLIKE '^(psgc:[0-9]{{10}}|ph|foreign|hist:[a-z_]+)$')""",
+        total_sql,
+        column_name="disease_key, area_key",
+    )
     # S49, S50: the PSGC codes behind the area keys exist in geography silver at the stated level
     t.geography()
 
     # S10: sums in silver equal the same sums taken from bronze
     for source_key, measure, bronze_short, col in [
-            ("doh_foi_dengue", "cases", "diseases_doh_foi_dengue_bronze", "Cases"),
-            ("doh_foi_dengue", "deaths", "diseases_doh_foi_dengue_bronze", "Deaths"),
-            ("upnoah", "cases", "diseases_upnoah_dengue_regional_bronze", "DC_DOH"),
-            ("psa_deaths_region_annual", "deaths", "diseases_psa_deaths_region_annual_bronze", "total")]:
-        s = scalar(f"SELECT sum(value) FROM {METRIC} WHERE _source_key = '{source_key}' AND measure = '{measure}'")
+        ("doh_foi_dengue", "cases", "diseases_doh_foi_dengue_bronze", "Cases"),
+        ("doh_foi_dengue", "deaths", "diseases_doh_foi_dengue_bronze", "Deaths"),
+        ("upnoah", "cases", "diseases_upnoah_dengue_regional_bronze", "DC_DOH"),
+        ("psa_deaths_region_annual", "deaths", "diseases_psa_deaths_region_annual_bronze", "total"),
+    ]:
+        s = scalar(
+            f"SELECT sum(value) FROM {METRIC} WHERE _source_key = '{source_key}' AND measure = '{measure}'"
+        )
         b = scalar(f"""SELECT sum(try_cast(regexp_replace(trim(`{col}`), '[ ,]', '') AS DECIMAL(20,4)))
                        FROM {BRONZE}.{bronze_short} WHERE _source_key = '{source_key}'""")
         t.value("S10", s, b, source_key=source_key, column_name=f"{measure} (bronze column {col})")
@@ -432,9 +567,14 @@ def check_metric(dq, profile):
                           FROM {QUALITY}.row_disposition
                           WHERE build_id = '{t.build_id}' AND target_table = '{METRIC}'
                             AND disposition = 'quarantined'""").collect()[0]
-        t.value("S45", f"{q['n']} quarantined, {q['other']} with another reason", "only reason area_unresolved",
-                ok=q["other"] == 0, source_key="doh_fhsis",
-                detail="FHSIS TB special geographic area codes 19999..... stay out of silver until reviewed")
+        t.value(
+            "S45",
+            f"{q['n']} quarantined, {q['other']} with another reason",
+            "only reason area_unresolved",
+            ok=q["other"] == 0,
+            source_key="doh_fhsis",
+            detail="FHSIS TB special geographic area codes 19999..... stay out of silver until reviewed",
+        )
         # keep the quarantined bronze rows where a reviewer can read them (not a restricted source)
         rows = spark.sql(f"""
             SELECT b._source_file, b._source_sheet, b._source_row_num, b.psgc_code, b.area_name
@@ -443,12 +583,19 @@ def check_metric(dq, profile):
               ON b._source_key = d.source_key AND b._source_file = d.source_file
              AND b._source_sheet <=> d.source_sheet AND b._source_row_num = d.source_row_num
             WHERE d.build_id = '{t.build_id}' AND d.target_table = '{METRIC}' AND d.disposition = 'quarantined'""")
-        dq.quarantine(rows, METRIC, "S45", "area_unresolved",
-                      key_cols=["_source_file", "_source_sheet", "_source_row_num"],
-                      source_table=f"{BRONZE}.diseases_fhsis_tb_bronze")
+        dq.quarantine(
+            rows,
+            METRIC,
+            "S45",
+            "area_unresolved",
+            key_cols=["_source_file", "_source_sheet", "_source_row_num"],
+            source_table=f"{BRONZE}.diseases_fhsis_tb_bronze",
+        )
 
     # S38: every approved aggregation set adds up to all causes, wherever all causes is published
-    t.count("S38", f"""
+    t.count(
+        "S38",
+        f"""
         SELECT count(*) FROM (
           SELECT m._source_key, m.area_key, m.period_grain, m.period_key, g.aggregation_set,
                  sum(m.value) AS set_sum, max(a.value) AS all_causes
@@ -461,18 +608,25 @@ def check_metric(dq, profile):
           WHERE m.measure = 'deaths' AND m.value_status = 'ok'
           GROUP BY m._source_key, m.area_key, m.period_grain, m.period_key, g.aggregation_set)
         WHERE NOT (set_sum <=> all_causes)""",
-            f"""SELECT count(*) FROM {METRIC} WHERE disease_key = 'all_causes' AND measure = 'deaths'""",
-            detail="groups = source x area x period where the member rows do not sum to all_causes")
-    t.count("S39", f"""
+        f"""SELECT count(*) FROM {METRIC} WHERE disease_key = 'all_causes' AND measure = 'deaths'""",
+        detail="groups = source x area x period where the member rows do not sum to all_causes",
+    )
+    t.count(
+        "S39",
+        f"""
         SELECT count(*) FROM {AGG} g
         JOIN {DIRECTORY} d1 ON d1.disease_key = g.disease_key
         LEFT JOIN {DIRECTORY} d2 ON d2.disease_key = d1.parent_disease_key
         JOIN {AGG} p ON p.aggregation_set = g.aggregation_set
          AND p.disease_key IN (d1.parent_disease_key, d2.parent_disease_key)""",
-            f"SELECT count(*) FROM {AGG}", detail="a member whose parent or grandparent is also a member")
+        f"SELECT count(*) FROM {AGG}",
+        detail="a member whose parent or grandparent is also a member",
+    )
 
     # ---- WARN: the sources disagree or have gaps; silver is still a faithful copy -------------
-    t.count("S40", f"""
+    t.count(
+        "S40",
+        f"""
         SELECT count(*) FROM (
           SELECT disease_key, year,
                  sum(CASE WHEN period_grain = 'month' THEN value END) AS months,
@@ -480,38 +634,53 @@ def check_metric(dq, profile):
                  max(CASE WHEN period_grain = 'year' THEN value END) AS year_total
           FROM {METRIC} WHERE _source_key = 'psa_deaths_national_monthly'
           GROUP BY disease_key, year) WHERE n_months = 12 AND NOT (months <=> year_total)""",
-            f"""SELECT count(*) FROM {METRIC} WHERE _source_key = 'psa_deaths_national_monthly' AND period_grain = 'year'""",
-            source_key="psa_deaths_national_monthly", detail="cause-years where 12 months do not sum to the Total column")
-    t.count("S41", f"""
+        f"""SELECT count(*) FROM {METRIC} WHERE _source_key = 'psa_deaths_national_monthly' AND period_grain = 'year'""",
+        source_key="psa_deaths_national_monthly",
+        detail="cause-years where 12 months do not sum to the Total column",
+    )
+    t.count(
+        "S41",
+        f"""
         SELECT count(*) FROM (
           SELECT disease_key, year,
                  sum(CASE WHEN geo_level IN ('region', 'foreign') THEN value END) AS parts,
                  max(CASE WHEN geo_level = 'country' THEN value END) AS country
           FROM {METRIC} WHERE _source_key = 'psa_deaths_region_annual'
           GROUP BY disease_key, year) WHERE NOT (parts <=> country)""",
-            f"""SELECT count(*) FROM {METRIC} WHERE _source_key = 'psa_deaths_region_annual' AND geo_level = 'country'""",
-            source_key="psa_deaths_region_annual", detail="cause-years where regions + foreign do not sum to Philippines")
-    t.count("S42", f"""
+        f"""SELECT count(*) FROM {METRIC} WHERE _source_key = 'psa_deaths_region_annual' AND geo_level = 'country'""",
+        source_key="psa_deaths_region_annual",
+        detail="cause-years where regions + foreign do not sum to Philippines",
+    )
+    t.count(
+        "S42",
+        f"""
         SELECT count(*) FROM {METRIC} a
         JOIN {METRIC} b ON b.disease_key = a.disease_key AND b.year = a.year
         WHERE a._source_key = 'psa_deaths_national_monthly' AND a.period_grain = 'year'
           AND b._source_key = 'psa_deaths_region_annual' AND b.area_key = 'ph'
           AND NOT (a.value <=> b.value)""",
-            f"""SELECT count(*) FROM {METRIC} a
+        f"""SELECT count(*) FROM {METRIC} a
                 JOIN {METRIC} b ON b.disease_key = a.disease_key AND b.year = a.year
                 WHERE a._source_key = 'psa_deaths_national_monthly' AND a.period_grain = 'year'
                   AND b._source_key = 'psa_deaths_region_annual' AND b.area_key = 'ph'""",
-            detail="cause-years (2023, 2024) where the monthly table and the region table give different national totals")
-    t.count("S43", f"""
+        detail="cause-years (2023, 2024) where the monthly table and the region table give different national totals",
+    )
+    t.count(
+        "S43",
+        f"""
         SELECT count(DISTINCT area_key) FROM (
           SELECT area_key, datediff(to_date(period_key), lag(to_date(period_key)) OVER (PARTITION BY area_key ORDER BY period_key)) AS gap
           FROM (SELECT DISTINCT area_key, period_key FROM {METRIC} WHERE _source_key = 'hdx_dengue'))
         WHERE gap <> 7""",
-            f"SELECT count(DISTINCT area_key) FROM {METRIC} WHERE _source_key = 'hdx_dengue'",
-            source_key="hdx_dengue", detail="areas whose weekly dates are not all 7 days apart")
+        f"SELECT count(DISTINCT area_key) FROM {METRIC} WHERE _source_key = 'hdx_dengue'",
+        source_key="hdx_dengue",
+        detail="areas whose weekly dates are not all 7 days apart",
+    )
     # S44: DOH FOI and UP NOAH, complete common years only (2022-2024). UP NOAH has no Negros Island
     # Region, so Regions VI + VII + NIR are compared as one combined area.
-    t.count("S44", f"""
+    t.count(
+        "S44",
+        f"""
         WITH x AS (
           SELECT _source_key, year,
                  CASE WHEN area_key IN ('psgc:0600000000', 'psgc:0700000000', 'psgc:1800000000')
@@ -522,10 +691,11 @@ def check_metric(dq, profile):
         SELECT count(*) FROM (SELECT * FROM x WHERE _source_key = 'doh_foi_dengue') d
         JOIN (SELECT * FROM x WHERE _source_key = 'upnoah') u ON u.year = d.year AND u.area = d.area
         WHERE abs(d.cases - u.cases) > 0.10 * greatest(d.cases, u.cases)""",
-            f"""SELECT count(*) FROM (SELECT DISTINCT year,
+        f"""SELECT count(*) FROM (SELECT DISTINCT year,
                        CASE WHEN area_key IN ('psgc:0600000000', 'psgc:0700000000', 'psgc:1800000000') THEN 'x' ELSE area_key END
                 FROM {METRIC} WHERE _source_key = 'upnoah' AND year BETWEEN 2022 AND 2024)""",
-            detail="region-years (2022-2024) where annual dengue cases differ by more than 10% between DOH FOI and UP NOAH")
+        detail="region-years (2022-2024) where annual dengue cases differ by more than 10% between DOH FOI and UP NOAH",
+    )
 
     if profile:
         # value_lower / value_upper are filled only for IHME: their min / max would copy single IHME
@@ -546,14 +716,25 @@ def check_deaths_age(dq, profile):
         t.freshness()
         t.reconcile()
     t.count("S06", f"SELECT count(*) FROM {AGE} WHERE deaths < 0", total_sql, column_name="deaths")
-    t.count("S12", f"SELECT count(*) FROM {AGE} WHERE deaths IS NULL", total_sql, column_name="deaths",
-            threshold=0.05)
-    t.count("S37", f"SELECT count(*) FROM {AGE} a LEFT ANTI JOIN {DIRECTORY} d ON d.disease_key = a.disease_key",
-            total_sql, column_name="disease_key")
+    t.count(
+        "S12",
+        f"SELECT count(*) FROM {AGE} WHERE deaths IS NULL",
+        total_sql,
+        column_name="deaths",
+        threshold=0.05,
+    )
+    t.count(
+        "S37",
+        f"SELECT count(*) FROM {AGE} a LEFT ANTI JOIN {DIRECTORY} d ON d.disease_key = a.disease_key",
+        total_sql,
+        column_name="disease_key",
+    )
     # S49: the region codes exist in geography silver (code only; the level is checked on the metric table)
     t.geography(has_level=False)
     # S46: the 20 age groups of a cause, area and year add up to the total in the metric table
-    t.count("S46", f"""
+    t.count(
+        "S46",
+        f"""
         SELECT count(*) FROM (
           SELECT disease_key, area_key, year, sum(deaths) AS by_age, count(*) AS n FROM {AGE}
           GROUP BY disease_key, area_key, year) a
@@ -561,8 +742,9 @@ def check_deaths_age(dq, profile):
           ON m._source_key = 'psa_deaths_region_annual' AND m.disease_key = a.disease_key
          AND m.area_key = a.area_key AND m.year = a.year
         WHERE a.n <> 20 OR NOT (cast(m.value AS BIGINT) <=> a.by_age)""",
-            f"SELECT count(*) FROM (SELECT DISTINCT disease_key, area_key, year FROM {AGE})",
-            detail="cause x area x year groups without 20 age groups, or not equal to the metric table total")
+        f"SELECT count(*) FROM (SELECT DISTINCT disease_key, area_key, year FROM {AGE})",
+        detail="cause x area x year groups without 20 age groups, or not equal to the metric table total",
+    )
     if profile:
         dq.profile_table(AGE, exclude=("_silver_build_id",))
 
@@ -579,19 +761,34 @@ def check_hospital_encounters(dq, profile):
     if t.build_id:
         t.freshness()
         t.reconcile()
-    t.count("S36", f"""SELECT count(*) FROM {ENC}
+    t.count(
+        "S36",
+        f"""SELECT count(*) FROM {ENC}
                        WHERE (date_status = 'ok') <> occupancy_eligible
                           OR (occupancy_eligible AND (admission_date IS NULL OR discharge_date IS NULL))
-                          OR age_group IS NULL OR is_inpatient_confirmed IS NULL""", total_sql,
-            column_name="date_status, occupancy_eligible, age_group")
+                          OR age_group IS NULL OR is_inpatient_confirmed IS NULL""",
+        total_sql,
+        column_name="date_status, occupancy_eligible, age_group",
+    )
     # S47: review counts. Kept in the table with a flag; shown here so a person looks at them.
     for column, where, note in [
-            ("date_status", "date_status <> 'ok'", "not used for occupancy"),
-            ("is_long_stay", "is_long_stay", "published length of stay above 60 days"),
-            ("death_fields_consistent", "NOT death_fields_consistent", "Result and DeathDate disagree"),
-            ("patient_location_status", "patient_location_status <> 'ok'", "province or city not resolved"),
-            ("age_group", "age_group = 'unknown'", "age missing or negative")]:
-        t.count("S47", f"SELECT count(*) FROM {ENC} WHERE {where}", total_sql, column_name=column, detail=note)
+        ("date_status", "date_status <> 'ok'", "not used for occupancy"),
+        ("is_long_stay", "is_long_stay", "published length of stay above 60 days"),
+        ("death_fields_consistent", "NOT death_fields_consistent", "Result and DeathDate disagree"),
+        (
+            "patient_location_status",
+            "patient_location_status <> 'ok'",
+            "province or city not resolved",
+        ),
+        ("age_group", "age_group = 'unknown'", "age missing or negative"),
+    ]:
+        t.count(
+            "S47",
+            f"SELECT count(*) FROM {ENC} WHERE {where}",
+            total_sql,
+            column_name=column,
+            detail=note,
+        )
     # no profile: minimum and maximum would copy patient values into quality.profile
 
 
@@ -603,7 +800,9 @@ def check_coverage(dq, profile):
     t.basics(["_source_key", "disease_scope", "geo_level", "period_grain", "year"])
     t.build_record()
     # S48: same sources, levels, grains and years as the metric table, and the same period counts
-    t.count("S48", f"""
+    t.count(
+        "S48",
+        f"""
         WITH m AS (SELECT _source_key, geo_level, period_grain, year, count(DISTINCT period_key) AS periods
                    FROM {METRIC} GROUP BY _source_key, geo_level, period_grain, year)
         SELECT (SELECT count(*) FROM m LEFT ANTI JOIN {COV} c
@@ -612,8 +811,9 @@ def check_coverage(dq, profile):
              + (SELECT count(*) FROM {COV} c LEFT ANTI JOIN m
                   ON c._source_key = m._source_key AND c.geo_level = m.geo_level
                  AND c.period_grain = m.period_grain AND c.year = m.year)""",
-            f"SELECT count(*) FROM {COV}",
-            detail="coverage rows that do not match the metric table: rerun diseases_silver_04 after 01")
+        f"SELECT count(*) FROM {COV}",
+        detail="coverage rows that do not match the metric table: rerun diseases_silver_04 after 01",
+    )
     if profile:
         dq.profile_table(COV, exclude=("_silver_build_id",))
 
@@ -630,16 +830,26 @@ TABLE_CHECKS = {
 
 
 def main():
-    wanted = list(TABLE_CHECKS) if ARGS.tables.strip().upper() == "ALL" else \
-        [t.strip() for t in ARGS.tables.split(",") if t.strip()]
+    wanted = (
+        list(TABLE_CHECKS)
+        if ARGS.tables.strip().upper() == "ALL"
+        else [t.strip() for t in ARGS.tables.split(",") if t.strip()]
+    )
     unknown = [t for t in wanted if t not in TABLE_CHECKS]
     if unknown:
         raise KeyError(f"Unknown table(s) {unknown}. Choose from {list(TABLE_CHECKS)}")
 
     # DQRun writes qc_results, table_stats, profile and run_log on exit, then raises if any FAIL.
-    with DQRun(layer="silver", domain=DOMAIN, script_name=SCRIPT_NAME, job_run_id=ARGS.job_run_id,
-               source_keys=ARGS.tables, fail_on_error=ARGS.fail_on_error == "true",
-               code_version=ARGS.code_version, dq_schema=QUALITY) as dq:
+    with DQRun(
+        layer="silver",
+        domain=DOMAIN,
+        script_name=SCRIPT_NAME,
+        job_run_id=ARGS.job_run_id,
+        source_keys=ARGS.tables,
+        fail_on_error=ARGS.fail_on_error == "true",
+        code_version=ARGS.code_version,
+        dq_schema=QUALITY,
+    ) as dq:
         for name in wanted:
             table, fn = TABLE_CHECKS[name]
             print(f"[{name}] {table}")
@@ -648,8 +858,15 @@ def main():
             except Exception as e:
                 # One table erroring is recorded as a failed check; the others still run.
                 cname, ctype, severity = CHECKS["S00"]
-                dq.record("S00", table_name=table, status="FAIL", check_name=cname, check_type=ctype,
-                          severity=severity, detail=f"{type(e).__name__}: {e}")
+                dq.record(
+                    "S00",
+                    table_name=table,
+                    status="FAIL",
+                    check_name=cname,
+                    check_type=ctype,
+                    severity=severity,
+                    detail=f"{type(e).__name__}: {e}",
+                )
 
 
 if __name__ == "__main__":
