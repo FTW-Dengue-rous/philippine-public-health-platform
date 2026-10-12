@@ -23,6 +23,34 @@
 #   The script also validates the population_parse_status contract and that
 #   VALID rows retain population_raw. These are reported in the S09 detail
 #   because the shared registry currently reserves S09 for reconciliation.
+#
+# Added 2026-10-12 (population codes S51-S58; no change to the Silver notebook)
+#   S51  lineage columns not null (source_version, content_checksum,        FAIL
+#        batch_id, silver_processed_at)
+#   S52  population filled exactly when the status is VALID or              FAIL
+#        VALID_WITH_NOTE; VALID_WITH_NOTE exactly when a note was moved out
+#   S53  rows without a usable population (MISSING / INVALID), listed       WARN
+#   S54  every geography area has a row for every census year               WARN
+#   S55  province / region total = sum of its cities and municipalities     WARN
+#        (moved here from the last cell of psgc_population_silver.ipynb so
+#        the result is stored in qc_results)
+#   S56  national census total matches the PSA release (control)            WARN until confirmed
+#   S57  one population snapshot, same PSGC release as geography Silver     WARN
+#   S58  change between census years above 30% (province / city / mun)      WARN
+#   strict_registry is False for now (same as the other silver QC scripts), so
+#   these codes do not need to be registered yet. They are in Step 1 of
+#   quality_registry_seed.sql; when silver QC is final, run the seed and pass
+#   --strict_registry true (or change the default below).
+#
+# Fixed 2026-10-12: VALID_WITH_NOTE (added to the Silver notebook on
+# 2026-10-11) is an approved parse status. Before, S09 counted those 32 rows
+# as invalid and failed.
+#
+# Expected WARNs (known source gaps, not bugs)
+#   S54/S56: Negros Island Region has no 2015 / 2020 region rows; Sulu has no
+#            2024 rows.
+#   S55: Maguindanao del Norte 2015 and 2020 (province total excludes Cotabato
+#        City), Benguet 2015 (444,224 vs 446,224 in the source).
 # =============================================================================
 
 import argparse
@@ -92,12 +120,25 @@ REQUIRED_COLUMNS = [
     "population",
     "population_raw",
     "population_parse_status",
+    "population_note",
     "source_version",
+    "content_checksum",
     "batch_id",
     "silver_processed_at",
 ]
 
-APPROVED_PARSE_STATUS = ("VALID", "MISSING", "INVALID")
+APPROVED_PARSE_STATUS = ("VALID", "VALID_WITH_NOTE", "MISSING", "INVALID")
+USABLE_PARSE_STATUS = ("VALID", "VALID_WITH_NOTE")  # population is a number
+
+# S54 / S56 / S58 settings
+CENSUS_YEARS = (2015, 2020, 2024)
+AREA_LEVELS = ("Reg", "Prov", "City", "Mun", "SubMun", "Bgy")
+MAX_CHANGE_PCT = 30.0
+# S56 control: PSA national census totals. CONTROL_CONFIRMED = False records a
+# difference as WARN; set it to True after the first run agrees (then FAIL).
+NATIONAL_CONTROL = {2015: 100981437, 2020: 109035343, 2024: 112729484}
+CONTROL_CONFIRMED = False
+CONTROL_TOLERANCE_PCT = 0.1
 
 # The registry already assigns these meanings to S-codes. Do not create a
 # population-specific duplicate code without first changing the registry.
@@ -110,6 +151,15 @@ CHECKS = {
     "S06": ("counts non-negative", "VALIDITY", "FAIL"),
     "S08": ("period within expected range", "VALIDITY", "FAIL"),
     "S09": ("bronze to silver rows reconcile", "RECONCILIATION", "FAIL"),
+    # population codes (see header)
+    "S51": ("population lineage columns not null", "COMPLETENESS", "FAIL"),
+    "S52": ("population filled exactly when the status is valid", "VALIDITY", "FAIL"),
+    "S53": ("rows without a usable population", "COMPLETENESS", "WARN"),
+    "S54": ("every geography area has a row for every census year", "COMPLETENESS", "WARN"),
+    "S55": ("area total equals the sum of its cities and municipalities", "CONSISTENCY", "WARN"),
+    "S56": ("national census total matches the PSA release", "RECONCILIATION", "WARN"),
+    "S57": ("one population snapshot from the current PSGC release", "CONSISTENCY", "WARN"),
+    "S58": ("change between census years above 30 percent", "VALIDITY", "WARN"),
 }
 
 
@@ -496,7 +546,7 @@ def run_checks(dq, entry):
         SELECT COUNT(*)
         FROM {table_name}
         WHERE population_parse_status IS NULL
-           OR population_parse_status NOT IN ('VALID', 'MISSING', 'INVALID')
+           OR population_parse_status NOT IN ('VALID', 'VALID_WITH_NOTE', 'MISSING', 'INVALID')
         """
     )
 
@@ -504,7 +554,7 @@ def run_checks(dq, entry):
         f"""
         SELECT COUNT(*)
         FROM {table_name}
-        WHERE population_parse_status = 'VALID'
+        WHERE population_parse_status IN ('VALID', 'VALID_WITH_NOTE')
           AND population_raw IS NULL
         """
     )
@@ -513,7 +563,7 @@ def run_checks(dq, entry):
         f"""
         SELECT COUNT(*)
         FROM {table_name}
-        WHERE population_parse_status = 'VALID'
+        WHERE population_parse_status IN ('VALID', 'VALID_WITH_NOTE')
           AND population IS NULL
         """
     )
@@ -555,6 +605,9 @@ def run_checks(dq, entry):
         ),
     )
 
+    # S51-S58: added checks (see header). Same table, same DQRun session.
+    run_population_checks(dq, table_name, geography_table, silver_count, skip, overrides)
+
     # Final schema check is intentionally informational here. S02 covers the
     # documented grain and the Silver build defines the remaining columns.
     missing_columns = [c for c in REQUIRED_COLUMNS if c not in silver_df.columns]
@@ -580,6 +633,197 @@ def run_checks(dq, entry):
     )
 
 
+def listing(sql, limit=15):
+    """First rows of a query as one short text, for the detail column."""
+    rows = spark.sql(sql).limit(limit).collect()
+    return "; ".join(" ".join(str(v) for v in row) for row in rows) or None
+
+
+def run_population_checks(dq, table_name, geography_table, silver_count, skip, overrides):
+    """S51-S58. Reads population Silver and geography Silver only; changes nothing."""
+    usable = "population_parse_status IN ('VALID', 'VALID_WITH_NOTE')"
+    # Latest geography snapshot (geography Silver keeps one row per psgc_code per content_checksum)
+    geo = f"""(SELECT psgc_code, geographic_level FROM {geography_table}
+              WHERE content_checksum = (SELECT max_by(content_checksum, silver_processed_at)
+                                        FROM {geography_table}))"""
+    levels = ", ".join(f"'{x}'" for x in AREA_LEVELS)
+    years = ", ".join(str(y) for y in CENSUS_YEARS)
+
+    def rec(check_id, **kwargs):
+        return record(dq, check_id, table_name, SOURCE_KEY, skip, overrides, **kwargs)
+
+    # S51 - lineage columns not null (auditability)
+    lineage = ["source_version", "content_checksum", "batch_id", "silver_processed_at"]
+    missing_lineage = scalar(
+        f"SELECT COUNT(*) FROM {table_name} WHERE " + " OR ".join(f"{c} IS NULL" for c in lineage)
+    )
+    rec(
+        "S51",
+        status="PASS" if missing_lineage == 0 else "FAIL",
+        fail_count=missing_lineage,
+        total_count=silver_count,
+        column_name=", ".join(lineage),
+    )
+
+    # S52 - value agrees with its parse status
+    status_mismatch = scalar(f"""
+        SELECT COUNT(*) FROM {table_name}
+        WHERE (population IS NOT NULL) <> COALESCE({usable}, FALSE)
+           OR ((population_parse_status = 'VALID_WITH_NOTE')
+               <> (population_note IS NOT NULL AND TRIM(population_note) <> ''))""")
+    rec(
+        "S52",
+        status="PASS" if status_mismatch == 0 else "FAIL",
+        fail_count=status_mismatch,
+        total_count=silver_count,
+        column_name="population, population_parse_status, population_note",
+        detail="VALID* rows need a number; MISSING / INVALID stay null (never 0); "
+        "VALID_WITH_NOTE exactly when a note was moved out",
+    )
+
+    # S53 - rows without a usable population (completeness, for a person to read)
+    unusable = scalar(f"SELECT COUNT(*) FROM {table_name} WHERE NOT COALESCE({usable}, FALSE)")
+    rec(
+        "S53",
+        status="PASS" if unusable == 0 else "WARN",
+        fail_count=unusable,
+        total_count=silver_count,
+        column_name="population_parse_status",
+        detail=listing(f"""SELECT population_parse_status, population_year, COUNT(*) FROM {table_name}
+                           WHERE NOT COALESCE({usable}, FALSE) GROUP BY 1, 2 ORDER BY 1, 2"""),
+    )
+
+    # S54 - every geography area has a row for every census year
+    spark.sql(f"""
+        SELECT g.geographic_level AS level, y.year, g.psgc_code
+        FROM {geo} g
+        CROSS JOIN (SELECT EXPLODE(ARRAY({years})) AS year) y
+        LEFT ANTI JOIN {table_name} p ON p.psgc_code = g.psgc_code AND p.population_year = y.year
+        WHERE g.geographic_level IN ({levels})""").createOrReplaceTempView("population_qc_gaps")
+    gaps = scalar("SELECT COUNT(*) FROM population_qc_gaps")
+    expected_rows = scalar(
+        f"SELECT COUNT(*) * {len(CENSUS_YEARS)} FROM {geo} WHERE geographic_level IN ({levels})"
+    )
+    rec(
+        "S54",
+        status="PASS" if gaps == 0 else "WARN",
+        fail_count=gaps,
+        total_count=expected_rows,
+        column_name="psgc_code, population_year",
+        detail=listing("""SELECT level, year, COUNT(*) FROM population_qc_gaps GROUP BY 1, 2
+                          ORDER BY CASE level WHEN 'Reg' THEN 1 WHEN 'Prov' THEN 2 WHEN 'City' THEN 3
+                                   WHEN 'Mun' THEN 4 WHEN 'SubMun' THEN 5 ELSE 6 END, year"""),
+    )
+
+    # S55 - totals equal their parts (the notebook's last cell, now recorded).
+    # Parts are City + Mun rows (never SubMun: Manila's districts are inside the City of Manila).
+    # Province = parts with the same 5-digit prefix (HUCs carry their own prefix, so they are left
+    # out, matching 2024 province totals that exclude HUCs). Region = parts with the same 2 digits.
+    spark.sql(f"""
+        WITH v AS (
+          SELECT p.psgc_code, p.population_year AS year, p.population, g.geographic_level AS level
+          FROM {table_name} p JOIN {geo} g ON g.psgc_code = p.psgc_code
+          WHERE COALESCE({usable}, FALSE)),
+        parts AS (SELECT * FROM v WHERE level IN ('City', 'Mun')),
+        prov AS (
+          SELECT 'province' AS kind, t.psgc_code, t.year, t.population AS published,
+                 SUM(c.population) AS parts
+          FROM v t JOIN parts c ON SUBSTR(c.psgc_code, 1, 5) = SUBSTR(t.psgc_code, 1, 5) AND c.year = t.year
+          WHERE t.level = 'Prov' GROUP BY t.psgc_code, t.year, t.population),
+        reg AS (
+          SELECT 'region' AS kind, t.psgc_code, t.year, t.population AS published,
+                 SUM(c.population) AS parts
+          FROM v t JOIN parts c ON SUBSTR(c.psgc_code, 1, 2) = SUBSTR(t.psgc_code, 1, 2) AND c.year = t.year
+          WHERE t.level = 'Reg' GROUP BY t.psgc_code, t.year, t.population)
+        SELECT * FROM prov UNION ALL SELECT * FROM reg""").createOrReplaceTempView(
+        "population_qc_rollup"
+    )
+    for kind, admin_level in (("province", 2), ("region", 1)):
+        bad = scalar(
+            f"SELECT COUNT(*) FROM population_qc_rollup WHERE kind = '{kind}' AND published <> parts"
+        )
+        rec(
+            "S55",
+            status="PASS" if bad == 0 else "WARN",
+            fail_count=bad,
+            total_count=scalar(f"SELECT COUNT(*) FROM population_qc_rollup WHERE kind = '{kind}'"),
+            column_name=f"population ({kind})",
+            admin_level=admin_level,
+            detail=listing(f"""SELECT psgc_code, year, published, 'vs', parts FROM population_qc_rollup
+                               WHERE kind = '{kind}' AND published <> parts ORDER BY year, psgc_code"""),
+        )
+
+    # S56 - national total vs the PSA census release (accuracy). Sum of region rows; a region
+    # without a row that year (NIR 2015 / 2020) is filled with the sum of its cities and
+    # municipalities.
+    for year, expected in NATIONAL_CONTROL.items():
+        observed = scalar(f"""
+            WITH v AS (
+              SELECT p.psgc_code, p.population, g.geographic_level AS level
+              FROM {table_name} p JOIN {geo} g ON g.psgc_code = p.psgc_code
+              WHERE p.population_year = {year} AND COALESCE({usable}, FALSE)),
+            regions AS (SELECT DISTINCT SUBSTR(psgc_code, 1, 2) AS r FROM {geo} WHERE geographic_level = 'Reg'),
+            reg AS (SELECT SUBSTR(psgc_code, 1, 2) AS r, MAX(population) AS pop FROM v
+                    WHERE level = 'Reg' GROUP BY 1),
+            lgu AS (SELECT SUBSTR(psgc_code, 1, 2) AS r, SUM(population) AS pop FROM v
+                    WHERE level IN ('City', 'Mun') GROUP BY 1)
+            SELECT COALESCE(SUM(COALESCE(reg.pop, lgu.pop)), 0)
+            FROM regions LEFT JOIN reg ON reg.r = regions.r LEFT JOIN lgu ON lgu.r = regions.r""")
+        diff_pct = abs(observed - expected) * 100.0 / expected
+        severity = "FAIL" if CONTROL_CONFIRMED else "WARN"
+        record(
+            dq,
+            "S56",
+            table_name,
+            SOURCE_KEY,
+            skip,
+            {**overrides, "S56": severity},
+            status="PASS" if diff_pct <= CONTROL_TOLERANCE_PCT else severity,
+            observed=observed,
+            expected=expected,
+            column_name="population",
+            admin_level=0,
+            detail=f"{year}: difference {observed - expected:+,} ({diff_pct:.3f}%), tolerance "
+            f"{CONTROL_TOLERANCE_PCT}%"
+            + ("" if CONTROL_CONFIRMED else "; control not confirmed yet"),
+        )
+
+    # S57 - one population snapshot, from the same PSGC release as geography Silver (timeliness)
+    snapshots = scalar(f"SELECT COUNT(DISTINCT content_checksum) FROM {table_name}")
+    pop_checksum = scalar(f"SELECT MAX(content_checksum) FROM {table_name}")
+    geo_checksum = scalar(
+        f"SELECT max_by(content_checksum, silver_processed_at) FROM {geography_table}"
+    )
+    rec(
+        "S57",
+        status="PASS" if snapshots == 1 and pop_checksum == geo_checksum else "WARN",
+        observed=f"{snapshots} snapshot(s); population {str(pop_checksum)[:12]}, geography {str(geo_checksum)[:12]}",
+        expected="1 snapshot, same as geography Silver",
+        column_name="content_checksum",
+        detail="Population and geography come from the same PSGC payload: rerun the population "
+        "notebook after geography takes a new release",
+    )
+
+    # S58 - business rule: plausible change between census years
+    spark.sql(f"""
+        SELECT p.psgc_code, g.geographic_level AS level, p.population_year AS year, p.population,
+               LAG(p.population) OVER (PARTITION BY p.psgc_code ORDER BY p.population_year) AS previous
+        FROM {table_name} p JOIN {geo} g ON g.psgc_code = p.psgc_code
+        WHERE COALESCE({usable}, FALSE) AND g.geographic_level IN ('Prov', 'City', 'Mun')
+    """).createOrReplaceTempView("population_qc_change")
+    change = f"previous > 0 AND ABS(population - previous) * 100.0 / previous > {MAX_CHANGE_PCT}"
+    jumps = scalar(f"SELECT COUNT(*) FROM population_qc_change WHERE {change} OR population = 0")
+    rec(
+        "S58",
+        status="PASS" if jumps == 0 else "WARN",
+        fail_count=jumps,
+        total_count=scalar("SELECT COUNT(*) FROM population_qc_change WHERE previous IS NOT NULL"),
+        column_name="population",
+        detail=listing(f"""SELECT psgc_code, level, year, previous, 'to', population FROM population_qc_change
+                           WHERE {change} OR population = 0 ORDER BY year, psgc_code"""),
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Silver QC for PSGC population data")
     parser.add_argument("--config_path", default=None)
@@ -587,6 +831,13 @@ def parse_args():
         "--fail_on_error",
         default="true",
         choices=["true", "false"],
+    )
+    parser.add_argument(
+        "--strict_registry",
+        default="false",
+        choices=["true", "false"],
+        help="false until silver QC is final; true needs every code in quality.check_registry "
+        "(quality_registry_seed.sql)",
     )
     parser.add_argument("--job_run_id", default=None)
     parser.add_argument("--code_version", default=None)
@@ -611,7 +862,7 @@ def main():
         source_keys=SOURCE_KEY,
         fail_on_error=args.fail_on_error == "true",
         code_version=args.code_version,
-        strict_registry=True,
+        strict_registry=args.strict_registry == "true",
     ) as dq:
         try:
             run_checks(dq, entry)

@@ -18,8 +18,12 @@
 --
 -- Names are compared after normalising: upper case, N for N-tilde, punctuation to spaces, and
 -- "CITY OF X" read as "X CITY". So "Cotabato City" equals "City of Cotabato".
--- =============================================================================
 
+-- Updated 2026-10-12: CTE g reads only the latest geography snapshot (max content_checksum by
+-- silver_processed_at). geography_silver keeps one row per psgc_code per snapshot, so without
+-- this filter a second PSGC release would make every code "appear more than once" (S93 FAIL).
+-- Results on today's single snapshot are unchanged.
+-- =============================================================================
 -- Name key used on both sides of the comparison
 CREATE OR REPLACE TEMPORARY FUNCTION se_geo_name_key(s STRING) RETURNS STRING  -- noqa: LT01
 RETURN regexp_replace(
@@ -40,6 +44,10 @@ WITH g AS (
         END AS geo_level,
         count(*) OVER (PARTITION BY lpad(trim(psgc_code), 10, '0')) AS rows_for_code
     FROM public_health.silver.geography_silver
+    WHERE content_checksum = (
+        SELECT max_by(latest.content_checksum, latest.silver_processed_at)
+        FROM public_health.silver.geography_silver AS latest
+    )
 ),
 
 m AS (
