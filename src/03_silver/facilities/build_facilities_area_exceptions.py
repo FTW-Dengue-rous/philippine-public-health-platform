@@ -302,13 +302,13 @@ class Geo:
         g["place"] = g.area_name.map(place_key)
         self.all = g
         self.areas = g[g.level.isin(["province", "city", "municipality", "submunicipality"])].copy()
-        self.name = dict(zip(g.psgc_code, g.area_name, strict=True))
-        self.level = dict(zip(g.psgc_code, g.level, strict=True))
-        self.city_class = dict(zip(g.psgc_code, g.city_class, strict=True))
+        self.name = dict(zip(g.psgc_code, g.area_name, strict=False))
+        self.level = dict(zip(g.psgc_code, g.level, strict=False))
+        self.city_class = dict(zip(g.psgc_code, g.city_class, strict=False))
         self.other = g[g.level.isna() & g.area_name.notna()]
         b = g[g.level == "barangay"]
         self.bgy_names = defaultdict(set)  # lgu code -> barangay place names
-        for c, nm in zip(b.psgc_code, b.area_name, strict=True):
+        for c, nm in zip(b.psgc_code, b.area_name, strict=False):
             self.bgy_names[fac_lgu(c[:7] + "000")].add(fac_place(nm))
         self.bgy_prov = Counter(b.psgc_code.str[:5])
         self.bgy_lgu = Counter(fac_lgu(c[:7] + "000") for c in b.psgc_code)
@@ -480,7 +480,7 @@ def address_lgu(geo, address, lgus, exclude=()):
         return None
     text = " " + (fac_place(address) or "") + " "
     hits = set()
-    for code, name in zip(lgus.psgc_code, lgus.area_name, strict=True):
+    for code, name in zip(lgus.psgc_code, lgus.area_name, strict=False):
         nm = fac_place(name) or ""
         if nm and nm.replace(" ", "") not in exclude and f" {nm} " in text:
             hits.add(fac_lgu(code))
@@ -514,7 +514,7 @@ def address_other_province(geo, label, rows, region, prov):
             continue
         hits = {
             c
-            for c, pc in zip(cands.psgc_code, cands.province, strict=True)
+            for c, pc in zip(cands.psgc_code, cands.province, strict=False)
             if fac_place(geo.name.get(pc)) and f" {fac_place(geo.name.get(pc))} " in text
         }
         if len(hits) == 1:
@@ -583,6 +583,7 @@ def main():
     args, _ = ap.parse_known_args()  # parse_known_args: notebook kernels pass their own arguments
     pre = f"{args.catalog}." if args.catalog else ""
     spark = SparkSession.builder.getOrCreate()
+
     def T(t):
         return spark.table(f"{pre}{t}").toPandas()
 
@@ -901,9 +902,7 @@ def main():
         ):
             a = geo.find(pk, lv, **sc)
             if len(a):
-                s = a.level.map(
-                    lambda lvl, h=hint: 2 if (h and lvl == "city") or (not h and lvl == "province") else 1
-                )
+                s = (a.level == ("city" if hint else "province")).astype(int) + 1
                 code = a.psgc_code[s == s.max()].iloc[0] if (s == s.max()).sum() == 1 else None
                 break
         resolved[(f, rn)] = code
@@ -1128,7 +1127,7 @@ def main():
         pi, gi = tree.query(
             points(pd.to_numeric(xy.X).values, pd.to_numeric(xy.Y).values), predicate="intersects"
         )
-        for i, g in zip(pi, gi, strict=True):
+        for i, g in zip(pi, gi, strict=False):
             pip[xy.index[i]] = bnd.psgc_code.iloc[g]
     except Exception as e:
         # Without the OSM evidence the OSM rows would come out needs_review: a different file, silently.
