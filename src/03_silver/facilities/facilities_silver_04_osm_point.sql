@@ -1,0 +1,33 @@
+-- =============================================================================
+-- Builds public_health.silver.facilities_osm_point_silver.
+-- Grain: one OpenStreetMap health facility from the Healthsites.io/HDX export.
+-- Key: (osm_type, osm_id).
+--
+-- Purpose
+--   Provides facility locations for mapping, distance analysis, and cross-checking
+--   the official facility registry. Do not use this table for official facility
+--   counts because OSM coverage is crowd-sourced and uneven.
+--
+-- Geography assignment
+--   Assigns each facility to a city/municipality using the first matching rule:
+--     1. Point-in-polygon using HDX administrative boundaries
+--     2. Nearest boundary within 1 km
+--     3. Configured OSM geography exception
+--     4. Unique addr:city match for rows without usable coordinates
+--   Quarantines rows that cannot be assigned. Coordinates take precedence over
+--   addr:city when the two disagree.
+--
+-- Source limitation
+--   Some OSM ways have no coordinates and can only be located at municipality
+--   level using addr:city. Areas without usable HDX polygons may also fall back
+--   to the nearest-boundary or addr:city rules.
+--
+-- Requires:
+--   facilities_silver_00_reference.sql
+--   facilities_silver_04a_osm_locate.py
+--   geography silver tables
+--   bronze QC for hdx_healthsites
+--
+-- Source: OpenStreetMap / Healthsites.io via HDX (ODbL 1.0).
+-- Attribution required: © OpenStreetMap contributors.
+-- =============================================================================

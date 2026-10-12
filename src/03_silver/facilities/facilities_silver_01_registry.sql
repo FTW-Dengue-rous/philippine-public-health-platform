@@ -1,0 +1,32 @@
+-- =============================================================================
+-- Builds two Silver facility registry tables in one validated build:
+--
+--   public_health.silver.facilities_id_map_silver
+--     Grain: one source facility identifier.
+--     Key: (_source_key, source_record_id).
+--
+--   public_health.silver.facilities_registry_silver
+--     Grain: one facility establishment.
+--     Key: facility_key.
+--
+-- Inputs
+--   Uses NHFR hospitals as the registry spine and matches four HFSRB licensed lists:
+--   hospitals, infirmaries, primary care facilities, and free-standing dialysis clinics.
+--   Also uses geography_silver, facilities reference tables, and previous target versions
+--   to preserve facility_key and history across rebuilds.
+--
+-- Facility matching
+--   Resolves geography, applies duplicate-code rules, matches records by facility code
+--   or name, applies reviewed overrides, and reuses existing facility_key values when
+--   available. Assigns a new facility_key only when no prior identity exists.
+--
+-- Write strategy
+--   Builds and validates the complete new state of both tables before replacing them.
+--   If validation fails, logs the failed build and leaves both target tables unchanged.
+--
+-- Requires:
+--   facilities_silver_00_reference.sql
+--   geography silver tables
+--   quality_setup.sql
+--   bronze QC for all five facility registry sources
+-- =============================================================================

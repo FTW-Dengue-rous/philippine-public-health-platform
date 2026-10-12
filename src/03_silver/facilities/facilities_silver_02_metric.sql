@@ -1,0 +1,21 @@
+-- =============================================================================
+-- Builds public_health.silver.facilities_metric_silver.
+-- Grain: one area-year-ownership-source record of facility, bed, or barangay counts.
+-- Key: (area_key, year, ownership, _source_key).
+--
+-- Sources
+--   Combines PSA and DOH/FHSIS facility metrics at national, regional, provincial,
+--   and city/municipality levels from 1990-2025.
+--
+-- Source handling
+--   Preserves overlapping source records independently; Gold selects preferred
+--   records using source_priority.
+--   Loads published counts only. Gold computes derived rates and ratios.
+--   Converts '*' and '-' to null and records the affected measures in
+--   no_report_measures; unexpected non-numeric values fail validation.
+--
+-- Requires:
+--   facilities_silver_00_reference.sql
+--   geography silver tables
+--   bronze QC for facility metric sources
+-- =============================================================================

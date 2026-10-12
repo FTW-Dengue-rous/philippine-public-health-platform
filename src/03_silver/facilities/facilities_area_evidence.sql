@@ -1,0 +1,22 @@
+-- =============================================================================
+-- Read-only evidence queries for facilities geography exceptions and review decisions.
+-- Creates temporary views only; does not write or modify tables.
+--
+-- Run after:
+--   bronze facilities tables
+--   geography_silver
+--   facilities_silver_00a_area_boundary.sql
+--   facilities_silver_00_reference.sql
+--
+-- Queries
+--   [0] Sets up matching helpers and the current geography snapshot.
+--   [1] Lists source place labels that do not directly match geography_silver.
+--   [2] Shows supporting evidence for reviewed and unresolved geography decisions.
+--   [3] Shows generated exceptions, evidence, review status, and manual decisions.
+--   [4] Shows how Silver applied exceptions or quarantined unresolved records.
+--
+-- Note:
+--   The inventory uses simplified geography matching for investigation. Production
+--   Silver builds apply additional fallback rules, so some listed labels may still
+--   resolve without an exception.
+-- =============================================================================
