@@ -295,7 +295,7 @@ For recovery, inspect the target table by `_source_key` and `_source_file`, comp
 
 ### 7.1 Expected consumers
 
-The supplied configuration includes `public_health.silver.diseases_metric_silver`as a Silver target hint. The Bronze loader writes to the configured Bronze tables; it does not build Silver tables or harmonize disease measures.
+The supplied configuration includes `public_health.silver.diseases_metric_silver` as a Silver target hint. The Bronze loader writes to the configured Bronze tables; it does not build Silver tables or harmonize disease measures.
 
 The configured sources have different layouts and reporting periods. Interpretation and normalization are not performed by the Bronze loader.
 
