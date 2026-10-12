@@ -1,39 +1,23 @@
 -- =============================================================================
--- facilities_silver_02_metric.sql
--- Builds public_health.silver.facilities_metric_silver:
---   counts of facilities, beds and barangays for one area in one year, by ownership, from one
---   source. Wide layout: one column per measure (plan 4.4).
---   Key: (area_key, year, ownership, _source_key)
--- Follows facilities-silver-plan.md v2.1 (sections 4, 5, 6) and lineage-qc-contract.md v1.3
--- (single-source lineage columns, contract 3.3; build_log / build_inputs per build; row_disposition holds only the bronze
--- rows that were NOT loaded).
--- Run order: 00a -> build_facilities_area_exceptions.py (when inputs change) -> 00 -> 01 -> [02] -> 03 -> 04a -> 04
+-- Builds public_health.silver.facilities_metric_silver.
+-- Grain: one area-year-ownership-source record of facility, bed, or barangay counts.
+-- Key: (area_key, year, ownership, _source_key).
 --
--- Sources (7 bronze tables, 15 files or sheets)
---   psa_hospitals_region_annual          PSA 9.18, hospitals by region and ownership, 2020-2024
---   psa_beds_region_annual               PSA 9.17, authorized beds by region and ownership, 2020-2024
---   psa_hospitals_national_annual        PSA OpenSTAT, hospitals by ownership, national, 2006-2015
---   psa_hospitals_beds_national_annual   PSA 9.16, hospitals and beds by ownership, national, 1990-2015
---   psa_hospitals_region_annual_legacy   PSA 9.17 (PSY 2024), hospitals by region and ownership, 2005-2015
---   psa_bhs_region_annual                PSA 9.19, barangay health stations by region, 2006-2023
---   doh_fhsis_demographic                FHSIS BGY & BHS tab, region / province / city, 2018-2025
--- Sources overlap on purpose (e.g. national hospitals 2006-2015 in three tables; BHS 2018-2023
--- in PSA 9.19 and FHSIS). Every source keeps its own rows; gold chooses through source_priority.
+-- Sources
+--   Combines PSA and DOH/FHSIS facility metrics at national, regional, provincial,
+--   and city/municipality levels from 1990-2025.
 --
--- Build sequence (contract section 5.1)
---   Step 1  [0] settings and helpers  [1] ..__classified  [2] ..__inputs
---   Step 2  [3] area resolution for FHSIS  [4] part_* (one view per source)  [5] ..__candidate
---   Step 3  [6] ..__gates (severity 'fail' blocks, 'warn' is reported)  [7] build log  [8] STOP on failure
---   Step 4  [9] write  [10] build_log, build_inputs, row_disposition (rows not loaded only)  [11] summary
+-- Source handling
+--   Preserves overlapping source records independently; Gold selects preferred
+--   records using source_priority.
+--   Loads published counts only. Gold computes derived rates and ratios.
+--   Converts '*' and '-' to null and records the affected measures in
+--   no_report_measures; unexpected non-numeric values fail validation.
 --
--- Measures are counts as published. Ratios in the sources (population per BHS etc.) are not
--- loaded: rates are computed in gold. '*' and '-' mean "no report" and become null; the
--- measure is listed in no_report_measures. Any other non-number fails a gate.
---
--- Needs: facilities_silver_00_reference.sql (exceptions), quality_setup.sql, geography silver, bronze QC.
--- Status: ran on local Spark 4.0 against the landing files and the exported geography_silver
---   (2026-10-09; rerun 2026-10-12: 2,988 rows, gates 0). Not yet run on Databricks.
---   NOT tested locally: Delta, DESCRIBE HISTORY in a subquery ([2], [10]).
+-- Requires:
+--   facilities_silver_00_reference.sql
+--   geography silver tables
+--   bronze QC for facility metric sources
 -- =============================================================================
 
 -- [0] settings
@@ -293,7 +277,7 @@ LEFT JOIN fac_metric_table_versions v ON v.table_name = t.table_name;
 
 
 -- =============================================================================
--- [3] FHSIS areas (plan 4.2 step 4): the national row, region rows (region rule), and the
+-- [3] FHSIS areas: the national row, region rows (region rule), and the
 --     province / city rows under each region (name + level + parent region). A province row
 --     excludes the cities listed under it (plan 4.3).
 --     Exceptions: source_group 'fhsis', match_type 'area_label', match_value = normalised
@@ -560,7 +544,7 @@ SELECT CASE WHEN area_label = 'Philippines' THEN 'ph' ELSE concat('psgc:', fac_r
        map('bhs', src_col)
 FROM u;
 
--- [4e] FHSIS BGY & BHS. Columns change by year (plan 4.4):
+-- [4e] FHSIS BGY & BHS. Columns change by year:
 --   2018       barangays, BHS
 --   2019-2024  barangays, MHC, CHC, RHU, health centres total, BHS
 --   2025       barangays, "RHU" (= all health centres, decision D4), BHS
@@ -648,7 +632,7 @@ LEFT JOIN (SELECT _source_file AS g_file, _source_row_num AS g_row, geo_exceptio
 
 
 -- =============================================================================
--- [5b] dispositions (lineage-qc-contract.md v1.3, section 7.1): one row per bronze row that was
+-- [5b] dispositions: one row per bronze row that was
 --      NOT loaded. Loaded rows are not stored: the silver rows carry their bronze row reference, and
 --      rows loaded per input = input_rows - rows here (quality.v_build_reconciliation).
 --      Not loaded: non-data rows (titles, footnotes, spacers, year headers), and FHSIS rows whose
@@ -889,7 +873,7 @@ SELECT build_id, target_table, input_kind, input_table, input_table_version, sou
        source_sheet, load_batch_id, content_checksum, ingested_at, input_rows, reference_version
 FROM public_health.silver.facilities_metric_silver__inputs;
 
--- bronze rows not loaded (staged in [5b]); loaded rows are not written (contract 7.1)
+-- bronze rows not loaded (staged in [5b]); loaded rows are not written
 INSERT INTO public_health.quality.row_disposition
   (build_id, target_table, source_key, source_file, source_sheet, source_row_num, load_batch_id,
    content_checksum, disposition, reason, target_key, recorded_at)
