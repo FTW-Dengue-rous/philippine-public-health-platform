@@ -1,29 +1,23 @@
 -- =============================================================================
--- facilities_silver_03_bed_occupancy.sql
--- Builds public_health.silver.facilities_bed_occupancy_silver:
---   one anonymous hospital record (no name, no code) of one year from the bed occupancy file.
---   Key: (_source_key, _source_file, _source_sheet, _source_row_num). The records are
---   anonymous, so the lineage columns are the key; identical rows are kept apart (plan 3, 5.2).
--- Follows facilities-silver-plan.md v2.1 (section 3: occupancy definitions) and lineage-qc-contract.md
--- v1.3 (lineage columns are the key here; build_log / build_inputs per build; row_disposition holds
--- only the bronze rows that were NOT loaded).
--- Run order: 00a -> build_facilities_area_exceptions.py (when inputs change) -> 00 -> 01 -> 02 -> [03] -> 04a -> 04
+-- Builds public_health.silver.facilities_bed_occupancy_silver.
+-- Grain: one anonymous hospital record for one reporting year.
+-- Key: (_source_key, _source_file, _source_sheet, _source_row_num).
+-- Source lineage defines the key because the dataset has no hospital identifiers.
 --
--- SHARING: restricted. The file's release terms are not confirmed (plan 9). Keep the table's
--- access limited and publish only aggregates with small cells suppressed.
+-- Source coverage
+--   2020-2024: private hospitals only; city/municipality-level BOR.
+--   2025: government and private hospitals; province-level BOR plus authorized
+--         and implementing bed counts.
 --
--- What the data is (plan 3.1)
---   2020-2024 sheets: PRIVATE hospitals only, city/municipality level, BOR only.
---   2025 sheet: government and private, province level, BOR + authorized and implementing beds.
---   The 2025 records are the preferred CANDIDATE occupancy baseline, subject to validation of
---   bed definitions, duplicate records and reporting coverage (decision D6).
+-- Use
+--   Preserves all source records, including identical rows, for traceability.
+--   Treats 2025 as the candidate occupancy baseline, subject to validation of
+--   bed definitions, duplicate records, and reporting coverage.
 --
--- Build sequence: [0] settings  [1] classify  [2] inputs  [3] areas  [4] candidate
---                 [4b] dispositions  [5] gates  [6] build log  [7] STOP on failure  [8] write  [9] record  [10] summary
--- Needs: facilities_silver_00_reference.sql (exceptions), quality_setup.sql, geography silver, bronze QC.
--- Status: ran on local Spark 4.0 against the landing file and the exported geography_silver
---   (2026-10-09; rerun 2026-10-12: 1,977 rows, gates 0). Not yet run on Databricks.
---   NOT tested locally: Delta, DESCRIBE HISTORY in a subquery ([2], [9]).
+-- Requires:
+--   facilities_silver_00_reference.sql
+--   geography silver tables
+--   bronze QC for bed occupancy
 -- =============================================================================
 
 -- [0] settings
@@ -297,7 +291,7 @@ FROM public_health.silver.facilities_bed_occupancy_silver__candidate c;
 
 
 -- =============================================================================
--- [4b] dispositions (lineage-qc-contract.md v1.3, section 7.1): one row per bronze row that was
+-- [4b] dispositions: one row per bronze row that was
 --      NOT loaded. Loaded rows are not stored: the silver rows carry their bronze row reference, and
 --      rows loaded per input = input_rows - rows here (quality.v_build_reconciliation).
 --      Every data row is loaded (ineligible and identical rows too: eligibility is a flag), except
@@ -469,7 +463,7 @@ SELECT build_id, target_table, input_kind, input_table, input_table_version, sou
        source_sheet, load_batch_id, content_checksum, ingested_at, input_rows, reference_version
 FROM public_health.silver.facilities_bed_occupancy_silver__inputs;
 
--- bronze rows not loaded (staged in [4b]); loaded rows are not written (contract 7.1)
+-- bronze rows not loaded (staged in [4b]); loaded rows are not written
 INSERT INTO public_health.quality.row_disposition
   (build_id, target_table, source_key, source_file, source_sheet, source_row_num, load_batch_id,
    content_checksum, disposition, reason, target_key, recorded_at)
