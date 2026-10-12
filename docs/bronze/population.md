@@ -2,11 +2,7 @@
 
 ## 1. Domain Overview
 
-The Population domain provides population values used as denominators for public-health service-gap analysis. Population data supports comparisons between the number of residents in a geographic area and the recorded availability of hospitals, licensed primary care facilities, and hospital beds.
-
-**Current implementation decision:** the Population Silver layer uses the `populations_json` field from `public_health.bronze.geography_bronze`. The standalone `population_bronze.ipynb` notebook, which ingested separate PSA population workbooks into `public_health.bronze.population_bronze`, is no longer part of the active population ingestion path.
-
-This distinction is important: the legacy notebook is described below only to document the supplied artifact and explain why it should not be treated as the current source for Population Silver.
+The active population input described in this documentation is the `populations_json` field in `public_health.bronze.geography_bronze`. The supplied standalone `01_population_bronze.ipynb` notebook documents a separate workbook-ingestion path to `public_health.bronze.population_bronze`; it is included below as legacy reference, not as the active input to Population Silver.
 
 ## 2. Source and Input Data
 
@@ -25,7 +21,7 @@ The JSON array contains population entries with fields such as:
 - `psgc` — geographic code associated with the population entry.
 - `year` — population reference year.
 
-The exact values and optional-field presence depend on the source payload. Bronze preserves the nested source structure rather than converting it into a typed population table.
+Bronze preserves the nested source structure as JSON text rather than converting it into a typed population table.
 
 ### 2.2 Retired input path: `population_bronze.ipynb`
 
@@ -58,11 +54,7 @@ Population values are nested in the Geography Bronze record rather than stored i
 
 ### 3.2 Preservation principle
 
-Bronze is responsible for retaining source information and ingestion lineage, not for deciding which population observation is authoritative or converting the nested JSON into the final analytical grain.
-
-Population Silver is responsible for parsing the JSON entries, validating population values and years, associating entries with geographic codes, and creating a structured population dataset.
-
-The population values should not be assumed to be a single current-year value per locality. A source record can contain multiple population entries for different years.
+Bronze retains the source population payload and its source-record context. Parsing and structuring the nested population entries are downstream tasks. A source record can contain population entries for more than one year.
 
 ### 3.3 Relevant Geography Bronze columns
 
@@ -80,7 +72,7 @@ These fields are listed to explain the active source context; verify them agains
 
 ## 4. Legacy Notebook Walkthrough (Reference Only)
 
-This section describes the supplied `01_population_bronze` notebook. It records previous behavior and is not a recommendation to continue using the legacy table.
+This section summarizes the supplied `01_population_bronze` notebook for reference.
 
 ### 4.1 Parameters and configuration
 
@@ -124,29 +116,11 @@ Because this is no longer the active input path, these legacy limitations should
 
 ## 5. Design Decisions
 
-### 5.1 Use the population payload already present in Geography Bronze
-
-Population Silver reads `populations_json` from `public_health.bronze.geography_bronze`. The standalone PSA workbook ingestion notebook is not used for the active pipeline.
-
-### 5.2 Preserve source values in Bronze
-
-The nested JSON is retained in Bronze rather than expanded and cast there. This preserves source details and keeps parsing and validation logic in Silver.
-
-### 5.3 Keep geographic and population observations traceable
-
-Silver should retain the geographic code, population reference year, source/version lineage, and parsing status needed to trace each structured population observation back to the Geography Bronze record.
-
-### 5.4 Treat year and source version as meaningful attributes
-
-A geography record may contain population observations for multiple years. Silver should not collapse these into a single value without an explicit rule. A suitable analytical grain is one geographic code × population year × source version (or other source snapshot identifier used by the implementation).
-
-### 5.5 Do not equate missing population data with zero
-
-A missing, malformed, or absent population entry is not evidence that the area's population is zero. Silver and Gold should preserve the distinction between valid values, missing values, and invalid values.
-
-### 5.6 Separate population reference year from facility snapshot date
-
-Population year and facility registry snapshot date describe different points in time. Gold service-gap outputs should expose these dates clearly rather than implying that population and facility records were collected simultaneously.
+- **Use the Geography Bronze payload for the active path:** Population Silver reads `populations_json` from `public_health.bronze.geography_bronze`.
+- **Preserve the source structure in Bronze:** the population array remains JSON text rather than being expanded into population rows in Bronze.
+- **Retain year and source context downstream:** population entries may represent different years and should not be collapsed without an explicit rule.
+- **Distinguish missing data from zero:** an absent or invalid population entry does not establish that the population is zero.
+- **Keep population year separate from facility snapshot dates:** these fields describe different time references.
 
 ## 6. Data Quality and Error Handling
 
@@ -166,66 +140,22 @@ These are recommended Silver-side controls; this document does not claim that ea
 
 ## 7. Downstream Dependencies and Analytical Impact
 
-### 7.1 Population Silver
+Population Silver uses `populations_json` from `public_health.bronze.geography_bronze` as its population input. The documentation identifies `public_health.silver.population_silver` as the intended structured output, with population observations parsed from the JSON array.
 
-Population Silver parses the JSON array in `geography_bronze.populations_json` into structured observations. The intended output is:
-
-`public_health.silver.population_silver`
-
-The documented target grain is one PSGC code × population year × source version, with fields such as:
-- `psgc_code`
-- `population_year`
-- `population`
-- `population_raw`
-- `population_parse_status`
-- `source_version`
-- `batch_id`
-- `silver_processed_at`
-
-Confirm the deployed Silver schema and orchestration before treating this list as an exact implementation contract.
-
-### 7.2 Gold population fact
-
-The Gold model proposes `FACT_POPULATION` at the grain of one area's population for a period and source. Population Silver provides the structured observations needed to build this fact.
-
-Gold should retain source and time context and avoid summing multiple sources or mixing geographic levels. A population value recorded at province level must not be assigned to municipalities without an explicit, reviewed allocation method.
-
-### 7.3 Service-gap analysis
-
-Population denominators support the project’s service-access questions, including:
-- Localities with no hospital recorded and their resident population.
-- Localities with no licensed primary care facility recorded and their resident population.
-- Population per hospital, licensed primary care facility, or hospital bed.
-
-For these measures, begin with the full intended geography denominator and join facility counts at the matching geographic level. Do not infer zero population from a missing record, and do not infer zero facilities merely because no facility row exists when source coverage is incomplete.
-
-### 7.4 Population year selection
-
-For current service-gap analysis, the project has identified the latest observed population year (currently noted as 2024 in the project context) as the preferred denominator, while keeping its reference year explicit. Confirm that the relevant source snapshot actually contains valid 2024 entries before publishing results. Do not automatically fill missing years or extrapolate values without a documented method and quality flags.
+The supplied Bronze notebook does not implement Population Silver parsing, Gold population facts, service-gap calculations, or population-year selection. Those behaviors should be documented against their respective implementation files.
 
 ## 8. Validation and Reproducibility
 
-For the active path, reproducibility depends on retaining the Geography Bronze source version, checksum, batch, and ingestion metadata alongside the population payload, and on recording the Population Silver processing metadata and parse status.
+The legacy notebook includes checks for the old workbook table, including row counts by file, sheet, and date; sample-row inspection; and duplicate combinations of file, sheet, and row number. These checks apply to the legacy workbook path, not to the active Geography Bronze → Population Silver path.
 
-Useful validation queries/checks include:
-- Count geography records with non-null `populations_json`.
-- Parse the JSON and count entries by population year.
-- Count valid, missing, and invalid population entries.
-- Check duplicate rows at the intended Silver grain.
-- Compare population-year coverage across geographic levels.
-- Reconcile parsed Silver observations with the entries represented in Bronze, accounting for explicitly rejected invalid entries.
-- Confirm that Silver runs use `public_health.bronze.geography_bronze` as the population input and do not depend on `public_health.bronze.population_bronze`.
-
-The supplied legacy notebook includes checks for the old workbook table, but those checks do not validate the active Geography Bronze → Population Silver path.
+For the active path, verify the source table and `populations_json` content against the relevant Geography Bronze and Population Silver implementation and deployed schemas.
 
 ## 9. Open Issues and Follow-up
 
-- Verify the deployed `geography_bronze` schema and confirm that `populations_json` is populated for the expected geography records.
-- Verify the Population Silver parser's handling of malformed JSON, missing values, invalid years, and duplicate observations.
-- Confirm the exact source-version and batch fields carried into Population Silver.
-- Confirm which population year is used in each Gold output and how missing latest-year observations are handled.
-- Keep the retired `population_bronze.ipynb` and `population_bronze` table clearly marked as legacy so they are not accidentally reintroduced as a dependency.
-- If an alternative population source is introduced later, document its authority, geographic crosswalk, reference year, and precedence rules before combining it with the existing payload.
+- Verify that `public_health.bronze.geography_bronze` contains the expected `populations_json` values.
+- Confirm Population Silver parsing and validation behavior in its implementation.
+- Confirm the source-version and batch lineage fields carried from Bronze into Silver.
+- Keep the standalone workbook notebook and `public_health.bronze.population_bronze` identified as legacy unless that path is explicitly reactivated.
 
 ## 10. Change Log
 
