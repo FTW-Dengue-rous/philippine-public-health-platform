@@ -1,0 +1,1 @@
+# add bronze qc here for geography
