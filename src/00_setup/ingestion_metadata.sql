@@ -2,12 +2,7 @@
 -- Shared ingestion log for all bronze loads (API and file loaders).
 -- Run once. Then every loader only appends.
 -- =============================================================================
-
--- 1. Keep the current table (old file-loader schema).
-ALTER TABLE public_health.bronze.ingestion_metadata
-    RENAME TO public_health.bronze.ingestion_metadata_v0;
-
--- 2. Create the shared table with the agreed schema.
+-- 1. Create the shared table with the agreed schema.
 CREATE TABLE IF NOT EXISTS public_health.bronze.ingestion_metadata (
     batch_id STRING COMMENT 'Unique identifier for the ingestion attempt (one per loader run, shared by its files)',
     source_name STRING COMMENT 'Name of the source being ingested (YAML source key for file loads)',
