@@ -1,2 +1,2 @@
-   # Test gold build scripts: not linted until they move out of test/
-   src/04_gold/test/
+# Test gold build scripts: not linted until they move out of test/
+src/04_gold/test/
