@@ -1,5 +1,6 @@
 -- =============================================================================
--- Data quality schema (public_health.quality) shared by all layers
+-- Data quality schema (public_health.quality) shared by all layers: bronze, silver, gold.
+-- Keeps QC output out of the bronze / silver / gold schemas.
 --
 -- Tables
 --   quality.check_registry    one row per check code (B01, S03, ...). Created empty;
@@ -13,8 +14,8 @@
 --   quality.build_inputs      one row per input file, sheet or table read by a successful build
 --   quality.row_disposition   bronze rows a build read but did not load: duplicate, quarantined, dropped
 -- Views
---   quality.v_latest_results  results of the latest QC execution per table
---   quality.v_table_health    one status per table (worst status of its latest checks)
+--   quality.v_latest_results  results of the latest QC execution per table and QC script
+--   quality.v_table_health    one status per table (worst status of the latest run of every script)
 --   quality.v_open_issues     latest results that are not PASS
 --   quality.v_run_errors      QC scripts whose latest run crashed (status ERROR)
 --   quality.v_latest_build    latest successful build per silver or gold table
@@ -22,17 +23,22 @@
 --                             for silver rows: load time, load id, file checksum)
 --   quality.v_qc_results_identity  qc_results with build_id, content_checksum and checked version
 --   quality.v_build_reconciliation rows read, not loaded (by kind) and loaded, per input of each build
+--   quality.v_check_attribute_override  check_id -> quality attribute (edit this list only)
+--   quality.v_qc_results_attribute      qc_results plus its quality attribute
+--   quality.v_quality_scorecard         latest QC per table x quality attribute
 --
 -- How to run
 --   This file only CREATEs objects (IF NOT EXISTS / OR REPLACE VIEW), so "Run All"
---   is safe and re-running it changes no data.
+--   is safe and re-running it changes no data. Run it once before any QC script, and again
+--   after editing a view here. Views are computed when queried, so they never need a rerun
+--   after a QC run.
 --   The other two quality files are run separately, step by step (not "Run All"):
 --     quality_migrate_bronze_qc.sql   once, to move old public_health.bronze.qc_results rows
 --     quality_registry_seed.sql       at the end of the project, to fill check_registry
---   QC scripts only append to these tables (see dq_utils.py), so several domains
---   can run QC at the same time without Delta write conflicts.
---   Silver and gold builds only append to build_log and build_inputs (lineage-qc-contract.md,
---   sections 3.3 and 5).
+--   QC scripts append to these tables (see dq_utils.py), so several domains can run QC at
+--   the same time without Delta write conflicts. The one exception is quarantine: a QC run
+--   replaces its own slice (layer, table, check, source table), so reruns do not duplicate rows.
+--   Silver and gold builds only append to build_log and build_inputs 
 -- =============================================================================
 
 
@@ -166,6 +172,9 @@ COMMENT 'One row per table per QC execution; used for row-count drift and bronze
 -- -----------------------------------------------------------------------------
 -- 6. Quarantine (rejected silver rows)
 -- -----------------------------------------------------------------------------
+-- dq_utils.quarantine() replaces the rows of its own slice (layer, table_name, check_id,
+-- source_table) on every QC run, so this table holds the latest quarantined rows, not a history.
+-- History: counts per run in qc_results, row references per build in row_disposition.
 CREATE TABLE IF NOT EXISTS public_health.quality.quarantine (
   run_id          STRING    COMMENT 'Notebook/job run that executed the process',
   validation_id   STRING    COMMENT 'DQ validation session',
@@ -259,31 +268,42 @@ COMMENT 'Bronze rows a build read but did not load, per build and target table';
 -- 8. Views
 -- -----------------------------------------------------------------------------
 
--- Results of the latest QC execution for each table.
+-- Results of the latest QC execution for each table AND QC script. Some tables are checked
+-- by two scripts (a domain QC and silver_cross_domain_qc.py); "latest per table" alone would
+-- let the newer script's run hide the other script's results. Notebook QC that writes
+-- qc_results without a run_log row counts as one script per table.
 CREATE OR REPLACE VIEW public_health.quality.v_latest_results
-COMMENT 'Results of the latest QC execution per table'
+COMMENT 'Results of the latest QC execution per table and QC script'
 AS
-WITH latest AS (
-  SELECT layer, table_name, max_by(validation_id, executed_at) AS validation_id
-  FROM public_health.quality.qc_results
-  WHERE table_name IS NOT NULL
-  GROUP BY layer, table_name
+WITH runs AS (
+  SELECT r.layer, r.table_name, r.validation_id, max(r.executed_at) AS executed_at,
+         coalesce(max(l.script_name), '') AS script_name
+  FROM public_health.quality.qc_results r
+  LEFT JOIN public_health.quality.run_log l ON l.validation_id = r.validation_id
+  WHERE r.table_name IS NOT NULL
+  GROUP BY r.layer, r.table_name, r.validation_id
+),
+latest AS (
+  SELECT layer, table_name, script_name, max_by(validation_id, executed_at) AS validation_id
+  FROM runs
+  GROUP BY layer, table_name, script_name
 )
 SELECT r.*
 FROM public_health.quality.qc_results r
 JOIN latest l
   ON r.layer = l.layer AND r.table_name = l.table_name AND r.validation_id = l.validation_id;
 
--- One status per table: FAIL if any latest check failed, else WARN, else PASS.
+-- One status per table: FAIL if any latest check failed, else WARN, else PASS, across the
+-- latest run of every script that checks the table. validation_id is the most recent of them.
 -- A status other than PASS / WARN / FAIL (e.g. ERROR, SKIP from older scripts) is counted
 -- in checks_other and treated as FAIL, so it can never roll up to an overall PASS.
 CREATE OR REPLACE VIEW public_health.quality.v_table_health
-COMMENT 'One status per table, from its latest QC execution'
+COMMENT 'One status per table, from the latest QC execution of every script that checks it'
 AS
 SELECT
   layer,
   table_name,
-  validation_id,
+  max_by(validation_id, executed_at)                      AS validation_id,
   max(executed_at)                                        AS last_checked_at,
   count(*)                                                AS checks_total,
   count_if(status = 'PASS')                               AS checks_pass,
@@ -294,7 +314,7 @@ SELECT
        WHEN count_if(status = 'WARN') > 0 THEN 'WARN'
        ELSE 'PASS' END                                    AS overall_status
 FROM public_health.quality.v_latest_results
-GROUP BY layer, table_name, validation_id;
+GROUP BY layer, table_name;
 
 -- Only what needs attention.
 CREATE OR REPLACE VIEW public_health.quality.v_open_issues
@@ -405,6 +425,108 @@ LEFT JOIN (
    AND d.source_file = i.source_file AND d.source_sheet <=> i.source_sheet
 WHERE i.input_kind = 'bronze_source';
 
+
+-- -----------------------------------------------------------------------------
+-- 8b. Quality attributes (no table change)
+-- -----------------------------------------------------------------------------
+-- Labels every QC result with one of the programme's data-quality attributes:
+--   accuracy | completeness | validity | consistency | timeliness | uniqueness |
+--   auditability | business_rule
+-- QC scripts keep writing check_type; the attribute is derived here (first match wins):
+--   1. v_check_attribute_override: a check_id listed there (the code decides). Used where
+--      check_type does not say the attribute, e.g. lineage checks stored as COMPLETENESS are
+--      auditability, freshness checks stored as CONSISTENCY are timeliness.
+--   2. check_type: COMPLETENESS, VALIDITY, CONSISTENCY, UNIQUENESS map to the same attribute;
+--      RECONCILIATION -> completeness (row accounting); SCHEMA -> validity; EXECUTION -> auditability.
+--      Types the geography / admin boundaries files use: ACCEPTED_VALUES, RANGE -> validity;
+--      VOLUME -> completeness; REFERENTIAL_INTEGRITY -> consistency.
+--   3. anything else -> 'unmapped' (it shows in v_quality_scorecard, so it gets an entry here).
+
+CREATE OR REPLACE VIEW public_health.quality.v_check_attribute_override
+COMMENT 'check_id -> quality attribute where check_type does not give it'
+AS
+SELECT * FROM VALUES
+  -- accuracy: control totals and values against a trusted figure
+  ('B11', 'accuracy'), ('S10', 'accuracy'), ('S21', 'accuracy'), ('S34', 'accuracy'),
+  ('S56', 'accuracy'), ('S64', 'accuracy'), ('S65', 'accuracy'), ('S78', 'accuracy'),
+  ('S84', 'accuracy'), ('GS08', 'accuracy'),
+  -- auditability: lineage columns, build records, ingestion metadata
+  ('B05', 'auditability'), ('B13', 'auditability'),
+  ('S13', 'auditability'), ('S14', 'auditability'), ('S15', 'auditability'), ('S17', 'auditability'),
+  ('S19', 'auditability'), ('S20', 'auditability'),
+  ('S30', 'auditability'), ('S31', 'auditability'), ('S32', 'auditability'),
+  ('S51', 'auditability'),
+  ('S60', 'auditability'), ('S61', 'auditability'), ('S62', 'auditability'), ('S74', 'auditability'),
+  ('S75', 'auditability'),
+  ('S80', 'auditability'), ('S81', 'auditability'), ('S82', 'auditability'), ('S85', 'auditability'),
+  ('S89', 'auditability'),
+  -- timeliness: silver built from the current loads, data recent enough
+  ('S16', 'timeliness'), ('S33', 'timeliness'), ('S57', 'timeliness'), ('S63', 'timeliness'),
+  ('S83', 'timeliness'), ('S98', 'timeliness'),
+  -- consistency: totals vs parts that are typed RECONCILIATION
+  ('S26', 'consistency'), ('S38', 'consistency'), ('S46', 'consistency'), ('S55', 'consistency'),
+  ('S68', 'consistency'), ('S91', 'consistency'),
+  -- business rules: team-owned rules and plausibility bands
+  ('S23', 'business_rule'), ('S24', 'business_rule'), ('S25', 'business_rule'), ('S47', 'business_rule'),
+  ('S58', 'business_rule'), ('S67', 'business_rule'), ('S72', 'business_rule'), ('S94', 'business_rule'),
+  ('S95', 'business_rule'), ('S97', 'business_rule')
+AS t(check_id, quality_attribute);
+
+CREATE OR REPLACE VIEW public_health.quality.v_qc_results_attribute
+COMMENT 'qc_results plus the quality attribute of each check (no table change)'
+AS
+SELECT r.*,
+       coalesce(o.quality_attribute,
+                CASE upper(r.check_type)
+                  WHEN 'COMPLETENESS'   THEN 'completeness'
+                  WHEN 'VALIDITY'       THEN 'validity'
+                  WHEN 'CONSISTENCY'    THEN 'consistency'
+                  WHEN 'UNIQUENESS'     THEN 'uniqueness'
+                  WHEN 'RECONCILIATION' THEN 'completeness'
+                  WHEN 'SCHEMA'         THEN 'validity'
+                  WHEN 'EXECUTION'      THEN 'auditability'
+                  -- types used by the geography and admin boundaries notebooks and QC
+                  WHEN 'ACCEPTED_VALUES'       THEN 'validity'
+                  WHEN 'RANGE'                 THEN 'validity'
+                  WHEN 'VOLUME'                THEN 'completeness'
+                  WHEN 'REFERENTIAL_INTEGRITY' THEN 'consistency'
+                END,
+                'unmapped')                                        AS quality_attribute,
+       CASE WHEN o.check_id IS NOT NULL THEN 'override' ELSE 'check_type' END AS attribute_source
+FROM public_health.quality.qc_results r
+LEFT JOIN public_health.quality.v_check_attribute_override o ON o.check_id = r.check_id;
+
+-- One row per table x attribute, from the latest QC execution of every script that checks the
+-- table (v_latest_results). An attribute with no row for a table means no check covers it yet.
+CREATE OR REPLACE VIEW public_health.quality.v_quality_scorecard
+COMMENT 'Latest QC per table and quality attribute: checks and worst status'
+AS
+SELECT a.layer, a.table_name, a.quality_attribute,
+       count(*)                                         AS checks_total,
+       count_if(a.status = 'PASS')                      AS checks_pass,
+       count_if(a.status = 'WARN')                      AS checks_warn,
+       count_if(a.status = 'FAIL')                      AS checks_fail,
+       CASE WHEN count_if(coalesce(a.status, '') NOT IN ('PASS', 'WARN')) > 0 THEN 'FAIL'
+            WHEN count_if(a.status = 'WARN') > 0 THEN 'WARN'
+            ELSE 'PASS' END                             AS attribute_status,
+       concat_ws(', ', sort_array(collect_set(a.check_id))) AS check_ids,
+       max(a.executed_at)                               AS last_checked_at
+FROM public_health.quality.v_qc_results_attribute a
+JOIN (SELECT DISTINCT validation_id, table_name FROM public_health.quality.v_latest_results) l
+  ON l.validation_id = a.validation_id AND l.table_name = a.table_name
+GROUP BY a.layer, a.table_name, a.quality_attribute;
+
+-- Example: attributes no check covers yet, per silver table
+-- WITH attrs AS (SELECT explode(array('accuracy','completeness','validity','consistency','timeliness',
+--                                     'uniqueness','auditability','business_rule')) AS quality_attribute),
+--      tables AS (SELECT DISTINCT table_name FROM public_health.quality.v_quality_scorecard WHERE layer = 'silver')
+-- SELECT t.table_name, a.quality_attribute
+-- FROM tables t CROSS JOIN attrs a
+-- LEFT ANTI JOIN public_health.quality.v_quality_scorecard s
+--   ON s.table_name = t.table_name AND s.quality_attribute = a.quality_attribute AND s.layer = 'silver'
+-- ORDER BY 1, 2;
+
+
 -- -----------------------------------------------------------------------------
 -- 9. Notes (nothing to run)
 -- -----------------------------------------------------------------------------
@@ -413,6 +535,8 @@ WHERE i.input_kind = 'bronze_source';
 --   by it, so a short name and a full name for the same table would show up twice.
 -- * Until quality_registry_seed.sql is run, a new check only needs a code (B13, S14, ...)
 --   plus check_name and check_type passed to dq.record(). Keep codes unique per layer.
+-- * A new check whose attribute is not clear from its check_type: add its code to
+--   v_check_attribute_override (section 8b) and re-run this file.
 -- * build_log.build_id is one id per build of ONE table. A job that builds three tables
 --   writes three build_log rows.
 -- * A build never updates or deletes rows here. A rebuilt table gets a new build_id; the
