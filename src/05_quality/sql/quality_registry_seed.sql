@@ -7,7 +7,8 @@
 --   Step by step, in order. Each step is safe to re-run:
 --   Step 1 inserts only missing codes, Step 2 only codes still missing, and Step 3 only
 --   fills values that are null.
---   Step 1  starter list (edit it first)
+--   Step 1  starter list (edit it first). Insert-only: re-run it after adding rows and only
+--           the new codes are inserted (added 2026-10-12: S29, S51-S58, S97-S99)
 --   Step 2  add any other code found in qc_results
 --   Step 3  fill check_type / severity gaps in past results (e.g. migrated rows)
 --   Step 4  review codes used with more than one meaning
@@ -153,6 +154,57 @@ USING (
     (
         'S12', 'silver', 'ALL', 'metric null rate under threshold', 'COMPLETENESS', 'WARN', 0.05,
         'Share of null values in a key metric column stays under the threshold'
+    ),
+    -- silver, population (psgc_population_silver_qc.py runs with strict_registry=True,
+    -- so its codes must be here before it runs; Step 2 cannot add them)
+    (
+        'S51', 'silver', 'population', 'population lineage columns not null', 'COMPLETENESS', 'FAIL', 0,
+        'source_version, content_checksum, batch_id and silver_processed_at are filled on every row'
+    ),
+    (
+        'S52', 'silver', 'population', 'population filled exactly when the status is valid', 'VALIDITY', 'FAIL', 0,
+        'VALID / VALID_WITH_NOTE rows have a number; MISSING / INVALID rows are null, never 0; VALID_WITH_NOTE exactly when a note was moved out'
+    ),
+    (
+        'S53', 'silver', 'population', 'rows without a usable population', 'COMPLETENESS', 'WARN', 0,
+        'MISSING and INVALID rows, listed by status and year'
+    ),
+    (
+        'S54', 'silver', 'population', 'every geography area has a row for every census year', 'COMPLETENESS', 'WARN', 0,
+        'Areas of the latest geography snapshot without a 2015, 2020 or 2024 row'
+    ),
+    (
+        'S55', 'silver', 'population', 'area total equals the sum of its cities and municipalities', 'CONSISTENCY', 'WARN', 0,
+        'Province and region totals against the sum of their cities and municipalities (HUCs excluded from provinces)'
+    ),
+    (
+        'S56', 'silver', 'population', 'national census total matches the PSA release', 'RECONCILIATION', 'WARN', 0,
+        'Control: national total per census year within 0.1 percent of the PSA release; FAIL once confirmed'
+    ),
+    (
+        'S57', 'silver', 'population', 'one population snapshot from the current PSGC release', 'CONSISTENCY', 'WARN', 0,
+        'Population has one content_checksum and it equals the latest geography snapshot'
+    ),
+    (
+        'S58', 'silver', 'population', 'change between census years above 30 percent', 'VALIDITY', 'WARN', 0,
+        'Province, city or municipality population changed by more than 30 percent between census years, or is 0'
+    ),
+    -- silver, cross-domain (silver_cross_domain_qc.py)
+    (
+        'S29', 'silver', 'ALL', 'quarantined rows within the limit', 'COMPLETENESS', 'FAIL', 0.05,
+        'Quarantined bronze rows per silver table and source: WARN above 0, FAIL above 5 percent and above 10 rows'
+    ),
+    (
+        'S97', 'silver', 'ALL', 'ratio per population inside the plausible band', 'VALIDITY', 'WARN', 0,
+        'Beds per 1,000 and doctors + nurses + midwives per 10,000 by region, against census population'
+    ),
+    (
+        'S98', 'silver', 'ALL', 'latest data year of each source is recent', 'CONSISTENCY', 'WARN', 0,
+        'Latest year per source no older than the configured age, unless the source is historical by design'
+    ),
+    (
+        'S99', 'silver', 'ALL', 'reported population agrees with census population', 'CONSISTENCY', 'WARN', 0,
+        'FHSIS reported population within 10 percent of the census for the same area and year'
     ),
     -- gold
     (

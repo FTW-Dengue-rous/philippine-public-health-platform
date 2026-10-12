@@ -35,7 +35,7 @@ SELECT *
 FROM read_files('/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/reference/facilities/facilities_area_exceptions.csv',
        format => 'csv', header => true, multiLine => true, escape => '"',
        schema => 'source_group STRING, match_type STRING, match_value STRING, parent_label_norm STRING, year_from STRING, year_to STRING, area_label_source STRING, psgc_code STRING, area_key STRING, named_key_level STRING, reason STRING, review_note STRING, rule STRING, evidence STRING, evidence_n STRING, evidence_share STRING, review_status STRING, proposed_psgc_code STRING, proposed_area_name STRING, geography_check STRING, records STRING, geography_checksum STRING');
- 
+
 CREATE OR REPLACE TABLE public_health.silver.facilities_area_exceptions AS
 SELECT source_group,
        CASE WHEN review_status IN ('auto', 'corroborated', 'reviewed') THEN match_type ELSE 'unresolvable' END AS match_type,
@@ -46,20 +46,20 @@ SELECT source_group,
        geography_check, CAST(records AS INT) AS records, geography_checksum,
        match_type AS generated_match_type
 FROM facilities_area_exceptions_file;
- 
+
 -- [2] id map overrides (header only until a manual decision is needed)
 CREATE OR REPLACE TABLE public_health.silver.facilities_id_map_override AS
 SELECT _source_key, source_record_id, action, nhfr_id, reason, review_status, reviewed_by, reviewed_on
 FROM read_files('/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/reference/facilities/facilities_id_map_override.csv',
        format => 'csv', header => true,
        schema => '_source_key STRING, source_record_id STRING, action STRING, nhfr_id STRING, reason STRING, review_status STRING, reviewed_by STRING, reviewed_on STRING');
- 
+
 -- [3] checks: each must return 0. A failure stops the run here.
 -- current geography snapshot (geography_silver keeps one; max_by guards against a second one)
 CREATE OR REPLACE TEMP VIEW facilities_geography_snapshot AS
 SELECT max_by(content_checksum, silver_processed_at) AS geography_checksum
 FROM public_health.silver.geography_silver;
- 
+
 CREATE OR REPLACE TEMP VIEW facilities_reference_checks AS
 SELECT 'area exceptions: duplicate key' AS check_name, count(*) AS failures FROM (
   SELECT 1 FROM public_health.silver.facilities_area_exceptions
@@ -112,9 +112,9 @@ SELECT 'id map override: unknown action', count(*)
   FROM public_health.silver.facilities_id_map_override
   WHERE action NOT IN ('link_to_nhfr', 'own_facility')
      OR (action = 'link_to_nhfr' AND try_cast(nhfr_id AS BIGINT) IS NULL);
- 
+
 SELECT raise_error(concat('Reference check failed: ', check_name, ' = ', failures))
 FROM facilities_reference_checks WHERE failures > 0;
- 
+
 -- [4] result
 SELECT * FROM facilities_reference_checks;
