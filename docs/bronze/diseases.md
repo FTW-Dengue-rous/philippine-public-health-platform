@@ -10,10 +10,6 @@ The Diseases Bronze loader ingests configured disease, morbidity, mortality, not
 
 This document describes `diseases_bronze.py` and its `config/sources_diseases.yaml` configuration. It documents behavior visible in the supplied loader and configuration; it does not claim that all sources were successfully loaded or that deployed table contents were independently verified.
 
-**Business-question relevance**
-
-Disease records can support descriptive analyses of cases, deaths, morbidity, mortality, hospital encounters, and geographic/time patterns. Bronze is a raw-ingestion layer: it does not reconcile different sources' definitions, make their measures directly comparable, or calculate final indicators.
-
 **Implementation characteristics**
 
 - Config-driven ingestion for enabled entries in the `diseases` domain.
@@ -299,30 +295,9 @@ For recovery, inspect the target table by `_source_key` and `_source_file`, comp
 
 ### 7.1 Expected consumers
 
-The supplied repository configuration points to a wider Silver workflow, including `public_health.silver.diseases_metric_silver`. The repository also contains disease Silver scripts for reference mapping, metric transformations, deaths by age, hospital encounters, and source coverage. Those downstream artifacts indicate intended use; actual job orchestration and table dependencies should be confirmed from the deployed workflow.
+The supplied configuration includes `public_health.silver.diseases_metric_silver`as a Silver target hint. The Bronze loader writes to the configured Bronze tables; it does not build Silver tables or harmonize disease measures.
 
-Likely downstream uses include:
-
-- parsing and standardizing disease metrics and dates;
-- mapping source geography to common geographic identifiers;
-- mapping cause/disease labels and source-specific codes to reference dimensions;
-- distinguishing counts, rates, estimates, preliminary values, and reported observations;
-- handling age/sex strata and aggregate rows;
-- tracking source coverage and temporal/geographic gaps.
-
-### 7.2 Modeling and comparability considerations
-
-- **Do not sum sources together by default.** Sources may overlap, use different reporting systems, or describe the same events with different definitions.
-- **Keep source lineage.** Preserve `_source_key`, `_source_file`, `_source_sheet`, `_as_of_date`, and ingestion metadata through Silver where useful.
-- **Use explicit time semantics.** A monthly, weekly, and annual record are different grains. Do not compare or aggregate them without a defined rule.
-- **Distinguish rates from counts.** Rate fields should not be summed. Retain numerator/denominator definitions when available and recompute rates only under documented rules.
-- **Treat aggregate rows carefully.** Source reports may include Philippines totals, regional totals, province/city rows, and subgroup totals in the same file. Determine which rows represent analytical entities before aggregation.
-- **Treat geography as a mapping problem.** Name-only joins can be ambiguous; use reviewed codes/crosswalks when available and preserve unresolved mappings as explicit quality states.
-- **Respect access controls.** Restricted DOH, hospital, and PhilHealth inputs may include sensitive or detailed records; downstream exposure should be limited to approved users and appropriately aggregated outputs.
-
-### 7.3 Business-question relevance
-
-Disease Bronze can provide source inputs for burden and trend analyses, including dengue cases/deaths, TB notifications/claims, morbidity, cause-specific mortality, all-cause mortality, and hospital encounters. It does not by itself answer geographic service-gap or bed-shortfall questions. Those require harmonized disease metrics, geographic alignment, population denominators, facility/capacity data, and explicit assumptions in later layers.
+The configured sources have different layouts and reporting periods. Interpretation and normalization are not performed by the Bronze loader.
 
 ## 8. Validation and Reproducibility
 
@@ -355,18 +330,12 @@ If `--config_path` is omitted, the script searches near the current working dire
 
 ## 9. Open Issues and Future Improvements
 
-1. **Source inventory and access:** confirm that all configured landing files exist in the intended environment and that restricted sources have the required access approvals.
-2. **Date semantics:** document what `as_of_date` means for each source (publication date, retrieval date, file snapshot date, or another reference) rather than assuming one universal meaning.
-3. **Retained footer/summary rows:** the loader retains non-empty rows after the configured data start. Add or document source-specific Silver filters for repeated headers, total rows, footnotes, and report sections where present.
-4. **No universal row-level deduplication:** the loader does not enforce disease-specific natural keys. Add source-specific uniqueness and reconciliation checks in Silver/quality workflows.
-5. **Schema evolution:** `mergeSchema=true` allows new columns but can also change the Bronze table schema. Review unexpected column additions and casing changes.
-6. **Renamed or removed files:** the replacement predicate only targets currently resolved file paths. If a configured file is renamed or removed from the file list, rows for the old path may remain in the table and need explicit cleanup or retention policy.
-7. **Audit compatibility:** if the existing metadata table lacks expected columns, the loader omits those columns with a warning. Align the shared schema deliberately so audit records remain complete.
-8. **Post-commit failures:** document a recovery runbook for row-count mismatch or metadata failure after a successful Bronze transaction.
-9. **Encoding replacement:** `encoding_errors: replace` preserves load continuity but introduces replacement characters. Use only when approved and monitor the warning recorded in metadata.
-10. **Formula caches:** Excel formula values depend on cached workbook values. Validate freshness when source workbooks contain formulas.
-11. **Source comparability:** document measure definitions, denominators, reporting delays, revisions, and overlap before combining records across providers.
-12. **Potentially sensitive detail:** verify table permissions, retention, and aggregation rules for hospital encounters and claims data.
+1. Confirm that configured input files exist and that required access permissions are in place before running the loader.
+2. Document the meaning of `as_of_date` for each source; the loader attaches the configured value but does not define a universal meaning for it.
+3. Review per-file header settings, required columns, and row-start settings when source layouts change.
+4. Check for retained total, footer, or repeated-header rows where the source configuration starts reading before those rows end.
+5. If a file is renamed or removed from the configured file set, review whether rows for its former `_source_file` path need cleanup.
+6. After a write or audit failure, inspect both the target Bronze table and ingestion metadata because a failure can occur after data has been committed.
 
 ## 10. Change Log
 
