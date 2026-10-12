@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Shared ingestion log for all bronze loads (API and file loaders).
--- Run once. Then every loader only appends.
+-- Safe to rerun (CREATE TABLE IF NOT EXISTS). Loaders only append.
 -- =============================================================================
 -- 1. Create the shared table with the agreed schema.
 CREATE TABLE IF NOT EXISTS public_health.bronze.ingestion_metadata (
@@ -23,32 +23,6 @@ CREATE TABLE IF NOT EXISTS public_health.bronze.ingestion_metadata (
 USING DELTA
 COMMENT 'One row per ingested file/sheet (file loads) or per API ingestion attempt';
 
--- 3. Copy the rows already logged by the old schema.
--- raw_file_path keeps the old relative path; checksum was not recorded then.
-INSERT INTO public_health.bronze.ingestion_metadata
-SELECT
-    run_id AS batch_id,
-    source_key AS source_name,
-    CAST(as_of_date AS STRING) AS source_version,
-    CAST(NULL AS STRING) AS endpoint,
-    CAST(NULL AS STRING) AS content_checksum,
-    source_file AS raw_file_path,
-    row_count AS record_count,
-    CAST(NULL AS INT) AS page_count,
-    ingested_at AS retrieved_at,
-    CASE WHEN status = 'SUCCESS' THEN 'processed' ELSE 'failed' END AS status,
-    bronze_table,
-    source_sheet,
-    column_count,
-    file_size_bytes,
-    error_message
-FROM public_health.bronze.ingestion_metadata_v0;
-
--- 4. Check, then drop the old table when satisfied.
-SELECT
-    status,
-    COUNT(*) AS n_rows
-FROM public_health.bronze.ingestion_metadata
-GROUP BY status;
-
--- DROP TABLE public_health.bronze.ingestion_metadata_v0;
+-- Note: the one-time migration from ingestion_metadata_v0 (rename + copy rows)
+-- was already applied on the workspace and removed so this script is idempotent.
+-- See git history for the original migration SQL.
