@@ -100,5 +100,6 @@
 # Args : --catalog public_health (use '' for two-part names in local tests)
 # Status: ran on local Spark 4.0 against the landing file (2026-10-09). Not run on Databricks.
 # =============================================================================
-%pip install shapely
-%restart_python
+# Databricks: install shapely first (cluster library, or run in a separate cell):
+#   %pip install shapely
+#   %restart_python
