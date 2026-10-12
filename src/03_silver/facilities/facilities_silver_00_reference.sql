@@ -1,0 +1,31 @@
+-- =============================================================================
+-- Loads reviewed facilities reference CSVs into the Silver schema.
+-- Run this before other facilities Silver scripts and rerun it whenever a reference
+-- CSV changes. Loads all columns as STRING to preserve values such as PSGC codes.
+--
+-- Reference tables
+--   facilities_area_exceptions.csv
+--     -> public_health.silver.facilities_area_exceptions
+--   facilities_id_map_override.csv
+--     -> public_health.silver.facilities_id_map_override
+--
+-- Reference handling
+--   facilities_area_exceptions stores reviewed geography mappings that the standard
+--   geography join cannot resolve. build_facilities_area_exceptions.py generates
+--   this file from source evidence and reviewer decisions; do not edit mappings
+--   directly in the generated CSV.
+--
+--   Only auto, corroborated, and reviewed mappings are usable. Other records remain
+--   unresolvable and are quarantined rather than matched by name.
+--
+--   facilities_id_map_override stores manual facility identity decisions between
+--   source systems.
+--
+-- Geography safeguard
+--   Validates the exceptions file against the current geography_silver checksum and
+--   stops the build if the geography snapshot has changed.
+--
+-- Reference files live in config/reference/facilities/ and are reviewed like code.
+-- City/municipality boundaries are built separately by
+-- facilities_silver_00a_area_boundary.sql.
+-- =============================================================================

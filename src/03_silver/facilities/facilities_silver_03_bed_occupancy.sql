@@ -1,0 +1,21 @@
+-- =============================================================================
+-- Builds public_health.silver.facilities_bed_occupancy_silver.
+-- Grain: one anonymous hospital record for one reporting year.
+-- Key: (_source_key, _source_file, _source_sheet, _source_row_num).
+-- Source lineage defines the key because the dataset has no hospital identifiers.
+--
+-- Source coverage
+--   2020-2024: private hospitals only; city/municipality-level BOR.
+--   2025: government and private hospitals; province-level BOR plus authorized
+--         and implementing bed counts.
+--
+-- Use
+--   Preserves all source records, including identical rows, for traceability.
+--   Treats 2025 as the candidate occupancy baseline, subject to validation of
+--   bed definitions, duplicate records, and reporting coverage.
+--
+-- Requires:
+--   facilities_silver_00_reference.sql
+--   geography silver tables
+--   bronze QC for bed occupancy
+-- =============================================================================
