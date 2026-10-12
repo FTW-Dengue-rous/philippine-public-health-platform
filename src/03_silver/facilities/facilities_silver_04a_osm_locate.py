@@ -191,7 +191,7 @@ for r in b:
         g = shape(json.loads(r["geometry_json"]))
         geoms.append(g if g.is_valid else make_valid(g))
     except Exception as e:
-        raise ValueError(f"Boundary GeoJSON does not parse for {r['psgc_code']}: {e}")
+        raise ValueError(f"Boundary GeoJSON does not parse for {r['psgc_code']}: {e}") from e
     codes.append(r["psgc_code"])
     areas.append(r["area_km2"] or geoms[-1].area)
 tree = STRtree(geoms)
@@ -238,7 +238,7 @@ if pts:
     geo_pts = points([p[0] for p in pts], [p[1] for p in pts])
     pi, gi = tree.query(geo_pts, predicate="intersects")
     hits = {}
-    for i, g in zip(pi.tolist(), gi.tolist()):
+    for i, g in zip(pi.tolist(), gi.tolist(), strict=False):
         hits.setdefault(i, []).append(g)
     misses = [i for i in range(len(pts)) if i not in hits]
     for i, gl in hits.items():
@@ -252,7 +252,7 @@ if pts:
         )
     if misses:
         ni, dist = tree.query_nearest(geo_pts[misses], return_distance=True, all_matches=False)
-        for q, g, d in zip(ni[0].tolist(), ni[1].tolist(), dist.tolist()):
+        for q, g, d in zip(ni[0].tolist(), ni[1].tolist(), dist.tolist(), strict=False):
             o = out[idx[misses[q]]]
             d_km = round(km(o["latitude"], d), 3)
             o["distance_to_boundary_km"] = d_km
