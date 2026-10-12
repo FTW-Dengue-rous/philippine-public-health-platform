@@ -38,13 +38,14 @@
 import argparse
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pyspark.sql import SparkSession
 
 
 def _add_dq_utils_to_path():
     import importlib.util
+
     if importlib.util.find_spec("dq_utils") is not None:
         return None
     starts = [os.getcwd()]
@@ -59,8 +60,11 @@ def _add_dq_utils_to_path():
             candidates = [folder]
             for base in (folder, os.path.join(folder, "src")):
                 try:
-                    candidates += [os.path.join(base, d) for d in sorted(os.listdir(base))
-                                   if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))]
+                    candidates += [
+                        os.path.join(base, d)
+                        for d in sorted(os.listdir(base))
+                        if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))
+                    ]
                 except OSError:
                     pass
             for c in candidates:
@@ -73,7 +77,9 @@ def _add_dq_utils_to_path():
             if parent == folder:
                 break
             folder = parent
-    raise ModuleNotFoundError("dq_utils.py not found. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched)))
+    raise ModuleNotFoundError(
+        "dq_utils.py not found. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 _add_dq_utils_to_path()
@@ -85,7 +91,9 @@ SCRIPT_NAME = "silver_cross_domain_qc.py"
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--catalog", default="public_health", help="'' gives two-part names (local tests)")
+    p.add_argument(
+        "--catalog", default="public_health", help="'' gives two-part names (local tests)"
+    )
     p.add_argument("--max_age_years", default="3", help="S98: latest year older than this is stale")
     p.add_argument("--fail_on_error", default="true")
     p.add_argument("--job_run_id", default=None)
@@ -148,10 +156,10 @@ TIMELINESS = [
 HISTORICAL_SOURCES = set()
 
 # S97 plausible bands (business rules, team-owned). A region outside the band is listed, not wrong.
-BED_BAND_PER_1000 = (0.3, 5.0)       # PH hospital beds per 1,000 people is about 1
-HW_BAND_PER_10000 = (1.0, 60.0)      # FHSIS doctors + nurses + midwives per 10,000
+BED_BAND_PER_1000 = (0.3, 5.0)  # PH hospital beds per 1,000 people is about 1
+HW_BAND_PER_10000 = (1.0, 60.0)  # FHSIS doctors + nurses + midwives per 10,000
 HW_PROFESSIONS = ("doctors", "nurses", "midwives")
-RATIO_YEAR = 2024                    # census year used as the denominator
+RATIO_YEAR = 2024  # census year used as the denominator
 FHSIS_KEY = "doh_fhsis_demographic"
 S99_TOLERANCE_PCT = 10.0
 S99_YEARS = (2020, 2024)
@@ -186,11 +194,15 @@ def region_population():
 
 def rec(dq, check_id, table, **kw):
     name, ctype, severity = CHECKS[check_id]
-    return dq.record(check_id, table_name=table, check_name=name, check_type=ctype, severity=severity, **kw)
+    return dq.record(
+        check_id, table_name=table, check_name=name, check_type=ctype, severity=severity, **kw
+    )
 
 
 def count(dq, check_id, table, fail_sql, total_sql, **kw):
-    return rec(dq, check_id, table, fail_count=scalar(fail_sql) or 0, total_count=scalar(total_sql), **kw)
+    return rec(
+        dq, check_id, table, fail_count=scalar(fail_sql) or 0, total_count=scalar(total_sql), **kw
+    )
 
 
 # ----------------------------------------------------------------------------------
@@ -209,23 +221,41 @@ def check_quarantine_gate(dq):
         GROUP BY r.target_table, r.build_id, r.source_key
         ORDER BY r.target_table, r.source_key""").collect()
     if not rows:
-        rec(dq, "S29", None, status="WARN", detail="no silver build found in quality.v_build_reconciliation")
+        rec(
+            dq,
+            "S29",
+            None,
+            status="WARN",
+            detail="no silver build found in quality.v_build_reconciliation",
+        )
         return
     for r in rows:
         short = r["target_table"].split(".")[-1]
         limit = QUARANTINE_FAIL_PCT_BY_SOURCE.get((short, r["source_key"]), QUARANTINE_FAIL_PCT)
-        reasons = listing(f"""SELECT reason, count(*) FROM {QUALITY}.row_disposition
+        reasons = listing(
+            f"""SELECT reason, count(*) FROM {QUALITY}.row_disposition
                                WHERE build_id = '{r["build_id"]}' AND target_table = '{r["target_table"]}'
                                  AND source_key = '{r["source_key"]}' AND disposition = 'quarantined'
-                               GROUP BY reason ORDER BY 2 DESC""", 5)
-        rec(dq, "S29", r["target_table"], source_key=r["source_key"], batch_id=f"build:{r['build_id']}",
-            fail_count=r["rows_quarantined"], total_count=r["rows_read"],
-            warn_threshold=0.0, threshold=limit / 100.0, min_fail_rows=QUARANTINE_MIN_FAIL_ROWS,
+                               GROUP BY reason ORDER BY 2 DESC""",
+            5,
+        )
+        rec(
+            dq,
+            "S29",
+            r["target_table"],
+            source_key=r["source_key"],
+            batch_id=f"build:{r['build_id']}",
+            fail_count=r["rows_quarantined"],
+            total_count=r["rows_read"],
+            warn_threshold=0.0,
+            threshold=limit / 100.0,
+            min_fail_rows=QUARANTINE_MIN_FAIL_ROWS,
             column_name="row_disposition = quarantined",
             observed=f"quarantined {r['rows_quarantined']} of {r['rows_read']} rows read "
-                     f"(also dropped {r['rows_dropped']}, duplicate {r['rows_duplicate']})",
+            f"(also dropped {r['rows_dropped']}, duplicate {r['rows_duplicate']})",
             expected=f"<= {limit}% or <= {QUARANTINE_MIN_FAIL_ROWS} rows",
-            detail=reasons)
+            detail=reasons,
+        )
 
 
 # ----------------------------------------------------------------------------------
@@ -235,18 +265,23 @@ def check_workforce_psgc(dq):
     for table in (HC, DEN):
         if not exists(table):
             continue
-        count(dq, "S04", table,
-              f"""SELECT count(DISTINCT t.psgc_code) FROM {table} t LEFT ANTI JOIN {latest_geography()} g
+        count(
+            dq,
+            "S04",
+            table,
+            f"""SELECT count(DISTINCT t.psgc_code) FROM {table} t LEFT ANTI JOIN {latest_geography()} g
                   ON g.psgc_code = t.psgc_code WHERE t.psgc_code IS NOT NULL""",
-              f"SELECT count(DISTINCT psgc_code) FROM {table} WHERE psgc_code IS NOT NULL",
-              column_name="psgc_code", detail="distinct codes not in the latest geography snapshot")
+            f"SELECT count(DISTINCT psgc_code) FROM {table} WHERE psgc_code IS NOT NULL",
+            column_name="psgc_code",
+            detail="distinct codes not in the latest geography snapshot",
+        )
 
 
 # ----------------------------------------------------------------------------------
 # S08 + S98: timeliness of every silver table, per source
 # ----------------------------------------------------------------------------------
 def check_timeliness(dq):
-    this_year = datetime.now(timezone.utc).year      # UTC, same as dq_utils
+    this_year = datetime.now(UTC).year  # UTC, same as dq_utils
     max_age = int(ARGS.max_age_years)
     for table, ycol, scol in TIMELINESS:
         if not exists(table):
@@ -255,14 +290,29 @@ def check_timeliness(dq):
         spark.sql(f"""SELECT CAST({src} AS STRING) AS source, max(CAST({ycol} AS INT)) AS latest
                       FROM {table} GROUP BY 1""").createOrReplaceTempView("xd_latest")
         hist = ", ".join(f"'{s}'" for s in HISTORICAL_SOURCES) or "''"
-        count(dq, "S08", table, f"SELECT count(*) FROM {table} WHERE CAST({ycol} AS INT) > {this_year}",
-              f"SELECT count(*) FROM {table}", column_name=ycol, detail=f"rows dated after {this_year}")
+        count(
+            dq,
+            "S08",
+            table,
+            f"SELECT count(*) FROM {table} WHERE CAST({ycol} AS INT) > {this_year}",
+            f"SELECT count(*) FROM {table}",
+            column_name=ycol,
+            detail=f"rows dated after {this_year}",
+        )
         stale = f"latest < {this_year - max_age} AND source NOT IN ({hist})"
-        count(dq, "S98", table, f"SELECT count(*) FROM xd_latest WHERE {stale}",
-              f"SELECT count(*) FROM xd_latest WHERE source NOT IN ({hist})", column_name=ycol,
-              observed=listing("SELECT source, latest FROM xd_latest ORDER BY latest DESC, source"),
-              expected=f"latest year >= {this_year - max_age} (or source listed as historical)",
-              detail=listing(f"SELECT concat('stale: ', source, ' ', latest) FROM xd_latest WHERE {stale} ORDER BY 1"))
+        count(
+            dq,
+            "S98",
+            table,
+            f"SELECT count(*) FROM xd_latest WHERE {stale}",
+            f"SELECT count(*) FROM xd_latest WHERE source NOT IN ({hist})",
+            column_name=ycol,
+            observed=listing("SELECT source, latest FROM xd_latest ORDER BY latest DESC, source"),
+            expected=f"latest year >= {this_year - max_age} (or source listed as historical)",
+            detail=listing(
+                f"SELECT concat('stale: ', source, ' ', latest) FROM xd_latest WHERE {stale} ORDER BY 1"
+            ),
+        )
 
 
 # ----------------------------------------------------------------------------------
@@ -277,13 +327,24 @@ def check_ratios(dq):
             FROM {region_population()} p
             LEFT JOIN (SELECT substr(psgc_code, 1, 2) AS r, sum(analysis_beds) AS beds FROM {REG}
                        WHERE facility_status = 'listed' AND facility_category IN ('hospital', 'infirmary')
-                         AND psgc_code IS NOT NULL GROUP BY 1) b ON b.r = p.r""").createOrReplaceTempView("xd_beds")
+                         AND psgc_code IS NOT NULL GROUP BY 1) b ON b.r = p.r""").createOrReplaceTempView(
+            "xd_beds"
+        )
         out = f"per_1000 NOT BETWEEN {lo} AND {hi}"
-        count(dq, "S97", REG, f"SELECT count(*) FROM xd_beds WHERE {out}", "SELECT count(*) FROM xd_beds",
-              column_name="analysis_beds per 1,000 population", admin_level=1,
-              expected=f"{lo} to {hi} per 1,000 (census {RATIO_YEAR})",
-              observed=listing("SELECT r, per_1000 FROM xd_beds ORDER BY r", 25),
-              detail=listing(f"SELECT concat('region ', r, ': ', per_1000) FROM xd_beds WHERE {out} ORDER BY r"))
+        count(
+            dq,
+            "S97",
+            REG,
+            f"SELECT count(*) FROM xd_beds WHERE {out}",
+            "SELECT count(*) FROM xd_beds",
+            column_name="analysis_beds per 1,000 population",
+            admin_level=1,
+            expected=f"{lo} to {hi} per 1,000 (census {RATIO_YEAR})",
+            observed=listing("SELECT r, per_1000 FROM xd_beds ORDER BY r", 25),
+            detail=listing(
+                f"SELECT concat('region ', r, ': ', per_1000) FROM xd_beds WHERE {out} ORDER BY r"
+            ),
+        )
     if exists(HC) and exists(POP):
         lo, hi = HW_BAND_PER_10000
         profs = ", ".join(f"'{x}'" for x in HW_PROFESSIONS)
@@ -301,11 +362,21 @@ def check_ratios(dq):
                          AND g.geographic_level IN ('Prov', 'City')
                        GROUP BY 1) h ON h.r = p.r""").createOrReplaceTempView("xd_hw")
         out = f"per_10000 NOT BETWEEN {lo} AND {hi}"
-        count(dq, "S97", HC, f"SELECT count(*) FROM xd_hw WHERE {out}", "SELECT count(*) FROM xd_hw",
-              column_name="doctors+nurses+midwives per 10,000 population", admin_level=1, source_key=FHSIS_KEY,
-              expected=f"{lo} to {hi} per 10,000 (FHSIS {RATIO_YEAR} / census {RATIO_YEAR})",
-              observed=listing("SELECT r, per_10000 FROM xd_hw ORDER BY r", 25),
-              detail=listing(f"SELECT concat('region ', r, ': ', per_10000) FROM xd_hw WHERE {out} ORDER BY r"))
+        count(
+            dq,
+            "S97",
+            HC,
+            f"SELECT count(*) FROM xd_hw WHERE {out}",
+            "SELECT count(*) FROM xd_hw",
+            column_name="doctors+nurses+midwives per 10,000 population",
+            admin_level=1,
+            source_key=FHSIS_KEY,
+            expected=f"{lo} to {hi} per 10,000 (FHSIS {RATIO_YEAR} / census {RATIO_YEAR})",
+            observed=listing("SELECT r, per_10000 FROM xd_hw ORDER BY r", 25),
+            detail=listing(
+                f"SELECT concat('region ', r, ': ', per_10000) FROM xd_hw WHERE {out} ORDER BY r"
+            ),
+        )
 
 
 # ----------------------------------------------------------------------------------
@@ -327,21 +398,40 @@ def check_population_sources(dq):
         WHERE d.year IN ({years}) AND d.population_status = 'ok' AND p.population > 0
           AND g.geographic_level IN ('Reg', 'City', 'Mun')""").createOrReplaceTempView("xd_pop")
     out = f"diff_pct > {S99_TOLERANCE_PCT}"
-    count(dq, "S99", DEN, f"SELECT count(*) FROM xd_pop WHERE {out}", "SELECT count(*) FROM xd_pop",
-          column_name="reported_population vs population_silver.population", source_key=FHSIS_KEY,
-          expected=f"within {S99_TOLERANCE_PCT}% of the census, years {years}",
-          detail=listing(f"""SELECT psgc_code, level, year, fhsis, 'vs', census, concat(diff_pct, '%')
-                             FROM xd_pop WHERE {out} ORDER BY diff_pct DESC"""))
+    count(
+        dq,
+        "S99",
+        DEN,
+        f"SELECT count(*) FROM xd_pop WHERE {out}",
+        "SELECT count(*) FROM xd_pop",
+        column_name="reported_population vs population_silver.population",
+        source_key=FHSIS_KEY,
+        expected=f"within {S99_TOLERANCE_PCT}% of the census, years {years}",
+        detail=listing(f"""SELECT psgc_code, level, year, fhsis, 'vs', census, concat(diff_pct, '%')
+                             FROM xd_pop WHERE {out} ORDER BY diff_pct DESC"""),
+    )
 
 
-SECTIONS = [("quarantine gate", check_quarantine_gate, None), ("workforce PSGC", check_workforce_psgc, HC), ("timeliness", check_timeliness, None),
-            ("ratios", check_ratios, None), ("population sources", check_population_sources, DEN)]
+SECTIONS = [
+    ("quarantine gate", check_quarantine_gate, None),
+    ("workforce PSGC", check_workforce_psgc, HC),
+    ("timeliness", check_timeliness, None),
+    ("ratios", check_ratios, None),
+    ("population sources", check_population_sources, DEN),
+]
 
 
 def main():
-    with DQRun(layer="silver", domain=DOMAIN, script_name=SCRIPT_NAME, job_run_id=ARGS.job_run_id,
-               source_keys="ALL", fail_on_error=ARGS.fail_on_error == "true",
-               code_version=ARGS.code_version, dq_schema=QUALITY) as dq:
+    with DQRun(
+        layer="silver",
+        domain=DOMAIN,
+        script_name=SCRIPT_NAME,
+        job_run_id=ARGS.job_run_id,
+        source_keys="ALL",
+        fail_on_error=ARGS.fail_on_error == "true",
+        code_version=ARGS.code_version,
+        dq_schema=QUALITY,
+    ) as dq:
         for name, fn, table in SECTIONS:
             print(f"[{name}]")
             try:

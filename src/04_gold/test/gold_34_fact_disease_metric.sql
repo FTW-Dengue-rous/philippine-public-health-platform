@@ -1,4 +1,4 @@
--- ======================================== 
+-- ========================================
 -- Builds public_health.test_gold.fact_disease_metric
 --   One row is: one metric of one disease, area, period, age group and source
 --   Primary key: fact_disease_metric_key (BIGINT, xxhash64 of the natural key or grain, stable across rebuilds)
