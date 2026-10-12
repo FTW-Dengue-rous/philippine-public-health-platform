@@ -44,15 +44,6 @@
 #
 # Requires: openpyxl. Spark only when --geography is not given.
 # =============================================================================
-import sys
-
-LANDING = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing"
-sys.argv = [
-    "build_socioeconomic_poverty_area_map.py",
-    "--poverty", f"{LANDING}/socioeconomic/psa_poverty/psa_poverty_province_biennial_2021_2025.xlsx",
-    "--psgc",    f"{LANDING}/geography/psa_psgc/psa_psgc_barangay_asof_20260713.xlsx",
-    "--out",     f"{LANDING}/reference/socioeconomic/socioeconomic_poverty_area_map_new.csv",
-]
 
 import argparse
 import collections
