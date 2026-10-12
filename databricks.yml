@@ -10,6 +10,12 @@ bundle:
 include:
   - resources/*.yml
 
+variables:
+  warehouse_id:
+    description: SQL warehouse that runs the .sql tasks (setup + silver domain scripts)
+    lookup:
+      warehouse: "Serverless Starter Warehouse"
+
 # Only ship what the job needs. Everything else stays in Git only.
 sync:
   exclude:
@@ -19,6 +25,7 @@ sync:
     - docs/**
     - presentation/**
     - tests/**
+    - src/01_ingestion/**          # ingestion runs outside this bundle/job
     - "**/README.md"
 
 targets:
@@ -39,6 +46,8 @@ targets:
       service_principal_name: 56e63750-69f1-4af9-80c6-f85bc6f1c506  # TODO: the SP's Application ID (UUID)
     permissions:
       - user_name: jghsantiago91@gmail.com
+        level: CAN_MANAGE
+      - user_name: jemmalyn.santiago@ftwfoundation.org
         level: CAN_MANAGE
       - user_name: virna.pomendia@ftwfoundation.org
         level: CAN_RUN
