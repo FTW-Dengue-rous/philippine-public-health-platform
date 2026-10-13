@@ -1,4 +1,3 @@
-# Databricks notebook source
 # =============================================================================
 # Bronze QC for the admin_boundaries domain
 #
@@ -35,12 +34,19 @@
 # --fail_on_error false is diagnostic only: no passing summary on failed checks.
 # --profile defaults to false because raw JSON may contain large geometry values.
 #
-# NOTEBOOK VERSION: paste this entire file into one Databricks Python cell.
-# Run that cell; it creates/reads widgets. No command-line arguments required.
-# Requires dq_utils.py in a quality folder and quality_setup.sql already run.
-# Default handoff is the current batch; update the widget for later batches.
+# How to run (Databricks Python script task on Serverless)
+#   --bronze_handoff_path /Volumes/.../_runs/<run-id>/bronze_handoff.json
+#   --fail_on_error true --profile false
+# Optional: --job_run_id <job-run-id> --code_version <git-sha>
+# Optional: --dq_utils_path /Workspace/.../src/05_quality/dq_utils.py
+# No notebook widgets or hardcoded batch path. Requires dq_utils.py and the
+# existing quality tables to be provisioned. Configure dependencies in the Job.
+# The shared dq_utils module must itself support Serverless (no cache/RDD APIs).
+# Existing batch QC summary and silver handoff are invalidated before checking,
+# preserving the original stale-marker protection. No Bronze rows are changed.
 # =============================================================================
 
+import argparse
 import json
 import os
 import re
@@ -94,12 +100,9 @@ def _add_dq_utils_to_path():
     )
 
 
-_add_dq_utils_to_path()
-from dq_utils import DQRun  # noqa: E402
-
-spark = SparkSession.builder.getOrCreate()
 DOMAIN = "admin_boundaries"
-SCRIPT_NAME = "admin_boundaries_bronze_qc_notebook.py"
+SCRIPT_NAME = "admin_boundaries_bronze_qc.py"
+LOADER_VERSION = "2026-10-13.1"
 BRONZE_TABLE = "public_health.bronze.admin_boundaries_bronze"
 CHECKS = {
     "HB00": ("QC ran without error", "EXECUTION", "FAIL"),
@@ -135,41 +138,28 @@ REQUIRED_COLUMNS = [
 # -----------------------------------------------------------------------------
 
 
-def parse_args():
-    # Notebook inputs only. No argparse and no command-line arguments.
-    from types import SimpleNamespace
-
-    utils = globals().get("dbutils")
-    if utils is None:
-        from pyspark.dbutils import DBUtils
-
-        utils = DBUtils(spark)
-    defaults = {
-        "bronze_handoff_path": "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/4e0d319d-0eef-4183-8b17-fce5e8bae757/bronze_handoff.json",
-        "fail_on_error": "true",
-        "profile": "false",
-        "job_run_id": "",
-        "code_version": "",
-    }
-    values = {}
-    for name, default in defaults.items():
-        try:
-            value = utils.widgets.get(name)
-        except Exception:
-            utils.widgets.text(name, default, name.replace("_", " ").title())
-            value = utils.widgets.get(name)
-        value = value.strip()
-        values[name] = (
-            (value or default)
-            if name in ("bronze_handoff_path", "fail_on_error", "profile")
-            else (value or None)
-        )
-    if values["fail_on_error"] not in ("true", "false") or values["profile"] not in (
-        "true",
-        "false",
-    ):
-        raise ValueError("fail_on_error and profile must be true or false")
-    return SimpleNamespace(**values)
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Admin boundaries Bronze QC")
+    parser.add_argument(
+        "--bronze_handoff_path",
+        required=True,
+        help="Full /Volumes path to the successful load's bronze_handoff.json",
+    )
+    parser.add_argument(
+        "--fail_on_error",
+        choices=("true", "false"),
+        default="true",
+        help="false is diagnostic only; failed QC must not promote to Silver",
+    )
+    parser.add_argument("--profile", choices=("true", "false"), default="false")
+    parser.add_argument("--job_run_id", default=None)
+    parser.add_argument("--code_version", default=None)
+    parser.add_argument(
+        "--dq_utils_path",
+        default=None,
+        help="Optional full path to dq_utils.py if auto-discovery cannot find it",
+    )
+    return parser.parse_args(argv)
 
 
 def load_handoff(value):
@@ -406,8 +396,20 @@ def run_checks(dq, h, expected, profile):
 # -----------------------------------------------------------------------------
 
 
-def main():
-    args = parse_args()
+def main(argv=None):
+    args = parse_args(argv)
+    global spark
+    spark = SparkSession.builder.getOrCreate()
+    if args.dq_utils_path:
+        helper = Path(args.dq_utils_path).resolve()
+        if helper.name != "dq_utils.py" or not helper.is_file():
+            raise FileNotFoundError("--dq_utils_path must point to an existing dq_utils.py file")
+        sys.path.insert(0, str(helper.parent))
+    else:
+        _add_dq_utils_to_path()
+    from dq_utils import DQRun
+
+    print(f"Admin boundaries Bronze QC {LOADER_VERSION}")
     path = Path(args.bronze_handoff_path)
     # Remove earlier outputs first: a failed rerun must not leave a passing marker.
     parts = PurePosixPath(args.bronze_handoff_path).parts
@@ -482,5 +484,5 @@ def main():
         print("Admin boundaries Bronze QC passed. Silver must read the validated Delta version.")
 
 
-print("Running admin_boundaries QC notebook v2 — widget inputs, explicit SQL statements")
-main()
+if __name__ == "__main__":
+    main()
