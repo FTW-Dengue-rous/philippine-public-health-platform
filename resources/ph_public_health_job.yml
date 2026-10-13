@@ -9,6 +9,13 @@
 #   plain .py                                   -> spark_python_task (env "default")
 #   plain .sql                                  -> sql_task.file     (${var.warehouse_id})
 #
+# Bronze geography/admin_boundaries loaders + bronze QC are plain Python scripts (PR #96)
+# with explicit CLI inputs:
+#   geography:        bronze_geography publishes its QC handoff as task values ->
+#                     qc_bronze_geography reads {{tasks.bronze_geography.values.*}}
+#   admin_boundaries: job parameter admin_boundaries_run_dir (ingestion _runs/<RUN_ID> folder)
+#                     -> bronze reads handoff.json, QC reads bronze_handoff.json in the same folder
+#
 # Dependency rule: a task waits for the tables it reads AND the QC of those tables,
 # so a failing QC (dq_utils raises on ERROR) stops everything downstream of it.
 
@@ -20,6 +27,13 @@ resources:
       tags:
         project: ph-public-health
         team: ftw-dengue-rous
+
+      # Set per run ("Run now with different parameters") after admin_boundaries ingestion, e.g.
+      #   /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/<RUN_ID>
+      # No trailing slash. Blank fails fast in bronze_admin_boundaries (not a /Volumes path).
+      parameters:
+        - name: admin_boundaries_run_dir
+          default: ""
 
       # schedule:                                  # auto-paused in dev target
       #   quartz_cron_expression: "0 0 6 ? * MON"
@@ -84,15 +98,25 @@ resources:
           depends_on:
             - task_key: setup_ingestion_metadata
             - task_key: setup_quality_registry
-          notebook_task:
-            notebook_path: ../src/02_bronze/geography_bronze.ipynb
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/02_bronze/geography_bronze.py
+            parameters:                         # blank --landing_batch_path = latest completed batch
+              - --config_path
+              - ${workspace.file_path}/config/sources_geography.yaml
+              - --write_to_bronze
+              - "yes"                           # script default is "no" (preview only)
 
         - task_key: bronze_admin_boundaries
           depends_on:
             - task_key: setup_ingestion_metadata
             - task_key: setup_quality_registry
-          notebook_task:
-            notebook_path: ../src/02_bronze/admin_boundaries_bronze.ipynb
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/02_bronze/admin_boundaries_bronze.py
+            parameters:
+              - --handoff_path
+              - "{{job.parameters.admin_boundaries_run_dir}}/handoff.json"
 
         - task_key: bronze_diseases
           depends_on:
@@ -129,18 +153,41 @@ resources:
         # ================================================================
         # 2. BRONZE QC
         # ================================================================
-        - task_key: qc_bronze_geography        # placeholder for now (passes), checks to follow
+        - task_key: qc_bronze_geography        # inputs = bronze_geography QC handoff (task values)
           depends_on:
             - task_key: bronze_geography
           environment_key: default
           spark_python_task:
             python_file: ../src/05_quality/bronze/geography_bronze_qc.py
+            parameters:
+              - --config_path
+              - ${workspace.file_path}/config/sources_geography.yaml
+              - --landing_batch_path
+              - "{{tasks.bronze_geography.values.landing_batch_path}}"
+              - --bronze_batch_id
+              - "{{tasks.bronze_geography.values.batch_id}}"
+              - --content_checksum
+              - "{{tasks.bronze_geography.values.content_checksum}}"
+              - --expected_record_count
+              - "{{tasks.bronze_geography.values.expected_record_count}}"
+              - --run_id
+              - "{{job.run_id}}"
 
         - task_key: qc_bronze_admin_boundaries
           depends_on:
             - task_key: bronze_admin_boundaries
-          notebook_task:
-            notebook_path: ../src/05_quality/bronze/admin_boundaries_bronze_qc.py
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/admin_boundaries_bronze_qc.py
+            parameters:
+              - --bronze_handoff_path
+              - "{{job.parameters.admin_boundaries_run_dir}}/bronze_handoff.json"
+              - --fail_on_error
+              - "true"
+              - --job_run_id
+              - "{{job.run_id}}"
+              - --dq_utils_path
+              - ${workspace.file_path}/src/05_quality/dq_utils.py
 
         - task_key: qc_bronze_psgc_population
           depends_on:
