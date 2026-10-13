@@ -452,14 +452,35 @@ def ingest_source(spark, args):
             "landing_batch_path": str(BATCH_PATH),
         }
         print("QC handoff:", json.dumps(handoff, sort_keys=True))
-        # Optional handoff for notebook runners; Spark Python tasks use the printed JSON.
-        if "dbutils" in globals():
-            try:
-                for key, value in handoff.items():
-                    dbutils.jobs.taskValues.set(key=key, value=value)
-            except Exception:
-                print("Task values unavailable; use printed QC handoff.")
+        # Job runs: qc_bronze_geography reads these via {{tasks.bronze_geography.values.<key>}}.
+        # Manual runs: use the printed QC handoff.
+        publish_task_values(spark, handoff)
         return handoff
+
+
+def publish_task_values(spark, values):
+    # Set Databricks Job task values. Plain Spark Python tasks have no global dbutils,
+    # so resolve it explicitly; outside a Job run this only prints a notice.
+    task_dbutils = globals().get("dbutils")
+    if task_dbutils is None:
+        try:
+            from databricks.sdk.runtime import dbutils as task_dbutils
+        except Exception:
+            try:
+                from pyspark.dbutils import DBUtils
+
+                task_dbutils = DBUtils(spark)
+            except Exception:
+                task_dbutils = None
+    if task_dbutils is None:
+        print("Task values unavailable; use printed QC handoff.")
+        return
+    try:
+        for key, value in values.items():
+            task_dbutils.jobs.taskValues.set(key=key, value=value)
+        print("QC handoff published as task values.")
+    except Exception as exc:
+        print(f"Task values unavailable ({exc}); use printed QC handoff.")
 
 
 # -----------------------------------------------------------------------------
