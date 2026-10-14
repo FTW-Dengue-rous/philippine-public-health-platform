@@ -561,7 +561,7 @@ resources:
         #    -> sql_task.file on the warehouse. Each file stops itself on a failed gate
         #    (raise_error), which fails the task and everything downstream.
         #    Dependencies follow what each file reads; files that read only silver run in
-        #    parallel after 00. Paths assume src/04_gold/ — adjust if the folder differs.
+        #    parallel after 00. Files live in src/04_gold/test_v2/ (test_gold2 schema); move the paths when promoted.
         #    Order: 00 -> {11,21,31,12,13} -> {20,30,35,40} -> {41,43,42,44} -> 51 -> 52 ->
         #    {53,54} -> {55,56,57} ; 61,62,63 ; 71 last (reads build_log of every table).
         # ================================================================
@@ -572,7 +572,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_00_setup.sql
+              path: ../src/04_gold/test_v2/gold_v2_00_setup.sql
 
         - task_key: gold_11_dim_geography
           depends_on:
@@ -580,7 +580,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_11_dim_geography.sql
+              path: ../src/04_gold/test_v2/gold_v2_11_dim_geography.sql
 
         - task_key: gold_21_dim_facility
           depends_on:
@@ -588,7 +588,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_21_dim_facility.sql
+              path: ../src/04_gold/test_v2/gold_v2_21_dim_facility.sql
 
         - task_key: gold_31_dim_disease
           depends_on:
@@ -596,7 +596,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_31_dim_disease.sql
+              path: ../src/04_gold/test_v2/gold_v2_31_dim_disease.sql
 
         - task_key: gold_12_dim_date
           depends_on:
@@ -604,7 +604,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_12_dim_date.sql
+              path: ../src/04_gold/test_v2/gold_v2_12_dim_date.sql
 
         - task_key: gold_13_dim_data_source
           depends_on:
@@ -612,7 +612,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_13_dim_data_source.sql
+              path: ../src/04_gold/test_v2/gold_v2_13_dim_data_source.sql
 
         # --- gold: facts
         - task_key: gold_20_fact_facility_capacity
@@ -624,7 +624,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_20_fact_facility_capacity.sql
+              path: ../src/04_gold/test_v2/gold_v2_20_fact_facility_capacity.sql
 
         - task_key: gold_30_fact_disease_metric
           depends_on:
@@ -635,7 +635,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_30_fact_disease_metric.sql
+              path: ../src/04_gold/test_v2/gold_v2_30_fact_disease_metric.sql
 
         - task_key: gold_35_fact_workforce_capacity
           depends_on:
@@ -645,7 +645,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_35_fact_workforce_capacity.sql
+              path: ../src/04_gold/test_v2/gold_v2_35_fact_workforce_capacity.sql
 
         - task_key: gold_40_fact_area_indicator
           depends_on:
@@ -655,7 +655,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_40_fact_area_indicator.sql
+              path: ../src/04_gold/test_v2/gold_v2_40_fact_area_indicator.sql
 
         # --- gold: seeds, maps, reference, default views
         - task_key: gold_41_source_priority
@@ -664,7 +664,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_41_source_priority.sql
+              path: ../src/04_gold/test_v2/gold_v2_41_source_priority.sql
 
         - task_key: gold_43_ref_osm_healthsite_point
           depends_on:
@@ -673,7 +673,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_43_ref_osm_healthsite_point.sql
+              path: ../src/04_gold/test_v2/gold_v2_43_ref_osm_healthsite_point.sql
 
         - task_key: gold_42_area_coverage_map
           depends_on:
@@ -684,7 +684,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_42_area_coverage_map.sql
+              path: ../src/04_gold/test_v2/gold_v2_42_area_coverage_map.sql
 
         - task_key: gold_44_fact_default_views
           depends_on:
@@ -696,7 +696,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_44_fact_default_views.sql
+              path: ../src/04_gold/test_v2/gold_v2_44_fact_default_views.sql
 
         # --- gold: marts: BQ1 spine
         - task_key: gold_51_mart_locality_service_presence
@@ -706,7 +706,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_51_mart_locality_service_presence.sql
+              path: ../src/04_gold/test_v2/gold_v2_51_mart_locality_service_presence.sql
 
         - task_key: gold_52_mart_base_planning_unit
           depends_on:
@@ -714,7 +714,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_52_mart_base_planning_unit.sql
+              path: ../src/04_gold/test_v2/gold_v2_52_mart_base_planning_unit.sql
 
         - task_key: gold_53_mart_area_service_profile
           depends_on:
@@ -724,7 +724,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_53_mart_area_service_profile.sql
+              path: ../src/04_gold/test_v2/gold_v2_53_mart_area_service_profile.sql
 
         - task_key: gold_54_mart_area_burden_indicator
           depends_on:
@@ -735,7 +735,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_54_mart_area_burden_indicator.sql
+              path: ../src/04_gold/test_v2/gold_v2_54_mart_area_burden_indicator.sql
 
         - task_key: gold_55_mart_area_evidence
           depends_on:
@@ -744,7 +744,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_55_mart_area_evidence.sql
+              path: ../src/04_gold/test_v2/gold_v2_55_mart_area_evidence.sql
 
         - task_key: gold_56_mart_area_priority
           depends_on:
@@ -753,7 +753,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_56_mart_area_priority.sql
+              path: ../src/04_gold/test_v2/gold_v2_56_mart_area_priority.sql
 
         - task_key: gold_57_fact_area_access
           depends_on:
@@ -762,7 +762,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_57_fact_area_access.sql
+              path: ../src/04_gold/test_v2/gold_v2_57_fact_area_access.sql
 
         # --- gold: marts: case studies, preparedness, readiness
         - task_key: gold_61_mart_tb_case_study
@@ -773,7 +773,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_61_mart_tb_case_study.sql
+              path: ../src/04_gold/test_v2/gold_v2_61_mart_tb_case_study.sql
 
         - task_key: gold_62_mart_kidney_case_study
           depends_on:
@@ -783,7 +783,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_62_mart_kidney_case_study.sql
+              path: ../src/04_gold/test_v2/gold_v2_62_mart_kidney_case_study.sql
 
         - task_key: gold_63_mart_dengue_peak_capacity
           depends_on:
@@ -793,7 +793,7 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_63_mart_dengue_peak_capacity.sql
+              path: ../src/04_gold/test_v2/gold_v2_63_mart_dengue_peak_capacity.sql
 
         - task_key: gold_71_mart_evidence_readiness
           depends_on:
@@ -807,4 +807,4 @@ resources:
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/gold_v2_71_mart_evidence_readiness.sql
+              path: ../src/04_gold/test_v2/gold_v2_71_mart_evidence_readiness.sql
