@@ -20,22 +20,51 @@
 #   4. Missing table is created automatically; no bronze_setup.sql is required.
 #   5. Insert-only MERGE preserves existing rows for an identical snapshot.
 #   6. Stored records and counts are reconciled after MERGE.
+#   7. Audit: one ingestion_metadata row per run, same 15-column schema and
+#      statuses as the other bronze loaders (<domain>_bronze.py). If the audit
+#      row cannot be written, the data stays committed and the run fails.
 #   Run one writer per snapshot. A post-write failure does not undo the MERGE.
 #   Another snapshot for the same version is blocked for downstream compatibility.
+#
+# What each run does (same idea as the incremental file loaders)
+#   load            Snapshot not in Bronze      -> MERGE, log 'processed'
+#   unchanged       Snapshot in Bronze, logged  -> no write, log 'skipped_duplicate'
+#   backfill_audit  Snapshot in Bronze, no log  -> no write, log 'processed' for the
+#                                                  existing batch (rows re-verified)
+#   repair          Snapshot partly in Bronze, no log -> insert missing rows, log 'processed'
+#   A snapshot that is logged but incomplete is blocked: delete its rows and reload.
+#   The 'processed' row's batch_id always equals the Bronze rows' batch_id, which is
+#   what bronze QC B13 and the silver lineage lookup match on.
 #
 # Separate quality workflow
 #   Source/landing -> Bronze QC should use the printed exact snapshot handoff.
 #   The existing Bronze -> Silver gate remains a separate workflow.
-#   This loader does not write ingestion_metadata or QC result tables.
+#   This loader writes ingestion_metadata (audit) but not QC result tables.
 #
 # How to run (Spark-enabled environment with Delta support, e.g. Databricks)
 #   python geography_bronze.py
-#       - Validate and preview the newest completed matching batch; no writes.
+#       - Load the newest completed matching batch (default write_to_bronze yes).
+#         Safe to rerun: an unchanged snapshot writes no Bronze rows, only a
+#         'skipped_duplicate' audit row.
+#   python geography_bronze.py --write_to_bronze no
+#       - Validate and preview only; no Bronze or metadata writes.
 #   python geography_bronze.py --config_path /Workspace/.../sources_geography.yaml
 #       - Use an explicit configuration file.
-#   python geography_bronze.py --landing_batch_path /Volumes/.../run_id=... --write_to_bronze yes
+#   python geography_bronze.py --landing_batch_path /Volumes/.../run_id=...
 #       - Load an explicit completed batch.
-#   The target catalog/schema must exist. Requires: pyyaml, pyspark, Delta support.
+#   Notebook (Run All): IPython launcher arguments are ignored. No options are
+#   needed for a normal load. To change one, set it in a cell above this script,
+#   either as environment variables:
+#       import os
+#       os.environ["PSGC_WRITE_TO_BRONZE"] = "no"   # preview only
+#       # optional: os.environ["PSGC_LANDING_BATCH_PATH"] = "/Volumes/.../run_id=..."
+#   or as arguments:
+#       import sys
+#       sys.argv = ["geography_bronze.py", "--write_to_bronze", "no"]
+#   Command-line arguments override environment variables.
+#   The target catalog/schema and ingestion_metadata must exist.
+#   Requires: pyyaml, pyspark, Delta support.
+#   Optional YAML key psgc.metadata_table (default public_health.bronze.ingestion_metadata).
 
 import argparse
 import hashlib
@@ -43,14 +72,45 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-LOADER_VERSION = "2026-10-13.1"
+LOADER_VERSION = "2026-10-15.4"
+DEFAULT_METADATA_TABLE = "public_health.bronze.ingestion_metadata"
+
+LINEAGE_COLUMNS = [
+    "source_system",
+    "source_version",
+    "source_endpoint",
+    "batch_id",
+    "content_checksum",
+    "raw_path",
+    "ingested_at",
+]
+
+# Ingestion metadata: same 15 columns, order and meaning as the other bronze loaders
+# (<domain>_bronze.py) and the API ingestion job. One row per run for this API snapshot.
+METADATA_SCHEMA = [
+    ("batch_id", "string"),          # equals the Bronze rows' batch_id for 'processed'
+    ("source_name", "string"),       # source_name from YAML / manifest
+    ("source_version", "string"),    # PSGC version from YAML / manifest
+    ("endpoint", "string"),          # API endpoint
+    ("content_checksum", "string"),  # manifest content checksum
+    ("raw_file_path", "string"),     # landing batch folder
+    ("record_count", "bigint"),      # rows of this snapshot in Bronze (reconciled after the write)
+    ("page_count", "int"),           # API pages in the landing batch
+    ("retrieved_at", "timestamp"),   # load time (UTC); equals the rows' ingested_at for 'processed'
+    ("status", "string"),            # processed | skipped_duplicate
+    ("bronze_table", "string"),
+    ("source_sheet", "string"),      # null for API loads
+    ("column_count", "int"),         # data columns written (lineage columns excluded)
+    ("file_size_bytes", "bigint"),   # landing page + record files
+    ("error_message", "string"),     # note on a backfilled / repaired / skipped row
+]
 
 
 # -----------------------------------------------------------------------------
@@ -83,7 +143,7 @@ def qualified_table(name):
     parts = name.split(".")
     if len(parts) != 3 or any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", p) for p in parts):
         raise ValueError(
-            "bronze_table must be catalog.schema.table using letters, numbers or underscores."
+            "Table names must be catalog.schema.table using letters, numbers or underscores."
         )
     return ".".join(f"`{part}`" for part in parts)
 
@@ -209,12 +269,55 @@ def validate_batch(path, manifest):
 
 
 # -----------------------------------------------------------------------------
-# Ingest one PSGC snapshot: build, validate, write and reconcile
+# Ingestion metadata (audit), same pattern as the other bronze loaders
+# -----------------------------------------------------------------------------
+
+
+def metadata_row(**values):
+    # One metadata row as a tuple in METADATA_SCHEMA order; missing values are null.
+    unknown = set(values) - {name for name, _ in METADATA_SCHEMA}
+    if unknown:
+        raise KeyError(f"not in METADATA_SCHEMA: {sorted(unknown)}")
+    return tuple(values.get(name) for name, _ in METADATA_SCHEMA)
+
+
+def has_processed_metadata(spark, metadata_table, batch_id):
+    # True if ingestion_metadata has a processed row for this batch ID.
+    # Bronze QC (B13) reconciles Bronze rows to that row by batch_id.
+    if not spark.catalog.tableExists(metadata_table):
+        return False
+    row = spark.sql(
+        f"SELECT COUNT(*) AS n FROM {qualified_table(metadata_table)} "
+        "WHERE batch_id = :batch_id AND status = 'processed'",
+        args={"batch_id": batch_id},
+    ).first()
+    return row["n"] > 0
+
+
+def log_metadata(spark, metadata_table, rows):
+    # Append audit rows. Columns the existing table does not have are left out (with a
+    # warning), as in the other loaders. The table itself must exist (ingestion_metadata.sql).
+    if not spark.catalog.tableExists(metadata_table):
+        raise RuntimeError(
+            f"{metadata_table} does not exist; create it with ingestion_metadata.sql first."
+        )
+    schema = ", ".join(f"`{name}` {dtype}" for name, dtype in METADATA_SCHEMA)
+    frame = spark.createDataFrame(rows, schema=schema)
+    existing = {field.name for field in spark.table(metadata_table).schema.fields}
+    missing = [name for name, _ in METADATA_SCHEMA if name not in existing]
+    if missing:
+        print("Warning: ingestion_metadata has no column(s)", missing, "- not logged.")
+    keep = [name for name, _ in METADATA_SCHEMA if name in existing]
+    frame.select(*keep).write.mode("append").saveAsTable(metadata_table)
+
+
+# -----------------------------------------------------------------------------
+# Ingest one PSGC snapshot: build, validate, write, reconcile and audit
 # -----------------------------------------------------------------------------
 
 
 def ingest_source(spark, args):
-    CONFIG_PATH = find_config(args.config_path or os.environ.get("PSGC_CONFIG_PATH", "").strip())
+    CONFIG_PATH = find_config(args.config_path)
     with CONFIG_PATH.open(encoding="utf-8") as source:
         config = yaml.safe_load(source)
     if not isinstance(config, dict):
@@ -229,6 +332,8 @@ def ingest_source(spark, args):
     LANDING_PATH = str(psgc_cfg["landing_path"])
     BRONZE_TABLE = str(psgc_cfg["bronze_table"])
     BRONZE_SQL = qualified_table(BRONZE_TABLE)
+    METADATA_TABLE = str(psgc_cfg.get("metadata_table") or DEFAULT_METADATA_TABLE)
+    qualified_table(METADATA_TABLE)
     if not re.fullmatch(r"[A-Za-z0-9_-]+", SOURCE_VERSION):
         raise ValueError("Invalid source version.")
     BATCH_PATH, MANIFEST = select_batch(
@@ -241,10 +346,16 @@ def ingest_source(spark, args):
     RECORD_PATHS, RECORD_COUNT = validate_batch(BATCH_PATH, MANIFEST)
     CONTENT_CHECKSUM = MANIFEST["content_checksum"]
     RUN_ID = MANIFEST["run_id"]
+    PAGE_COUNT = MANIFEST["page_count"]
+    FILE_SIZE_BYTES = sum((BATCH_PATH / name).stat().st_size for name in MANIFEST["files"])
+    # One timestamp per run: used for the rows' ingested_at and the audit row's retrieved_at,
+    # so the two match exactly (the lineage lookup joins on them).
+    LOAD_TS = datetime.now(timezone.utc)
     print("Config:", str(CONFIG_PATH))
     print("Verified landing batch:", str(BATCH_PATH))
     print("Records:", RECORD_COUNT)
     print("Bronze table:", BRONZE_TABLE)
+    print("Metadata table:", METADATA_TABLE)
 
     WRITE_TO_BRONZE = args.write_to_bronze
     if WRITE_TO_BRONZE not in ("yes", "no"):
@@ -292,9 +403,10 @@ def ingest_source(spark, args):
             "batch_id": F.lit(RUN_ID),
             "content_checksum": F.lit(CONTENT_CHECKSUM),
             "raw_path": F.lit(str(BATCH_PATH)),
-            "ingested_at": F.current_timestamp(),
+            "ingested_at": F.lit(LOAD_TS),
         }
     )
+    DATA_COLUMN_COUNT = len([c for c in bronze_df.columns if c not in LINEAGE_COLUMNS])
     if bronze_df.count() != RECORD_COUNT:
         raise RuntimeError("Spark input record count does not match validated landing batch.")
     if bronze_df.filter(F.col("psgc_code").isNull()).limit(1).count():
@@ -323,8 +435,9 @@ def ingest_source(spark, args):
             raise RuntimeError("Bronze target must be a Delta table.")
 
     # Preserve the existing single-snapshot compatibility rule for downstream readers.
-    # Preserve an existing batch ID when adding any missing rows for the same snapshot.
-    SILVER_COMPATIBILITY_ISSUE = None
+    # Preserve an existing batch ID when the same snapshot is already in Bronze.
+    LOAD_ISSUE = None
+    BATCH_ID = RUN_ID
     if TABLE_EXISTS:
         version_snapshots = (
             spark.table(BRONZE_TABLE)
@@ -334,7 +447,7 @@ def ingest_source(spark, args):
             .collect()
         )
         if len(version_snapshots) > 1:
-            SILVER_COMPATIBILITY_ISSUE = "Multiple existing Bronze snapshots for this version; review Silver selection before loading."
+            LOAD_ISSUE = "Multiple existing Bronze snapshots for this version; review Silver selection before loading."
         elif version_snapshots:
             existing = version_snapshots[0]
             if (
@@ -342,16 +455,13 @@ def ingest_source(spark, args):
                 existing["source_endpoint"],
                 existing["content_checksum"],
             ) != (SOURCE_NAME, ENDPOINT, CONTENT_CHECKSUM):
-                SILVER_COMPATIBILITY_ISSUE = "A different Bronze snapshot already exists for this version. Current Silver expects one snapshot; loading another is blocked."
+                LOAD_ISSUE = "A different Bronze snapshot already exists for this version. Current Silver expects one snapshot; loading another is blocked."
             elif not existing["batch_id"]:
-                SILVER_COMPATIBILITY_ISSUE = (
-                    "Existing snapshot has no batch ID; review lineage before loading."
-                )
+                LOAD_ISSUE = "Existing snapshot has no batch ID; review lineage before loading."
             else:
-                bronze_df = bronze_df.withColumn("batch_id", F.lit(existing["batch_id"]))
-                print("Preserving existing Bronze batch ID:", existing["batch_id"])
-    if SILVER_COMPATIBILITY_ISSUE:
-        print("Silver compatibility notice:", SILVER_COMPATIBILITY_ISSUE)
+                BATCH_ID = existing["batch_id"]
+                bronze_df = bronze_df.withColumn("batch_id", F.lit(BATCH_ID))
+                print("Preserving existing Bronze batch ID:", BATCH_ID)
 
     KEYS = ["source_system", "source_version", "source_endpoint", "content_checksum", "psgc_code"]
 
@@ -389,17 +499,49 @@ def ingest_source(spark, args):
 
     check_existing_rows(target_snapshot())
     EXISTING_COUNT = target_snapshot().count()
+
+    # Decide what this run does, like the incremental file loaders.
+    ALREADY_LOGGED = EXISTING_COUNT > 0 and has_processed_metadata(
+        spark, METADATA_TABLE, BATCH_ID
+    )
+    if EXISTING_COUNT == 0:
+        ACTION = "load"
+    elif EXISTING_COUNT == RECORD_COUNT:
+        ACTION = "unchanged" if ALREADY_LOGGED else "backfill_audit"
+    elif not ALREADY_LOGGED:
+        ACTION = "repair"
+    else:
+        ACTION = "blocked"
+        LOAD_ISSUE = LOAD_ISSUE or (
+            f"Bronze batch {BATCH_ID} is logged as processed but has only {EXISTING_COUNT} of "
+            f"{RECORD_COUNT} rows. Delete its rows (batch_id = '{BATCH_ID}') and reload."
+        )
+    if LOAD_ISSUE:
+        ACTION = "blocked"
+        print("Load blocked:", LOAD_ISSUE)
+
     print("Preview — landing records:", RECORD_COUNT)
     print("Preview — existing matching Bronze records:", EXISTING_COUNT)
     print("Preview — records to insert:", RECORD_COUNT - EXISTING_COUNT)
+    print("Preview — Bronze batch ID:", BATCH_ID)
+    print("Preview — processed audit row already logged:", ALREADY_LOGGED)
+    print("Preview — planned action:", ACTION)
     print("write_to_bronze:", WRITE_TO_BRONZE)
 
     if WRITE_TO_BRONZE != "yes":
-        print("Preview complete. No Bronze rows were written.")
-        print("To load, set write_to_bronze to yes and Run All again.")
-    else:
-        if SILVER_COMPATIBILITY_ISSUE:
-            raise RuntimeError(SILVER_COMPATIBILITY_ISSUE + " No Bronze rows were written.")
+        print("Preview complete. No Bronze or metadata rows were written.")
+        print("To load, set write_to_bronze to yes (the default) and Run All again.")
+        return None
+
+    if ACTION == "blocked":
+        raise RuntimeError(LOAD_ISSUE + " No Bronze or metadata rows were written.")
+    if not spark.catalog.tableExists(METADATA_TABLE):
+        raise RuntimeError(
+            f"{METADATA_TABLE} does not exist; create it with ingestion_metadata.sql first. "
+            "No Bronze rows were written."
+        )
+
+    if ACTION in ("load", "repair"):
         if not TABLE_EXISTS:
             definitions = ", ".join(
                 f"`{name}` {dtype.upper()}" for name, dtype in expected_schema.items()
@@ -428,34 +570,105 @@ def ingest_source(spark, args):
             """)
         finally:
             spark.catalog.dropTempView(VIEW_NAME)
+    else:
+        print("Snapshot already in Bronze; no rows written.")
 
-        stored = target_snapshot()
-        check_existing_rows(stored)
-        STORED_COUNT = stored.count()
-        if STORED_COUNT != RECORD_COUNT:
-            raise RuntimeError(
-                "Bronze count does not reconcile with landing; rerun after investigating."
-            )
-        print("Landing → Bronze completed.")
-        print("Bronze table:", BRONZE_TABLE)
-        print("Records in this snapshot:", STORED_COUNT)
-        print("Landing batch:", str(BATCH_PATH))
-        print("Content checksum:", CONTENT_CHECKSUM)
+    # Reconcile what is stored, whatever the action.
+    stored = target_snapshot()
+    check_existing_rows(stored)
+    STORED_COUNT = stored.count()
+    if STORED_COUNT != RECORD_COUNT:
+        raise RuntimeError(
+            "Bronze count does not reconcile with landing; rerun after investigating."
+        )
+    stored_batches = [row["batch_id"] for row in stored.select("batch_id").distinct().collect()]
+    if stored_batches != [BATCH_ID]:
+        raise RuntimeError(
+            f"Stored snapshot batch IDs {stored_batches} do not equal {BATCH_ID}; review before logging."
+        )
+    SNAPSHOT_LOADED_AT = stored.agg(F.min("ingested_at")).first()[0]
 
-        handoff = {
-            "source_system": SOURCE_NAME,
-            "source_version": SOURCE_VERSION,
-            "source_endpoint": ENDPOINT,
-            "content_checksum": CONTENT_CHECKSUM,
-            "batch_id": bronze_df.select("batch_id").first()["batch_id"],
-            "expected_record_count": RECORD_COUNT,
-            "landing_batch_path": str(BATCH_PATH),
-        }
-        print("QC handoff:", json.dumps(handoff, sort_keys=True))
-        # Job runs: qc_bronze_geography reads these via {{tasks.bronze_geography.values.<key>}}.
-        # Manual runs: use the printed QC handoff.
-        publish_task_values(spark, handoff)
-        return handoff
+    # Audit row (step 7), same statuses and message style as the file loaders.
+    common = dict(
+        source_name=SOURCE_NAME,
+        source_version=SOURCE_VERSION,
+        endpoint=ENDPOINT,
+        content_checksum=CONTENT_CHECKSUM,
+        raw_file_path=str(BATCH_PATH),
+        page_count=PAGE_COUNT,
+        bronze_table=BRONZE_TABLE,
+        source_sheet=None,
+        column_count=DATA_COLUMN_COUNT,
+        file_size_bytes=FILE_SIZE_BYTES,
+    )
+    if ACTION == "load":
+        audit = metadata_row(
+            batch_id=BATCH_ID, record_count=STORED_COUNT, retrieved_at=LOAD_TS,
+            status="processed", error_message=None, **common,
+        )
+    elif ACTION == "repair":
+        audit = metadata_row(
+            batch_id=BATCH_ID, record_count=STORED_COUNT, retrieved_at=LOAD_TS,
+            status="processed",
+            error_message=(
+                f"repaired: {RECORD_COUNT - EXISTING_COUNT} missing rows inserted into load "
+                f"{BATCH_ID}; earlier rows keep their ingested_at"
+            ),
+            **common,
+        )
+    elif ACTION == "backfill_audit":
+        audit = metadata_row(
+            batch_id=BATCH_ID, record_count=STORED_COUNT, retrieved_at=SNAPSHOT_LOADED_AT,
+            status="processed",
+            error_message=(
+                "audit row backfilled: bronze rows were loaded earlier without a log row; "
+                f"re-verified against landing batch {RUN_ID}"
+            ),
+            **common,
+        )
+    else:  # unchanged
+        audit = metadata_row(
+            batch_id=str(uuid.uuid4()), record_count=STORED_COUNT, retrieved_at=LOAD_TS,
+            status="skipped_duplicate",
+            error_message=(
+                f"unchanged: bronze rows are from load {BATCH_ID} "
+                f"({SNAPSHOT_LOADED_AT:%Y-%m-%d %H:%M:%S} UTC)"
+            ),
+            **common,
+        )
+    try:
+        log_metadata(spark, METADATA_TABLE, [audit])
+    except Exception as exc:
+        raise RuntimeError(
+            f"Bronze rows are committed, but the ingestion_metadata audit row was not written "
+            f"({type(exc).__name__}: {str(exc)[:300]}). Rerun this loader: it will backfill "
+            "the audit row without rewriting Bronze."
+        ) from exc
+    print(f"Audit logged: {audit[METADATA_SCHEMA.index(('status', 'string'))]} "
+          f"for batch {BATCH_ID} in {METADATA_TABLE}")
+
+    print("Landing → Bronze completed." if ACTION in ("load", "repair")
+          else "Bronze unchanged; audit up to date.")
+    print("Bronze table:", BRONZE_TABLE)
+    print("Records in this snapshot:", STORED_COUNT)
+    print("Landing batch:", str(BATCH_PATH))
+    print("Content checksum:", CONTENT_CHECKSUM)
+
+    handoff = {
+        "source_system": SOURCE_NAME,
+        "source_version": SOURCE_VERSION,
+        "source_endpoint": ENDPOINT,
+        "content_checksum": CONTENT_CHECKSUM,
+        "batch_id": BATCH_ID,
+        "expected_record_count": RECORD_COUNT,
+        "landing_batch_path": str(BATCH_PATH),
+        "action": ACTION,
+    }
+    print("QC handoff:", json.dumps(handoff, sort_keys=True))
+    # Job runs: qc_bronze_geography reads these via {{tasks.bronze_geography.values.<key>}}.
+    # Manual runs: use the printed QC handoff.
+    publish_task_values(spark, handoff)
+    return handoff
 
 
 def publish_task_values(spark, values):
@@ -489,20 +702,32 @@ def publish_task_values(spark, values):
 
 
 def parse_args(argv=None):
+    # Defaults come from environment variables so notebook runs can set them in a
+    # cell above. parse_known_args ignores IPython launcher arguments such as
+    # "-f .../connection.json" that Databricks notebooks pass to every script.
     parser = argparse.ArgumentParser(description="PSGC landing to Bronze ingestion")
-    parser.add_argument("--config_path", default=None, help="Full path to sources_geography.yaml")
+    parser.add_argument(
+        "--config_path",
+        default=os.environ.get("PSGC_CONFIG_PATH", "").strip() or None,
+        help="Full path to sources_geography.yaml (env PSGC_CONFIG_PATH)",
+    )
     parser.add_argument(
         "--landing_batch_path",
-        default="",
-        help="Completed batch folder; blank selects latest matching batch",
+        default=os.environ.get("PSGC_LANDING_BATCH_PATH", "").strip(),
+        help="Completed batch folder; blank selects latest matching batch "
+        "(env PSGC_LANDING_BATCH_PATH)",
     )
     parser.add_argument(
         "--write_to_bronze",
         choices=("yes", "no"),
-        default="no",
-        help="Default no: preview without writes",
+        default=os.environ.get("PSGC_WRITE_TO_BRONZE", "yes").strip().lower(),
+        help="Default yes: writes Bronze and the audit row; use no to preview "
+        "(env PSGC_WRITE_TO_BRONZE)",
     )
-    return parser.parse_args(argv)
+    args, ignored = parser.parse_known_args(argv)
+    if ignored:
+        print("Ignoring launcher arguments:", " ".join(ignored))
+    return args
 
 
 def main(argv=None):
