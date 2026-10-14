@@ -1,0 +1,51 @@
+# Setup job. The pipeline job runs it as its first task (Run Job task `setup`), so a fresh or
+# reset workspace works on the first pipeline run. It can also be run on its own.
+#
+#   schema_setup -> quality_setup        -> quality_registry_seed
+#                -> ingestion_metadata   ->
+#
+# All scripts are idempotent, so a rerun is safe.
+# Skipped: quality_migrate_bronze_qc.sql (one-time migration),
+#          silver_setup.sql / gold_setup.sql (empty).
+# Not in any job: builders/ (run by hand to regenerate the reference CSVs, see builders/README.md).
+
+resources:
+  jobs:
+    ph_public_health_setup:
+      name: ph-public-health-setup
+      max_concurrent_runs: 1
+      tags:
+        project: ph-public-health
+        team: ftw-dengue-rous
+
+      tasks:
+        - task_key: setup_schemas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/00_setup/schema_setup.sql
+
+        - task_key: setup_quality
+          depends_on:
+            - task_key: setup_schemas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/00_setup/quality_setup.sql
+
+        - task_key: setup_ingestion_metadata    # shared ingestion log, bronze loaders append
+          depends_on:
+            - task_key: setup_schemas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/00_setup/ingestion_metadata.sql
+
+        - task_key: setup_quality_registry
+          depends_on:
+            - task_key: setup_quality
+            - task_key: setup_ingestion_metadata
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/05_quality/sql/quality_registry_seed.sql
