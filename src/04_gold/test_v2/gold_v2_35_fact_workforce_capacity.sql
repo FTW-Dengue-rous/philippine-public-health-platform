@@ -1,4 +1,5 @@
 -- ========================================
+-- gold_v2_35_fact_workforce_capacity.sql
 -- Builds public_health.test_gold2.fact_workforce_capacity
 --   One row is: headcount of one profession in one area and year from one source
 --   Primary key: fact_workforce_capacity_key (BIGINT, xxhash64 of the natural key or grain, stable across rebuilds)
@@ -24,13 +25,18 @@
 --   * period_key -> date_key, source_key -> data_source_key (same hash values). The key keeps
 --     the v1 expression.
 --   * v1 listed fact_population as an input but did not read it. It is not read here.
+--   * 2026-10-14 evening: source_role is passed through from silver unchanged. v1 and the first
+--     v2 run renamed silver's cross_check to alternate; the fact now uses the same role words
+--     as source_priority (preferred, cross_check, fallback), so the two can be joined on role.
 -- Rules (as in v1)
 --   * One gold row per silver row. Rows that are not analysis_eligible are KEPT.
 --   * Null is not zero. A headcount is filled only when its own silver status is ok. Silver
 --     stores a 0 for the 2018 legend "0 = No Data": that becomes null.
 --   * analysis_eligible refers to headcount_total. Use it to pick rows for a rate.
---   * source_role (preferred, alternate): PSA and FHSIS overlap for 2018 to 2023. Filter
---     source_role = 'preferred' or one source, or the query double counts.
+--   * source_role (preferred, cross_check): PSA and FHSIS overlap for 2018 to 2023; the PSA rows
+--     of those years are cross_check (compared with FHSIS national totals, silver check S71,
+--     never shown as the value). Filter source_role = 'preferred' or one source, or the query
+--     double counts.
 --   * Country, region, province, city and municipality rows sit together. Never add a
 --     province to its listed cities. The nurse series changes definition in 2019
 --     (is_break_year).
@@ -112,7 +118,7 @@ SELECT xxhash64(h.area_key, CAST(h.year AS STRING), h.profession, h._source_key)
        CASE WHEN h.doh_hired_status = 'ok' THEN CAST(h.headcount_doh_hired AS BIGINT) END AS headcount_doh_hired,
        h.analysis_eligible,
        h.exclusion_reason,
-       CASE h.source_role WHEN 'cross_check' THEN 'alternate' ELSE h.source_role END AS source_role,
+       h.source_role,                             -- preferred or cross_check, as in silver and source_priority
        h.geo_coverage_basis                       AS coverage_basis,
        h.is_break_year,
        gold_build_id                              AS _gold_build_id
@@ -157,7 +163,7 @@ SELECT 'eligible row without a total', count(*) FROM public_health.test_gold2.fa
 UNION ALL
 SELECT 'row that is not eligible and has no exclusion_reason', count(*) FROM public_health.test_gold2.fact_workforce_capacity__candidate WHERE NOT analysis_eligible AND exclusion_reason IS NULL
 UNION ALL
-SELECT 'source_role outside preferred, alternate', count(*) FROM public_health.test_gold2.fact_workforce_capacity__candidate WHERE source_role NOT IN ('preferred', 'alternate') OR source_role IS NULL
+SELECT 'source_role outside preferred, cross_check', count(*) FROM public_health.test_gold2.fact_workforce_capacity__candidate WHERE source_role NOT IN ('preferred', 'cross_check') OR source_role IS NULL
 UNION ALL
 SELECT 'more than one preferred source for an area, year and profession', count(*) FROM (
   SELECT 1 FROM public_health.test_gold2.fact_workforce_capacity__candidate WHERE source_role = 'preferred'
@@ -260,6 +266,7 @@ DROP TABLE IF EXISTS public_health.test_gold2.fact_workforce_capacity__gates;
 DROP TABLE IF EXISTS public_health.test_gold2.fact_workforce_capacity__inputs;
 
 -- Databricks 2026-10-14: 28,071 rows (FHSIS 27,207 and PSA 864). The local test with a silver stand-in gave 28,080.
+-- Expected roles: FHSIS 2018-2025 preferred; PSA 2012-2017 preferred (432 rows), PSA 2018-2023 cross_check (432 rows).
 SELECT s.source_dataset, f.source_role, f.profession_group, min(d.year) AS first_year, max(d.year) AS last_year,
        count(*) AS row_count, count_if(f.analysis_eligible) AS eligible_rows
 FROM public_health.test_gold2.fact_workforce_capacity AS f
