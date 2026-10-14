@@ -21,49 +21,51 @@ docs/
 │   ├── architecture-decisions.md
 │   └── ci-cd-setup.md
 │
-├── bronze/
-│   ├── README.md
-│   ├── diseases.md
-│   ├── facilities.md
-│   ├── geography.md
-│   ├── population.md
-│   ├── psgc-ingestion.md
-│   ├── socioeconomic.md
-│   └── workforce.md
+├── 04-pipeline/
+│   ├── bronze/
+│   │   ├── README.md
+│   │   ├── diseases.md
+│   │   ├── facilities.md
+│   │   ├── geography.md
+│   │   ├── population.md
+│   │   ├── psgc-ingestion.md
+│   │   ├── socioeconomic.md
+│   │   └── workforce.md
+│   │
+│   ├── silver/
+│   │   ├── README.md
+│   │   ├── diseases.md
+│   │   ├── facilities.md
+│   │   ├── geography.md
+│   │   ├── population.md
+│   │   ├── socioeconomic.md
+│   │   └── workforce.md
+│   │
+│   ├── gold/
+│   │   ├── README.md
+│   │   ├── conceptual-model.md
+│   │   ├── logical-data-model-and-erd.md
+│   │   ├── table-catalog.md
+│   │   ├── data-dictionary.md
+│   │   ├── business-data-dictionary.md
+│   │   ├── data-marts.md
+│   │   ├── metric-definitions.md
+│   │   ├── gold-usage-rules.md
+│   │   ├── seed-data.md
+│   │   ├── sample-queries.md
+│   │   ├── analytical-validation-and-traceability.md
+│   │   └── findings-report.md
+│   │
+│   └── quality/
+│       ├── quality-control-framework.md
+│       ├── quality-check-catalog.md
+│       └── quality-results-and-evidence.md
 │
-├── silver/
-│   ├── README.md
-│   ├── diseases.md
-│   ├── facilities.md
-│   ├── geography.md
-│   ├── population.md
-│   ├── socioeconomic.md
-│   └── workforce.md
-│
-├── gold/
-│   ├── README.md
-│   ├── conceptual-model.md
-│   ├── logical-data-model-and-erd.md
-│   ├── table-catalog.md
-│   ├── data-dictionary.md
-│   ├── business-data-dictionary.md
-│   ├── data-marts.md
-│   ├── metric-definitions.md
-│   ├── gold-usage-rules.md
-│   ├── seed-data.md
-│   ├── sample-queries.md
-│   ├── analytical-validation-and-traceability.md
-│   └── findings-report.md
-│
-├── quality/
-│   ├── quality-control-framework.md
-│   ├── quality-check-catalog.md
-│   └── quality-results-and-evidence.md
-│
-├── dashboard/
+├── 05-dashboard/
 │   └── dashboard-guide.md
 │
-├── evidence/
+├── 06-evidence/
+│   ├── README.md
 │   ├── architecture/
 │   ├── bronze/
 │   ├── silver/
@@ -74,19 +76,18 @@ docs/
 │   │   └── run-comparison.md
 │   └── reconciliation/
 │
-├── operations/
+├── 07-operations/
 │   ├── setup-guide.md
 │   ├── runbook.md
 │   ├── reproducibility.md
 │   ├── ci-cd-and-testing.md
 │   └── troubleshooting.md
 │
-├── governance/
+├── 08-governance/
 │   ├── data-governance.md
 │   ├── known-issues-and-backlog.md
 │   ├── team-and-timeline.md
 │   └── change-log.md
 │
 └── lineage-and-quality-contract-v1.3.md
-
 ```
