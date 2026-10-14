@@ -1,78 +1,4 @@
 # =============================================================================
-# facilities_silver_04a_osm_locate.py
-#
-# Locates OSM / Healthsites facility points by city or municipality using
-# point-in-polygon against public_health.silver.facilities_area_boundary.
-#
-# Grain:
-#   One row per Bronze OSM facility row.
-#
-# Boundaries:
-#   facilities_area_boundary is built from admin_boundaries_silver by
-#   facilities_silver_00a_area_boundary.sql.
-#   Only boundary_rule = 'hdx' rows have usable polygons.
-#   Geometry is GeoJSON in WGS84 longitude/latitude.
-#
-# Output:
-#   public_health.silver.facilities_osm_point_silver__located
-#
-# This is a staging table only.
-# facilities_silver_04_osm_point.sql reads it, resolves rows without coordinates
-# using addr:city, validates the results, and writes facilities_osm_point_silver.
-#
-# Run 04a and 04 in the same job, one after the other.
-# Step 04 stops if Bronze or the boundary table changed between the two steps.
-#
-# Why Python:
-#   Point-in-polygon uses shapely with an STRtree spatial index.
-#   The current data is small enough to process on the driver.
-#   If Databricks spatial SQL is available, this step could later be replaced
-#   with ST_Contains / spatial SQL without changing the output contract.
-#
-# Coordinate status:
-#   ok           valid numeric coordinates within the Philippines bounds
-#   missing      longitude or latitude is blank
-#   not_a_number longitude or latitude cannot be parsed
-#   outside_ph   outside lon 114-127 or lat 4-21.5
-#
-# Location rules:
-#   Inside exactly 1 polygon
-#     -> locate_method = 'point_in_polygon'
-#
-#   Inside 2+ polygons
-#     -> use the smallest polygon
-#     -> locate_method = 'point_in_polygon'
-#     -> boundary_candidates > 1
-#     -> Step 04 reports a warning
-#
-#   Inside no polygon, nearest boundary <= 1 km
-#     -> locate_method = 'nearest_boundary'
-#     -> intended for coastline points, piers and small islands
-#
-#   Inside no polygon, nearest boundary > 1 km
-#     -> leave unresolved here
-#     -> Step 04 tries addr:city matching
-#
-# Distance:
-#   Distance to the nearest polygon edge is approximated in km using:
-#     latitude  = degrees * 111.32
-#     longitude = degrees * 111.32 * cos(latitude)
-#
-# Requirements:
-#   - shapely, if not already installed on the runtime
-#   - facilities_silver_00a_area_boundary.sql completed successfully
-#
-# Args:
-#   --catalog public_health
-#   Use --catalog '' for two-part names in local tests.
-# =============================================================================
-
-# Shapely: in the job it comes from the "default" environment
-# (resources/ph_public_health_job.yml). For an interactive run, install it first
-# in a separate cell: %pip install shapely, then %restart_python.
-
-# =============================================================================
-# facilities_silver_04a_osm_locate.py
 # Point-in-polygon step for the OSM / Healthsites facility points (facilities-silver-plan.md v2.1,
 # section 4.2 step v2 and section 12).
 # Lineage contract v1.3: this is step 1 of the 04 build, not a build of its own. It writes only a
@@ -108,35 +34,26 @@
 #
 # Needs: pip install shapely (if the runtime does not have it), facilities_silver_00a_area_boundary.sql.
 # Args : --catalog public_health (use '' for two-part names in local tests)
-# Status: ran on local Spark 4.0 against the landing file (2026-10-09; rerun 2026-10-12 with GeoJSON
-# polygons from a stand-in admin_boundaries_silver). Not run on Databricks.
+# 2026-10-14: reads only the newest Healthsites file (latest _as_of_date).
 # =============================================================================
+
 import argparse
 import json
 import math
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (
-    DoubleType,
-    IntegerType,
-    LongType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
-)
+from pyspark.sql.types import (StructType, StructField, StringType, IntegerType, DoubleType,
+                               TimestampType, LongType)
 
 try:
     from shapely import STRtree, points
     from shapely.geometry import shape
     from shapely.validation import make_valid
-except ImportError as e:  # make the cause obvious in the job log
-    raise ImportError(
-        "shapely is required for the point-in-polygon step: %pip install shapely"
-    ) from e
+except ImportError as e:   # make the cause obvious in the job log
+    raise ImportError("shapely is required for the point-in-polygon step: %pip install shapely") from e
 
 NEAREST_MAX_KM = 1.0
-PH_BBOX = (114.0, 4.0, 127.0, 21.5)  # lon_min, lat_min, lon_max, lat_max
+PH_BBOX = (114.0, 4.0, 127.0, 21.5)     # lon_min, lat_min, lon_max, lat_max
 
 p = argparse.ArgumentParser()
 p.add_argument("--catalog", default="public_health")
@@ -173,24 +90,27 @@ def km(lat, deg_dist):
 b = spark.sql(f"""SELECT psgc_code, CAST(area_km2 AS DOUBLE) AS area_km2, geometry_json
                   FROM {BOUNDARY} WHERE boundary_rule = 'hdx' AND geometry_json IS NOT NULL""").collect()
 if not b:
-    raise RuntimeError(
-        f"{BOUNDARY} has no geometries: run facilities_silver_00a_area_boundary.sql first"
-    )
+    raise RuntimeError(f"{BOUNDARY} has no geometries: run facilities_silver_00a_area_boundary.sql first")
 geoms, codes, areas = [], [], []
 for r in b:
     try:
         g = shape(json.loads(r["geometry_json"]))
         geoms.append(g if g.is_valid else make_valid(g))
     except Exception as e:
-        raise ValueError(f"Boundary GeoJSON does not parse for {r['psgc_code']}: {e}") from e
+        raise ValueError(f"Boundary GeoJSON does not parse for {r['psgc_code']}: {e}")
     codes.append(r["psgc_code"])
     areas.append(r["area_km2"] or geoms[-1].area)
 tree = STRtree(geoms)
 
 # ---- points -----------------------------------------------------------------------------------
+# Only the newest file (latest _as_of_date): hdx_healthsites is load_mode latest_file and bronze keeps
+# every snapshot. Same rule as fac_osm_latest_file in facilities_silver_04_osm_point.sql.
 rows = spark.sql(f"""SELECT _source_key, _source_file, _source_sheet, _source_row_num, _ingested_at,
                             osm_type, osm_id, X, Y
-                     FROM {BRONZE} WHERE _source_key = 'hdx_healthsites'""").collect()
+                     FROM {BRONZE}
+                     WHERE _source_key = 'hdx_healthsites'
+                       AND _as_of_date = (SELECT max(_as_of_date) FROM {BRONZE}
+                                          WHERE _source_key = 'hdx_healthsites')""").collect()
 
 out, idx, pts = [], [], []
 for r in rows:
@@ -203,24 +123,12 @@ for r in rows:
         status = "outside_ph"
     else:
         status = "ok"
-    out.append(
-        {
-            "_source_key": r["_source_key"],
-            "_source_file": r["_source_file"],
-            "_source_sheet": r["_source_sheet"],
-            "_source_row_num": r["_source_row_num"],
-            "_ingested_at": r["_ingested_at"],
-            "osm_type": r["osm_type"],
-            "osm_id": r["osm_id"],
-            "longitude": x if status == "ok" else None,
-            "latitude": y if status == "ok" else None,
-            "coordinate_status": status,
-            "located_psgc": None,
-            "locate_method": None,
-            "boundary_candidates": 0,
-            "distance_to_boundary_km": None,
-        }
-    )
+    out.append({"_source_key": r["_source_key"], "_source_file": r["_source_file"],
+                "_source_sheet": r["_source_sheet"], "_source_row_num": r["_source_row_num"],
+                "_ingested_at": r["_ingested_at"], "osm_type": r["osm_type"], "osm_id": r["osm_id"],
+                "longitude": x if status == "ok" else None, "latitude": y if status == "ok" else None,
+                "coordinate_status": status, "located_psgc": None, "locate_method": None,
+                "boundary_candidates": 0, "distance_to_boundary_km": None})
     if status == "ok":
         idx.append(len(out) - 1)
         pts.append((x, y))
@@ -229,77 +137,39 @@ if pts:
     geo_pts = points([p[0] for p in pts], [p[1] for p in pts])
     pi, gi = tree.query(geo_pts, predicate="intersects")
     hits = {}
-    for i, g in zip(pi.tolist(), gi.tolist(), strict=False):
+    for i, g in zip(pi.tolist(), gi.tolist()):
         hits.setdefault(i, []).append(g)
     misses = [i for i in range(len(pts)) if i not in hits]
     for i, gl in hits.items():
         best = min(gl, key=lambda g: (areas[g], codes[g]))
         o = out[idx[i]]
-        o.update(
-            located_psgc=codes[best],
-            locate_method="point_in_polygon",
-            boundary_candidates=len(gl),
-            distance_to_boundary_km=0.0,
-        )
+        o.update(located_psgc=codes[best], locate_method="point_in_polygon",
+                 boundary_candidates=len(gl), distance_to_boundary_km=0.0)
     if misses:
         ni, dist = tree.query_nearest(geo_pts[misses], return_distance=True, all_matches=False)
-        for q, g, d in zip(ni[0].tolist(), ni[1].tolist(), dist.tolist(), strict=False):
+        for q, g, d in zip(ni[0].tolist(), ni[1].tolist(), dist.tolist()):
             o = out[idx[misses[q]]]
             d_km = round(km(o["latitude"], d), 3)
             o["distance_to_boundary_km"] = d_km
             if d_km <= NEAREST_MAX_KM:
-                o.update(
-                    located_psgc=codes[g], locate_method="nearest_boundary", boundary_candidates=0
-                )
+                o.update(located_psgc=codes[g], locate_method="nearest_boundary", boundary_candidates=0)
 
 bver = table_version(BOUNDARY)
-schema = StructType(
-    [
-        StructField("_source_key", StringType()),
-        StructField("_source_file", StringType()),
-        StructField("_source_sheet", StringType()),
-        StructField("_source_row_num", IntegerType()),
-        StructField("_ingested_at", TimestampType()),
-        StructField("osm_type", StringType()),
-        StructField("osm_id", StringType()),
-        StructField("longitude", DoubleType()),
-        StructField("latitude", DoubleType()),
-        StructField("coordinate_status", StringType()),
-        StructField("located_psgc", StringType()),
-        StructField("locate_method", StringType()),
-        StructField("boundary_candidates", IntegerType()),
-        StructField("distance_to_boundary_km", DoubleType()),
-        StructField("boundary_table_version", LongType()),
-        StructField("boundary_rows", LongType()),
-    ]
-)
-data = [
-    (
-        o["_source_key"],
-        o["_source_file"],
-        o["_source_sheet"],
-        o["_source_row_num"],
-        o["_ingested_at"],
-        o["osm_type"],
-        o["osm_id"],
-        o["longitude"],
-        o["latitude"],
-        o["coordinate_status"],
-        o["located_psgc"],
-        o["locate_method"],
-        o["boundary_candidates"],
-        o["distance_to_boundary_km"],
-        bver,
-        len(codes),
-    )
-    for o in out
-]
-(
-    spark.createDataFrame(data, schema)
-    .write.mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(TARGET)
-)
+schema = StructType([
+    StructField("_source_key", StringType()), StructField("_source_file", StringType()),
+    StructField("_source_sheet", StringType()), StructField("_source_row_num", IntegerType()),
+    StructField("_ingested_at", TimestampType()), StructField("osm_type", StringType()),
+    StructField("osm_id", StringType()), StructField("longitude", DoubleType()),
+    StructField("latitude", DoubleType()), StructField("coordinate_status", StringType()),
+    StructField("located_psgc", StringType()), StructField("locate_method", StringType()),
+    StructField("boundary_candidates", IntegerType()), StructField("distance_to_boundary_km", DoubleType()),
+    StructField("boundary_table_version", LongType()), StructField("boundary_rows", LongType())])
+data = [(o["_source_key"], o["_source_file"], o["_source_sheet"], o["_source_row_num"], o["_ingested_at"],
+         o["osm_type"], o["osm_id"], o["longitude"], o["latitude"], o["coordinate_status"],
+         o["located_psgc"], o["locate_method"], o["boundary_candidates"], o["distance_to_boundary_km"],
+         bver, len(codes)) for o in out]
+(spark.createDataFrame(data, schema).write.mode("overwrite").option("overwriteSchema", "true")
+      .saveAsTable(TARGET))
 
 n_pip = sum(1 for o in out if o["locate_method"] == "point_in_polygon")
 n_near = sum(1 for o in out if o["locate_method"] == "nearest_boundary")
@@ -307,8 +177,6 @@ n_multi = sum(1 for o in out if o["boundary_candidates"] > 1)
 by_status = {}
 for o in out:
     by_status[o["coordinate_status"]] = by_status.get(o["coordinate_status"], 0) + 1
-print(
-    f"{TARGET}: {len(out)} rows; coordinates {by_status}; point_in_polygon {n_pip} "
-    f"(on a shared border {n_multi}); nearest_boundary {n_near}; not located by coordinates "
-    f"{len(out) - n_pip - n_near}"
-)
+print(f"{TARGET}: {len(out)} rows; coordinates {by_status}; point_in_polygon {n_pip} "
+      f"(on a shared border {n_multi}); nearest_boundary {n_near}; not located by coordinates "
+      f"{len(out) - n_pip - n_near}")

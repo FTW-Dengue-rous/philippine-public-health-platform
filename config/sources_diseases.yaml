@@ -1,5 +1,6 @@
 # =============================================================================
 # sources_diseases.yaml — disease domain
+# Philippine Public Health Platform (FTW Capstone)
 #
 # One entry per source. The bronze loader reads an entry, loads the file(s)
 # to bronze with every data column as STRING, and adds the lineage columns:
@@ -48,6 +49,12 @@
 #     names as in the file; they are cleaned the same way as the header).
 #   - encoding_errors: strict (default) stops on a byte that does not fit the encoding.
 #     Set replace on an entry to load anyway; replaced bytes are counted and logged.
+#
+# Items marked CONFIRM were not verified against the actual file.
+# Entries 1-12: checks written from the real files on 2026-10-06.
+# Entries 13-16 and hdx_dengue_province_weekly_2021.csv: checks and row counts verified
+# against the real files on 2026-10-07.
+# Entries 17-19: checks, row counts and control values verified against the real files on 2026-10-14.
 # =============================================================================
 
 version: 1
@@ -73,7 +80,7 @@ sources:
     description: DOH dengue surveillance, cases and deaths by region and month
     agency: Department of Health
     obtained_via: eFOI
-    ticket_number: null
+    ticket_number: null                    # CONFIRM
     original_file: dengue_surveillance_2021_2025.csv
     path: diseases/restricted/doh_foi/dengue/doh_foi_dengue_region_monthly_2021_2025.csv
     format: csv
@@ -83,7 +90,7 @@ sources:
     skip_rows: 0
     bronze_table: "public_health.bronze.diseases_doh_foi_dengue_bronze"
     required_columns: [Year, Month, Region, Cases, Deaths]
-    as_of_date: 2025-09-30                 # data extracted around Sept 2025;
+    as_of_date: 2025-09-30                 # data extracted around Sept 2025; CONFIRM the date on the FOI response
     load_mode: upsert
     merge_keys: [region_name, year, month]
     sharing: restricted
@@ -126,7 +133,7 @@ sources:
     original_file: Dengue_Environmental Vars_Dataset.xlsx
     path: diseases/upnoah/upnoah_dengue_region_weekly_2016_2025.xlsx
     format: xlsx
-    sheet: Regional Data
+    sheet: Regional Data                  
     header_mode: single
     skip_rows: 0
     bronze_table: "public_health.bronze.diseases_upnoah_dengue_regional_bronze"
@@ -228,7 +235,7 @@ sources:
     description: DOH Region II TB data 2020-2025 (incidence, notifications, mortality, cases by province, municipality, age and sex)
     agency: Department of Health
     obtained_via: eFOI
-    ticket_number: null
+    ticket_number: null                    # CONFIRM
     original_file: Requested 2020-2025 TB Data from FOI - Sheet1.csv
     path: diseases/restricted/doh_foi/tb/doh_foi_tb_region2_annual_2020_2025.csv
     format: csv
@@ -248,7 +255,7 @@ sources:
       - {row: 116, expect: {0: "disaggregated by Age and Sex"}}
       - {row: 117, expect: {0: "Age/Sex", 1: "2020", 11: "2025"}}
       - {row: 118, expect: {1: "Male", 2: "Female", 11: "Male", 12: "Female"}}
-    as_of_date: 2026-10-01  # confirm
+    as_of_date: 2026-10-01                 # CONFIRM date received
     load_mode: latest_file
     silver_enabled: false
     sharing: restricted
@@ -301,7 +308,7 @@ sources:
     delimiter: ","
     encoding: utf-8
     bronze_table: "public_health.bronze.diseases_psa_deaths_national_monthly_bronze"
-    as_of_date: 2026-10-04                 # download date
+    as_of_date: 2026-10-04                 # download date; CONFIRM
     load_mode: upsert
     merge_keys: [cause_code, year, month]
     sharing: open
@@ -355,7 +362,7 @@ sources:
     delimiter: ";"
     encoding: cp1252
     bronze_table: "public_health.bronze.diseases_psa_deaths_region_annual_bronze"
-    as_of_date: 2026-10-02                 # download date
+    as_of_date: 2026-10-02                 # download date; CONFIRM
     load_mode: upsert
     merge_keys: [region_name, cause_code, year]
     sharing: open
@@ -441,7 +448,7 @@ sources:
       - {row: 2, expect: {0: "Cause of Death and Usual Residence", 2: "2006", 4: "2007", 10: "2010", 20: "2015"}}
       - {row: 3, expect: {2: "Male", 3: "Female", 20: "Male", 21: "Female"}}
       - {row: 5, expect: {0: "PHILIPPINES"}}
-    as_of_date: 2026-10-04                 # download date;
+    as_of_date: 2026-10-04                 # download date; CONFIRM
     load_mode: upsert
     merge_keys: [area_name, cause_name, year]
     sharing: open
@@ -523,7 +530,125 @@ sources:
     notes:
       - 2025 population is projected; 2025 has two extra testing columns (null for 2024).
       - PSGC code is blank on the 2025 Philippines row; pad codes to 10 digits in silver.
-      - Other sheets in the 2025 workbook are not loaded. The Population sheet belongs to the population domain.
+      - Sheets TB-TPT, TSR-DSTB and TSR-MDRTB of the 2025 workbook are loaded by doh_fhsis_tb_tpt and doh_fhsis_tb_treatment_success.
+      - The Population sheet belongs to the population domain; the query sheets (Annual_tested, TB-TPT query, TSR) repeat the same data and are not loaded.
+
+  # ---------------------------------------------------------------------------
+  # 17. FHSIS TB preventive treatment (TPT) for TB contacts: municipality x year, 2025  (PUBLIC)
+  # ---------------------------------------------------------------------------
+  doh_fhsis_tb_tpt:
+    description: FHSIS Table 2.F.7.3, TB contacts given TB preventive treatment, by age group and sex, by area
+    agency: Department of Health (DOH-Integrated Tuberculosis Information System)
+    obtained_via: FHSIS annual report tables
+    path: diseases/doh_fhsis                          # same workbook as doh_fhsis_tb
+    header_mode: names
+    columns: {0: psgc_code, 1: area_name,
+              2: tpt_0_14_male, 3: tpt_0_14_female, 4: tpt_0_14_total,
+              5: tpt_15_over_male, 6: tpt_15_over_female, 7: tpt_15_over_total,
+              8: tpt_eligible_population,
+              9: tpt_all_male, 10: tpt_all_female, 11: tpt_all_total, 12: tpt_coverage_pct}
+    files:
+      - name: doh_fhsis_tb_municipality_annual_2025.xlsx
+        sheet: TB-TPT
+        data_start_row: 6
+        header_check:
+          - {row: 1, expect: {2: "Table 2.F.7.3"}}
+          - {row: 2, expect: {2: "Annual 2025"}}
+          - {row: 4, expect: {0: "PSGC", 1: "Region, Province/City", 2: "0-14 years old", 5: "15 yrs old and above", 8: "Eligible Population", 9: "All Ages"}}
+          - {row: 5, expect: {2: "Male", 3: "Female", 4: "Total", 9: "Male", 10: "Female", 11: "Total", 12: "%"}}
+          - {row: 6, expect: {1: "PHILIPPINES"}}
+    bronze_table: "public_health.bronze.diseases_fhsis_tb_tpt_bronze"
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    merge_keys: [psgc_code, year]
+    sharing: public
+    source_key_override: doh_fhsis
+    silver_target: "public_health.silver.diseases_tb_programme_silver"   # planned
+    coverage: 2025 annual; Philippines, 18 regions, 116 provinces/HUCs, 1,609 cities and municipalities
+    qc:
+      expected_rows: 1748                 # 1,744 area rows + 4 source/legend lines
+      numeric_columns: [tpt_all_total, tpt_eligible_population, tpt_coverage_pct]
+      null_tokens: ["*"]                  # * = incomplete or no data submitted (none in the 2025 file)
+      row_sum:
+        total: tpt_all_total
+        parts: [tpt_0_14_total, tpt_15_over_total]
+      control_values:
+        - {label: "2025 Philippines contacts given TPT", column: tpt_all_total, expected: 120108, where: "upper(trim(area_name)) = 'PHILIPPINES'"}
+        - {label: "2025 Philippines TPT 0-14", column: tpt_0_14_total, expected: 37399, where: "upper(trim(area_name)) = 'PHILIPPINES'"}
+        - {label: "2025 Philippines TPT 15+", column: tpt_15_over_total, expected: 82709, where: "upper(trim(area_name)) = 'PHILIPPINES'"}
+    notes:
+      - "Eligible population is an ESTIMATE printed by FHSIS: notified TB cases x 4 contacts x 70%. Coverage % rests on it; label it as such."
+      - tpt_eligible_population has decimals (1498711.2). Keep as text in bronze; cast to DECIMAL in silver, never to an integer.
+      - 2025 only. 9 area rows are blank (no report); one area shows coverage above 100% (114.3%).
+      - PSGC code is blank on the Philippines row; pad codes to 10 digits in silver. Names can carry trailing spaces.
+      - Column 13 has a blank header (" ") and no data.
+      - The long-format sheet "TB-TPT, query" holds the same data by sex and age with PSGC columns; not loaded.
+
+  # ---------------------------------------------------------------------------
+  # 18. FHSIS TB treatment success rate, drug-susceptible and drug-resistant: municipality x year, 2025  (PUBLIC)
+  # ---------------------------------------------------------------------------
+  doh_fhsis_tb_treatment_success:
+    description: FHSIS Tables 2.F.7.4 (DSTB, all forms) and 2.F.7.5 (RR/MDR-TB), TB cases cured and completed treatment, by age group, by area
+    agency: Department of Health (DOH-Integrated Tuberculosis Information System)
+    obtained_via: FHSIS annual report tables
+    path: diseases/doh_fhsis                          # same workbook as doh_fhsis_tb
+    header_mode: names
+    columns: {0: psgc_code, 1: area_name,
+              2: population_0_14, 3: cohort_cases_0_14,
+              4: success_0_14_male, 5: success_0_14_female, 6: success_0_14_total, 7: success_0_14_pct,
+              8: population_15_over, 9: cohort_cases_15_over,
+              10: success_15_over_male, 11: success_15_over_female, 12: success_15_over_total, 13: success_15_over_pct,
+              14: cohort_cases_age_unknown,
+              15: success_age_unknown_male, 16: success_age_unknown_female, 17: success_age_unknown_total,
+              18: population_all, 19: cohort_cases_all,
+              20: success_all_male, 21: success_all_female, 22: success_all_total, 23: success_all_pct}
+    files:
+      - name: doh_fhsis_tb_municipality_annual_2025.xlsx
+        sheet: TSR-DSTB
+        data_start_row: 6
+        header_check:
+          - {row: 1, expect: {4: "Table 2.F.7.4"}}
+          - {row: 2, expect: {4: "Annual 2025"}}
+          - {row: 4, expect: {0: "PSGC", 1: "Region, Province/City", 2: "Projected Population", 3: "(0-14)", 9: "15 years old and above", 14: "Null/Unknown/Invalid", 18: "all ages", 19: "all ages", 20: "All ages"}}
+          - {row: 5, expect: {4: "Male", 6: "Total", 7: "%", 13: "%", 17: "Total", 20: "Male", 22: "Total", 23: "%"}}
+          - {row: 6, expect: {1: "PHILIPPINES"}}
+      - name: doh_fhsis_tb_municipality_annual_2025.xlsx
+        sheet: TSR-MDRTB
+        data_start_row: 6
+        header_check:
+          - {row: 1, expect: {4: "Table 2.F.7.5"}}
+          - {row: 2, expect: {4: "Annual 2025"}}
+          - {row: 4, expect: {0: "PSGC", 1: "Region, Province/City", 2: "Projected Population", 3: "(0-14)", 9: "15 yrs old and above", 14: "Null/Unknown/Invalid", 18: "all ages", 19: "all ages", 20: "All Ages"}}
+          - {row: 5, expect: {4: "Male", 6: "Total", 7: "%", 13: "%", 17: "Total", 20: "Male", 22: "Total", 23: "%"}}
+          - {row: 6, expect: {1: "PHILIPPINES"}}
+    bronze_table: "public_health.bronze.diseases_fhsis_tb_treatment_success_bronze"
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    merge_keys: [psgc_code, year, drug_resistance]   # drug_resistance comes from _source_sheet in silver
+    sharing: public
+    source_key_override: doh_fhsis
+    silver_target: "public_health.silver.diseases_tb_programme_silver"   # planned
+    coverage: 2025 annual; Philippines, 18 regions, 116 provinces/HUCs, 1,609 cities and municipalities
+    qc:
+      expected_rows: 3496                 # 1,748 per sheet (1,744 area rows + 4 source/legend lines) x 2 sheets
+      numeric_columns: [cohort_cases_all, success_all_total, success_all_pct]
+      null_tokens: ["*"]
+      row_sum:
+        total: success_all_total
+        parts: [success_all_male, success_all_female]
+      control_values:
+        - {label: "2025 Philippines DSTB cohort", column: cohort_cases_all, expected: 414185, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-DSTB'"}
+        - {label: "2025 Philippines DSTB cured and completed", column: success_all_total, expected: 382547, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-DSTB'"}
+        - {label: "2025 Philippines RR/MDR-TB cohort", column: cohort_cases_all, expected: 7721, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-MDRTB'"}
+        - {label: "2025 Philippines RR/MDR-TB cured and completed", column: success_all_total, expected: 5030, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-MDRTB'"}
+    notes:
+      - "Treatment success = cured + treatment completed, over the cases in the treatment cohort (cohort_cases_*). success_*_pct = success_*_total / cohort_cases_* x 100 (checked: Philippines DSTB 382,547 / 414,185 = 92.36%)."
+      - The cohort is the group of cases whose treatment outcome is reported in 2025, not the 2025 notifications. Never divide by notified cases from doh_fhsis_tb.
+      - success_*_male and success_*_female are cured/completed counts by sex; the cohort is not split by sex.
+      - Age groups 0-14, 15+ and unknown add up to all ages.
+      - Sheet TSR-DSTB = drug-susceptible TB (all forms), TSR-MDRTB = rifampicin-resistant / multidrug-resistant TB. Silver derives drug_resistance from _source_sheet.
+      - 2025 only. 9 area rows are blank (no report). PSGC code is blank on the Philippines row.
+      - The long-format sheet "TSR" holds the same data with numerators and denominators by sex and age; not loaded.
 
   # ---------------------------------------------------------------------------
   # 10. FHSIS heart disease and pneumonia 2024: province x year, by age and sex  (PUBLIC)
@@ -670,7 +795,7 @@ sources:
       - {row: 3, expect: {0: "Year", 1: "Total", 3: "NCR", 19: "Region VI"}}
       - {row: 4, expect: {1: "Number", 2: "Rate"}}
       - {row: 41, expect: {0: "Year", 1: "Region VII", 15: "BARMM", 17: "Foreign"}}
-    as_of_date: 2026-10-05                 # download date;
+    as_of_date: 2026-10-05                 # download date; CONFIRM
     load_mode: upsert
     merge_keys: [region_name, year]
     sharing: open
@@ -713,7 +838,7 @@ sources:
     header_check:
       - {row: 0, expect: {0: "Notifiable Diseases Reported Cases by Cause"}}
     bronze_table: "public_health.bronze.diseases_psa_notifiable_national_annual_bronze"
-    as_of_date: 2026-10-05                 # download date;
+    as_of_date: 2026-10-05                 # download date; CONFIRM
     load_mode: upsert
     merge_keys: [disease_name, year]
     sharing: open
@@ -757,7 +882,7 @@ sources:
       - {row: 0, expect: {0: "Leading Causes of Morbidity"}}
       - {row: 3, expect: {0: "of Morbidity"}}
       - {row: 4, expect: {1: "Number of Cases", 3: "Rate"}}
-    as_of_date: 2026-10-05                 # download date;
+    as_of_date: 2026-10-05                 # download date; CONFIRM
     load_mode: upsert
     merge_keys: [cause_name, year]
     sharing: open
@@ -831,12 +956,71 @@ sources:
       - Location names are GBD spellings ("Cotabato (North Cotabato)", "Samar (Western Samar)"); location_id is the join key to the geo crosswalk.
       - Download straight from the tool; never open and save in Excel (an earlier copy had its val column overwritten).
 
+  # ---------------------------------------------------------------------------
+  # 19. PhilHealth claims by hospital, selected illnesses, 2016-2025  (RESTRICTED)
+  # ---------------------------------------------------------------------------
+  philhealth_foi_claims_hospital:
+    description: PhilHealth claims count and amount by admission year, health facility, illness (case-rate package) and claim status
+    agency: PhilHealth
+    obtained_via: eFOI
+    ticket_number: FOI-REQ-2026-6223      # from the FOI request transmittal (eFOI, filed 2026-09-30)
+    request_date: 2026-09-30
+    original_file: FOI_PH-20266223.xlsx
+    path: diseases/restricted/philhealth_foi/philhealth_claims_hospital_annual_2016_2025.xlsx
+    format: xlsx
+    sheet: FOI20266223
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.diseases_philhealth_claims_hospital_bronze"
+    required_columns: ["Admit Year", "HF Name", "HF Region", "HF Province", "HF Municipality", "HF Sector",
+                       "Illness Description", "Claim Status", "Claims Count", "Claims Amount"]
+    as_of_date: 2026-10-14                # date the file was received
+    load_mode: upsert
+    merge_keys: [admit_year, facility_name, facility_municipality, illness_description, claim_status]
+    sharing: restricted                   # FOI release for academic use; report in aggregate only (as stated in the request)
+    silver_target: "public_health.silver.diseases_hospital_claims_silver"   # planned
+    coverage: admission years 2016-2025; 2,294 facilities in 86 province labels; 14 illness packages; 4 claim statuses
+    column_map:
+      Admit Year: admit_year
+      HF Name: facility_name
+      HF Region: facility_region_label
+      HF Province: facility_province
+      HF Municipality: facility_municipality
+      HF Sector: ownership
+      Illness Description: illness_description
+      Claim Status: claim_status
+      Claims Count: claims_count
+      Claims Amount: claims_amount_php
+    qc:
+      expected_rows: 245405
+      numeric_columns: [Admit Year, Claims Count, Claims Amount]
+      control_totals:                     # sum of Claims Count per admission year, all claim statuses
+        group_by: Admit Year
+        sum: Claims Count
+        expected: {2016: 1709849, 2017: 1626227, 2018: 1706320, 2019: 2018226, 2020: 804669,
+                   2021: 622815, 2022: 920348, 2023: 1177840, 2024: 1451867, 2025: 1540811}
+    notes:
+      - "Requested vs received: we asked for patient residence (preferred) or the HCI-level fallback. PhilHealth sent the FALLBACK: no patient residence, no accreditation number, no HCI level/class, no month, no ICD-10 codes (case-rate package names only)."
+      - "Conditions requested: dengue (A90-A91, A97), pneumonia (J12-J18), hypertensive diseases (I10-I15), ischaemic heart diseases (I20-I25), cerebrovascular diseases (I60-I69). All 5 are present as case-rate packages; CHRONIC HEART DISEASES, ENCEPHALOPATHY and PRIMARY CARE also appear. TB was not requested."
+      - "We requested amount PAID; the file's Claims Amount is filled for every status, so treat it as amount claimed."
+      - "Claims, not patients or admissions: only PhilHealth-filed confinements; one patient can have more than one claim; non-members paying out of pocket are not in the data."
+      - "Place = the HOSPITAL's location, not the patient's residence. It shows where care is delivered; it cannot measure travel distance."
+      - "Claim Status: PAID, DENIED, RTH (returned to hospital), IN-PROCESS. Utilization = all statuses (claims filed). Money paid = PAID only. Claims Amount is filled for every status, so it is the amount claimed."
+      - "Illness Description = PhilHealth case-rate package names, with severity in the name (PNEUMONIA MODERATE RISK / HIGH RISK, DENGUE FEVER / SEVERE, STROKE INFARCTION / HEMORRHAGIC ...). HYPERTENSIVE EMERGENCYURGENCY is spelled that way in the source. 1,404 rows have no illness (blank); PRIMARY CARE has 40 rows."
+      - "No PSGC and no facility code. Match facilities to facilities_registry_silver by name + municipality in silver; 8 facility names appear in more than one municipality."
+      - "Labels need cleaning: HF Region has leading/trailing spaces and PhilHealth office labels (III-A, III-B), so take the region from the province's PSGC instead; Metro Manila is written with 1 to 3 spaces."
+      - "112 key combinations repeat with different counts or amounts (separate sub-rows of the same hospital, illness and status); 19 rows are exact repeats. Sum them in silver; do not drop rows. Bronze QC B08 shows the 19 as WARN."
+      - "2025 is not final: 7,568 claims still IN-PROCESS (vs 300 to 2,000 in earlier years), and late-2025 admissions may not be filed yet."
+      - "Average claim amount jumps from about 14,600 PHP (2016-2023) to 21,000 (2024) and 29,500 (2025): case rates changed. Do not trend money across 2024 without flagging it."
+      - "ISCHEMIC HEART DISEASE WITH MYOCARDIAL INFARCTION falls from 31,722 claims (2024) to 6,164 (2025): likely moved to another benefit package. Check before trending heart claims into 2025."
+      - "2020-2021 claims drop by more than half (COVID period); mark them, do not read them as less disease."
+
 # =============================================================================
 # Shared lookups used by silver (not by the bronze loader)
 # =============================================================================
 psa_cause_codes:
   "1-005": tb                # respiratory tuberculosis
-  "1-006": tb_other          # other tuberculosis
+  "1-006": tb_other          # other tuberculosis (decide once whether tb includes this)
   "1-052": diabetes
   "1-066": hypertension
   "1-067": ischaemic_heart
