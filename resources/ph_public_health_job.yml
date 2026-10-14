@@ -53,7 +53,7 @@ resources:
       # (exit 0), every run must set this parameter to the latest completed _runs folder.
       parameters:
         - name: admin_boundaries_run_dir
-          default: ""
+          default: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2/
 
       # schedule:                          # auto-paused in dev target
       #   quartz_cron_expression: "0 0 6 ? * MON"
@@ -64,20 +64,20 @@ resources:
       #     - jghsantiago91@gmail.com
 
       environments:
-        - environment_key: default         # every Python task except the OSM locate step
+        - environment_key: default # every Python task except the OSM locate step
           spec:
             environment_version: "2"
             dependencies:
               - pyyaml==6.0.2
               - openpyxl==3.1.5
-        - environment_key: geo             # facilities 04a only (point-in-polygon)
+        - environment_key: geo # facilities 04a only (point-in-polygon)
           spec:
             environment_version: "2"
             dependencies:
-              - "numpy<2"                  # keep the base numpy 1.26; shapely 2.1 wheels need numpy 2
+              - "numpy<2" # keep the base numpy 1.26; shapely 2.1 wheels need numpy 2
               - pyyaml==6.0.2
               - openpyxl==3.1.5
-              - "shapely<2.1"              # 2.0.x = last series with numpy-1 wheels
+              - "shapely<2.1" # 2.0.x = last series with numpy-1 wheels
 
       tasks:
         # ================================================================
@@ -90,29 +90,28 @@ resources:
         # ================================================================
         # 1. BRONZE (landing -> bronze), all in parallel after setup
         # ================================================================
-        - task_key: bronze_geography          # PSGC geography + population payload
+        - task_key: bronze_geography # PSGC geography + population payload
           depends_on:
             - task_key: setup
           environment_key: default
           spark_python_task:
             python_file: ../src/02_bronze/geography_bronze.py
-            parameters:                        # blank --landing_batch_path = latest completed batch
+            parameters: # blank --landing_batch_path = latest completed batch
               - --config_path
               - ${workspace.file_path}/config/sources_geography.yaml
               - --write_to_bronze
-              - "yes"                          # script default is "no" (preview only)
+              - "yes" # script default is "no" (preview only)
 
-        - task_key: bronze_admin_boundaries     # needs job parameter admin_boundaries_run_dir
+        - task_key: bronze_admin_boundaries # needs job parameter admin_boundaries_run_dir
           depends_on:
             - task_key: setup
-          max_retries: 0                        # a blank run dir fails fast; retrying cannot fix it
+          max_retries: 0 # a blank run dir fails fast; retrying cannot fix it
           environment_key: default
           spark_python_task:
             python_file: ../src/02_bronze/admin_boundaries_bronze.py
             parameters:
               - --handoff_path
-              - "{{job.parameters.admin_boundaries_run_dir}}/handoff.json"
-
+              - /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2/handoff.json
         # loader (incremental) + bronze QC of the loaded sources, one task per domain
         - task_key: bronze_diseases
           depends_on:
@@ -166,7 +165,7 @@ resources:
         # 2. BRONZE QC (geography, admin boundaries, population only;
         #    the other domains run their QC inside run_bronze.py)
         # ================================================================
-        - task_key: qc_bronze_geography       # inputs = bronze_geography QC handoff (task values)
+        - task_key: qc_bronze_geography # inputs = bronze_geography QC handoff (task values)
           depends_on:
             - task_key: bronze_geography
           environment_key: default
@@ -275,7 +274,7 @@ resources:
         - task_key: silver_facilities_00_reference
           depends_on:
             - task_key: bronze_facilities
-            - task_key: qc_silver_geography      # validates against geography checksum
+            - task_key: qc_silver_geography # validates against geography checksum
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
@@ -297,7 +296,7 @@ resources:
             file:
               path: ../src/03_silver/facilities/facilities_silver_02_metric.sql
 
-        - task_key: silver_facilities_03_bed_occupancy   # reads doh_foi_hospital_beds only
+        - task_key: silver_facilities_03_bed_occupancy # reads doh_foi_hospital_beds only
           depends_on:
             - task_key: silver_facilities_00_reference
           sql_task:
@@ -309,7 +308,7 @@ resources:
           depends_on:
             - task_key: bronze_facilities
             - task_key: silver_facilities_00a_area_boundary
-          environment_key: geo                   # the only task that needs shapely
+          environment_key: geo # the only task that needs shapely
           spark_python_task:
             python_file: ../src/03_silver/facilities/facilities_silver_04a_osm_locate.py
 
@@ -356,7 +355,7 @@ resources:
         - task_key: silver_diseases_00_reference
           depends_on:
             - task_key: bronze_diseases
-            - task_key: qc_silver_geography      # area map codes are checked against geography_silver
+            - task_key: qc_silver_geography # area map codes are checked against geography_silver
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
@@ -405,7 +404,7 @@ resources:
         - task_key: silver_diseases_06_hospital_claims
           depends_on:
             - task_key: silver_diseases_00_reference
-            - task_key: qc_silver_facilities_registry   # registry + id_map built AND checked
+            - task_key: qc_silver_facilities_registry # registry + id_map built AND checked
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
