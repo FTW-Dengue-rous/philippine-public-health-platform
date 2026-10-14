@@ -4,14 +4,13 @@
 --   Primary key: data_source_key (BIGINT, xxhash64 of the natural key or grain, stable across rebuilds)
 --   Natural key: (source_dataset)
 -- Data model v2 (combined, 14 Oct 2026): 5 dimensions, 4 facts, built from the v1 files.
--- Replaces: gold_13_dim_source.sql (dim_source)
 --
 -- Write-audit-publish, as in v1: [1] inputs with their build and latest silver QC status,
 -- [2] candidate, [3] gates, [4] stop if a gate failed, [5] publish, [6] record in
 -- quality.build_log and quality.build_inputs, [7] summary.
 --
 -- Reads
---   sources_<domain>.yaml (23 source datasets) (reviewed list in this file)
+--   sources_<domain>.yaml (25 source datasets) (reviewed list in this file)
 --
 -- Change from v1 (dim_source)
 --   * Renamed to dim_data_source and source_key to data_source_key (mentor comment: "source
@@ -23,6 +22,9 @@
 --     planner can see what each source is for.
 --   * 2026-10-14: doh_foi_hospital_beds added (HFSRB FOI release, 2018-2025); bed_occupancy kept
 --     as a row (older gold builds point to it) with used_in 'none (superseded ...)'.
+--   * 2026-10-14 evening: philhealth_foi_claims_hospital (restricted, read by fact_disease_metric
+--     as aggregated claims rows) and hdx_healthsites (open, ODbL, the map-layer table
+--     ref_osm_healthsite_point) added; doh_fhsis now also covers the TB programme sheets.
 -- Rules (as in v1)
 --   * A reviewed list kept in this file, copied by hand from the sources_<domain>.yaml files.
 --     When a YAML entry changes, change the row here.
@@ -53,8 +55,8 @@ SELECT t.input_kind, t.input_table, t.source_file, t.input_rows,
        b.build_id AS input_build_id, b.target_table_version AS input_table_version,
        h.overall_status AS qc_status, h.last_checked_at AS qc_checked_at
 FROM (
-  SELECT 'reference' AS input_kind, CAST(NULL AS STRING) AS input_table, 'sources_<domain>.yaml (23 source datasets)' AS source_file,
-         CAST(23 AS BIGINT) AS input_rows
+  SELECT 'reference' AS input_kind, CAST(NULL AS STRING) AS input_table, 'sources_<domain>.yaml (25 source datasets)' AS source_file,
+         CAST(25 AS BIGINT) AS input_rows
 ) AS t
 LEFT JOIN public_health.quality.v_latest_build AS b ON b.target_table = t.input_table
 LEFT JOIN public_health.quality.v_table_health AS h
@@ -95,9 +97,15 @@ FROM VALUES
   ('psa_deaths_national_annual', 'Registered deaths by cause, Philippines, 2015 to 2020 (2020 preliminary)',
    'Philippine Statistics Authority', 'registered', DATE'2021-02-26', 'open', CAST(NULL AS STRING),
    'diseases', 'fact_disease_metric'),
-  ('doh_fhsis', 'FHSIS annual report tables: TB case notification',
-   'Department of Health', 'reported', DATE'2026-10-02', 'open', CAST(NULL AS STRING),
+  ('doh_fhsis', 'FHSIS annual report tables: TB case notification (2024, 2025), TB preventive treatment and treatment success (2025)',
+   'Department of Health', 'reported', DATE'2026-10-14', 'open', CAST(NULL AS STRING),
    'diseases', 'fact_disease_metric'),
+  ('philhealth_foi_claims_hospital', 'PhilHealth claims count and amount claimed by admission year, hospital, case-rate package and claim status, 2016 to 2025 (FOI-REQ-2026-6223; published in gold as area aggregates only)',
+   'Philippine Health Insurance Corporation', 'reported', DATE'2026-10-14', 'restricted', CAST(NULL AS STRING),
+   'diseases', 'fact_disease_metric'),
+  ('hdx_healthsites', 'Health facility points from OpenStreetMap via healthsites.io (HDX export, coordinates from the GeoJSON); map layer, never a facility count',
+   'Healthsites.io / OpenStreetMap contributors', 'reported', DATE'2026-10-14', 'open', 'ODbL v1.0 (OpenStreetMap)',
+   'facilities', 'ref_osm_healthsite_point'),
   ('ihme_gbd', 'IHME GBD 2023 modelled deaths and prevalence by cause, Philippine provinces',
    'Institute for Health Metrics and Evaluation (IHME)', 'modelled', DATE'2026-10-05', 'restricted', 'IHME Free-of-Charge Non-Commercial User Agreement',
    'diseases', 'fact_disease_metric'),
