@@ -9,6 +9,8 @@
 #   Last step of silver, after every domain silver QC script, before gold.
 #   Run order: geography -> population -> domain builds -> <domain>_silver_qc.py -> psgc_population_silver_qc.py
 #              -> [silver_cross_domain_qc.py] -> gold
+#   As a job task: depends on every silver QC task (geography, population, admin boundaries,
+#   facilities, diseases, workforce, socioeconomic). Gold depends on this task.
 #
 # How to run (Databricks notebook cell or job; no arguments needed)
 #   python silver_cross_domain_qc.py
@@ -31,9 +33,10 @@
 # quarantine limits and the list of historical sources are constants below: tune them after the
 # first Databricks run, and say why in a comment.
 #
-# Why S29 is here and not in each domain script: every silver build records the rows it did not
-# load in quality.row_disposition (lineage contract v1.3), so one query covers every domain with
-# the same rule. The domain scripts still copy the quarantined rows to quality.quarantine for review.
+# Changes
+#   2026-10-14  S29: hdx_healthsites 20 % override removed (runbook incident 2 closed by the
+#               GeoJSON-derived Healthsites file). S98: diseases TB programme and hospital claims
+#               tables added; three PSA facilities tables that end in 2015 marked historical.
 
 import argparse
 import os
@@ -127,23 +130,25 @@ CHECKS = {
 #   0 quarantined                         PASS
 #   up to the limit, or <= the row floor  WARN  (rows a person should review)
 #   above the limit and above the floor   FAIL  (blocks gold)
-# Known today: diseases FHSIS TB 18 of 3,493 rows (0.5 %), workforce FHSIS 8 of 4,999 (0.2 %).
+# Known today: diseases FHSIS TB 18 of 3,493 rows (0.5 %), workforce FHSIS 8 of 4,999 (0.2 %),
+# facilities OSM points 2 of 16,032 (0.01 %, coordinates outside the boundaries; 2026-10-14).
 QUARANTINE_FAIL_PCT = 5.0
 QUARANTINE_MIN_FAIL_ROWS = 10
 # Per (target table short name, source_key) override of the limit, in percent. One comment each.
-QUARANTINE_FAIL_PCT_BY_SOURCE = {
-    # The OSM export has no coordinates for "way" rows (about 2,660 of 16,032, 17 %), so the
-    # build quarantines them by design (facilities decision D12). Limit set just above that share.
-    # If the share rises well above 17 %, find out what changed. Do not raise the limit.
-    ("facilities_osm_point_silver", "hdx_healthsites"): 20.0,
-}
+# 2026-10-14: ("facilities_osm_point_silver", "hdx_healthsites"): 20.0 removed. The 2026-10-14
+# Healthsites file (coordinates from the GeoJSON outlines) gives every row coordinates, so the
+# quarantine share fell from 16.6 % to 0.01 % and the default limit applies (runbook incident 2).
+QUARANTINE_FAIL_PCT_BY_SOURCE = {}
 
 # S98: (table, year column, source column or None). Restricted tables are read for max(year) only.
+# A table that does not exist yet is skipped.
 TIMELINESS = [
     (f"{SILVER}.diseases_metric_silver", "year", "_source_key"),
     (f"{SILVER}.diseases_deaths_age_silver", "year", "_source_key"),
+    (f"{SILVER}.diseases_tb_programme_silver", "year", "_source_key"),
+    (f"{SILVER}.diseases_hospital_claims_silver", "year", "_source_key"),  # restricted (FOI)
     (f"{SILVER}.facilities_metric_silver", "year", "_source_key"),
-    (f"{SILVER}.facilities_bed_occupancy_silver", "year", "_source_key"),
+    (f"{SILVER}.facilities_bed_occupancy_silver", "year", "_source_key"),  # restricted (FOI)
     (HC, "year", "_source_key"),
     (DEN, "year", "_source_key"),
     (f"{SILVER}.socioeconomic_poverty_silver", "year", "_source_key"),
@@ -151,9 +156,13 @@ TIMELINESS = [
     (f"{SILVER}.socioeconomic_health_expenditure_per_capita_silver", "year", "_source_key"),
     (POP, "population_year", None),
 ]
-# Sources that are history by design (e.g. a 2006-2015 PSA table, the 2012-2017 PSA legacy series):
-# never "stale". Fill after the first run from the S98 detail; one comment per entry.
-HISTORICAL_SOURCES = set()
+# Sources that are history by design: never "stale". One comment per entry; add others from the
+# S98 detail after a run.
+HISTORICAL_SOURCES = {
+    "psa_hospitals_national_annual",  # PSA OpenSTAT national hospitals, 2006-2015 only
+    "psa_hospitals_beds_national_annual",  # PSA 9.16 national hospitals and beds, 1990-2015 only
+    "psa_hospitals_region_annual_legacy",  # PSA 9.17 (PSY 2024) hospitals by region, 2005-2015 only
+}
 
 # S97 plausible bands (business rules, team-owned). A region outside the band is listed, not wrong.
 BED_BAND_PER_1000 = (0.3, 5.0)  # PH hospital beds per 1,000 people is about 1
@@ -289,7 +298,7 @@ def check_timeliness(dq):
         src = scol if scol else "'all'"
         spark.sql(f"""SELECT CAST({src} AS STRING) AS source, max(CAST({ycol} AS INT)) AS latest
                       FROM {table} GROUP BY 1""").createOrReplaceTempView("xd_latest")
-        hist = ", ".join(f"'{s}'" for s in HISTORICAL_SOURCES) or "''"
+        hist = ", ".join(f"'{s}'" for s in sorted(HISTORICAL_SOURCES)) or "''"
         count(
             dq,
             "S08",
