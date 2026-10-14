@@ -1,6 +1,6 @@
 # Silver: diseases
 
-This page covers the diseases domain in silver: six built tables, four reference tables, the rules that decide which bronze rows are kept, and what has been run so far. The design source is `diseases-silver-plan.md` (v1.7, 2026-10-09). Facts dated 2026-10-11 on this page are newer than the plan and override it.
+This page covers the diseases domain in silver: six built tables, four reference tables, the rules that decide which bronze rows are kept, and what has been run so far. The design source is `diseases-silver-plan.md` (v1.7, 2026-10-09). Facts dated 2026-10-11 or later on this page are newer than the plan and override it.
 
 ## Status
 
@@ -12,14 +12,12 @@ This page covers the diseases domain in silver: six built tables, four reference
 | `diseases_silver_01_metric.sql` | Run on Databricks, 2026-10-11 |
 | `diseases_silver_02_deaths_age.sql` | Run on local Spark, 2026-10-09. Databricks result not recorded |
 | `diseases_silver_03_hospital_encounters.sql` | Run on local Spark, 2026-10-09. Databricks result not recorded |
-| `diseases_silver_04_source_coverage.sql` | Run on Databricks, 2026-10-11 (after a lint-only revision) |
+| `diseases_silver_04_source_coverage.sql` | Run on Databricks, 2026-10-11 and again 2026-10-14 (weekly completeness and per-area columns, see Results) |
 | View `diseases_metric_wide_v` (created by `04`) | SQL written. Not separately checked on Databricks |
-| `diseases_silver_qc.py`, checks S01 to S48 | Run on local Spark, 2026-10-09. Databricks result not recorded |
-| `diseases_silver_qc.py`, checks S49 and S50 | SQL written, 2026-10-11. Syntax-checked and linted only, not yet run on Spark |
-| `diseases_silver_05_tb_programme.sql` (`diseases_tb_programme_silver`) | Written 2026-10-14. Run on local Spark 4.0 against the real 2025 workbook (geography stand-in from the PSGC 2026-07-13 file). Not run on Databricks |
-| `diseases_silver_06_hospital_claims.sql` (`diseases_hospital_claims_silver`) | Written 2026-10-14. Run on local Spark 4.0 against the real claims rows (geography stand-in, registry stand-in from the NHFR and HFSRB files), plus a failure test. Not run on Databricks |
-| `build_diseases_reference_maps.py`, PhilHealth claims sections (6b area pairs, 7 packages, 8 directory) | Added 2026-10-14. Run on local Spark against the claims bronze rows (other sources stubbed). Not run on Databricks |
-| `diseases_silver_qc.py`, tables `tb_programme` and `hospital_claims` | Added 2026-10-14. Run on local Spark 4.0 for these two tables: 26 and 27 results, 0 FAIL, 0 WARN. The S09 / S33 change was not rerun on the other four tables |
+| `diseases_silver_qc.py`, checks S01 to S50, all six tables | Run on Databricks 2026-10-14: 143 results, 0 FAIL, 7 WARN (see Results) |
+| `diseases_silver_05_tb_programme.sql` (`diseases_tb_programme_silver`) | Written 2026-10-14. Run on Databricks 2026-10-14: 73,216 rows, gates 0 |
+| `diseases_silver_06_hospital_claims.sql` (`diseases_hospital_claims_silver`) | Written 2026-10-14. Run on Databricks 2026-10-14: 243,881 rows, gates 0 |
+| `build_diseases_reference_maps.py`, PhilHealth claims sections (6b area pairs, 7 packages, 8 directory) | Added 2026-10-14. Run on local Spark against the claims bronze rows (other sources stubbed). Databricks run implied by the `06` build (the area map resolved every pair); not separately recorded |
 
 Nothing on this page has the status "Verified".
 
@@ -78,7 +76,9 @@ Seven other diseases bronze tables have no v3 question and are not in silver v1 
 
 - **One row is** one source, disease scope, geographic level and period grain in one year: which periods it holds.
 - **Key:** `(_source_key, disease_scope, geo_level, period_grain, year)`.
-- **Columns:** `periods_expected`, `periods_present`, `first_period`, `last_period`, `is_complete_year`, `missing_periods`, `areas_present`, `min_periods_per_area`, `max_periods_per_area`, `_silver_build_id`.
+- **Columns:** `periods_expected` (1, 12, or a nominal 52), `periods_present`, `first_period`, `last_period`, `is_complete_year`, `missing_periods`, `areas_present`, `min_periods_per_area`, `max_periods_per_area`, `areas_complete`, `all_areas_complete`, `_silver_build_id`.
+- **`is_complete_year`** is a source-level flag. Annual rows: always. Monthly: 12 months. Week-number sources (UP NOAH): 52 weeks. Date-based weeks (HDX): the dates are contiguous (`(last − first) / 7 + 1 = periods_present`) and span the year (first date ≤ 7 January, last ≥ 25 December). A year holds 52 or 53 of any weekday, so a contiguous spanning series always has 52 or 53 dates and 51 always means a missing week. The test does not depend on D4 (which only decides whether a date is the week start or end). Changed 2026-10-14: HDX was null before.
+- **`areas_complete`** counts areas that hold every period the source holds that year (`>= periods_present`); `all_areas_complete` = `areas_complete = areas_present`. Gold (`gold_v2_30`) applies the per-area test on each fact row.
 - **Used for:** like-for-like annual comparisons. Example: DOH FOI dengue 2025 holds 9 of 12 months, so 2025 is compared January to September only. It reads the published metric table, has no bronze input and writes no row dispositions.
 
 ### `diseases_tb_programme_silver`
@@ -145,6 +145,7 @@ Gates in `01` cover: one load time and one ingestion log match per input, no unc
 | F2 | IHME cause 410 (Neoplasms) is in both files: 820 rows | The neoplasms-file rows are kept. The 820 rows in the main-causes file get `duplicate_of`. Gate: `val`, `lower` and `upper` are equal after casting |
 | F7 | In the FHSIS TB 2024 sheet the `Philippines` row carries NCR's PSGC code | A `row_override` in the area map turns that row into `ph`. It matches on file, sheet, row number, printed label and printed code. If the file is revised, the override stops matching and a gate fails |
 | F9 | FHSIS TB lists the Special Geographic Area and eight clusters with codes `19999xxxxx`: 9 rows per year | The rows are `quarantined` with reason `area_unresolved` until each has a reviewed identity and parent. Expected: 18 rows. Any other unresolved area fails a gate |
+| F14 | HDX dengue weekly dates have one gap for every area, at the 2019 / 2020 boundary: 2019 holds 51 dates, 2020 starts on time. 2016 starts on 10 January (51 dates). The 2016-2021 file ends in early January 2021 (2 dates) | Recorded in the coverage table: 2016, 2019 and 2021 are `is_complete_year = false` for the source; 2017 (53), 2018 (52) and 2020 (52) are complete. S43 reports the gap as a WARN on all 126 areas: this is the expected result, not a new finding. Annual HDX comparisons in gold filter `is_complete_year = true`; peaks and weekly series are not affected |
 
 Findings F3 to F6, F8 and F10 to F13 are in plan section 3.7.
 
@@ -221,6 +222,14 @@ S09 and S33 are now scoped per bronze table: `05` reads two bronze tables with t
 
 `00` also runs its own reference checks (duplicate keys, keys missing from the directory, empty table) and stops on any failure.
 
+### Known WARN results (expected, no action)
+
+| Check | Count | Why |
+|---|---|---|
+| S43 weekly series has no gaps | 126 of 126 HDX areas | F14: one source-wide gap at the 2019 / 2020 boundary |
+| S44 dengue sources agree on a common basis | 3 of 48 region-years | DOH FOI and UP NOAH differ by more than 10% in three region-years, 2022 to 2024 (D11) |
+| S47 hospital encounter review flags | 64, 66, 45, 135, 1 | Review counts carried from the source (dates not usable, long stays, death fields, patient place unresolved, age missing) |
+
 ## Results so far
 
 **2026-10-09, local Spark 4.0, landing files, Parquet in place of Delta**
@@ -238,14 +247,22 @@ S09 and S33 are now scoped per bronze table: `05` reads two bronze tables with t
 - `diseases_silver_01_metric.sql` ran: 131,887 silver rows, matching plan section 3.6. Per source: 6,938 (`doh_fhsis`), 2,052 (`doh_foi_dengue`), 65,402 (`hdx_dengue`), 37,720 (`ihme_gbd`), 678 (`psa_deaths_national_annual`), 7,501 (`psa_deaths_national_monthly`), 4,524 (`psa_deaths_region_annual`), 7,072 (`upnoah`).
 - In that run 252 HDX rows and 820 IHME rows are duplicates (F1, F2) and 18 FHSIS TB rows are quarantined (F9).
 - `diseases_silver_04_source_coverage.sql` ran after a lint-only revision (sqlfluff formatting, `AS` aliases, table versions moved into `SET VAR` statements). The build succeeded: 73 rows, one build id.
-- Results of `02` and `03` on Databricks were not recorded. Results of `diseases_silver_qc.py` on Databricks were not recorded. S49 and S50 were added on 2026-10-11 and have not been run on Spark.
+- Results of `02` and `03` on Databricks were not recorded. S49 and S50 were added on 2026-10-11.
 
 **2026-10-14, local Spark 4.0, stand-in geography (PSGC 2026-07-13 file)**
 
 - `05` TB programme: 72,376 rows, gates 0. Philippines totals match the printed national rows. 62 rows quarantined (Sulu: the stand-in has the 2026 code `09066`; the real geography snapshot has `19066`), 12 non_data rows. Warnings: TPT above 100% = 1, rows with no report = 27.
 - `06` claims: 243,881 rows from 245,405 bronze rows (1,404 quarantined, 120 merged). 2,303 hospitals. Area pairs: 894, all resolved (862 in province, 17 city in region, 9 Manila district, 2 city outside the listed province, 4 manual; 21 marked REVIEW). Per-year totals equal the YAML controls. Failure test: one pair removed from the area map → build stopped, `failed` logged, table unchanged.
-- Facility match against a registry stand-in (NHFR + HFSRB hospitals and infirmaries, not the real registry): 1,786 `name_lgu`, 65 `name_tokens_lgu`, 4 `name_province`, 19 ambiguous, 429 unmatched; 5% of claims at unmatched hospitals. Rerun on Databricks for the real numbers.
-- `diseases_silver_qc.py`: `tb_programme` 26 results, `hospital_claims` 27 results, all PASS.
+- Facility match against a registry stand-in (NHFR + HFSRB hospitals and infirmaries, not the real registry): 1,786 `name_lgu`, 65 `name_tokens_lgu`, 4 `name_province`, 19 ambiguous, 429 unmatched; 5% of claims at unmatched hospitals.
+
+**2026-10-14, Databricks**
+
+- `05` TB programme: 73,216 rows, gates 0. 2 rows quarantined (`psgc_not_in_geography`), 12 non-data rows dropped. The Sulu rows load with the real geography snapshot.
+- `06` claims: 243,881 rows (1,404 quarantined `illness_missing`, 120 merged), gates 0. Per-year totals equal the YAML controls.
+- **Facility match against the real registry:** 717,348 of 13,574,611 claims (5.3%) are at hospitals with no `facility_key` (S12, under the 10% WARN line). The count by `facility_match_method` was not captured; read it from the table when needed. `06` records the registry version it used; rerun `06` after any registry rebuild.
+- `04` coverage reran three times while the weekly completeness rule was settled (HDX rows were null before; see the table section and F14). Final: 73 rows, S48 0 fail.
+- `diseases_silver_qc.py`, all six tables: 143 results, 0 FAIL, 7 WARN (the known S43, S44 and S47 results above). Checks S30 to S50 are not yet in `check_registry` (seeded at the end of the project).
+- `diseases_metric_silver` null rate: 17 of 131,887 values; `tb_programme`: 81 of 15,696 `tpt_given`, 9 of 1,744 `tpt_eligible_contacts`, 72 of 13,944 `treatment_cohort`, 216 of 41,832 `treatment_success` are `no_report`.
 
 ## Known limits
 
@@ -265,26 +282,28 @@ S09 and S33 are now scoped per bronze table: `05` reads two bronze tables with t
 
 ## Handoff to gold
 
+Gold is data model v2 (`gold_v2/`, schema `public_health.test_gold2`): 5 dimensions, 4 facts.
+
 | Gold table | Reads from silver |
 |---|---|
-| `fact_disease_metric` | `diseases_metric_silver` |
-| `fact_deaths_by_age` | `diseases_deaths_age_silver` |
+| `fact_disease_metric` | `diseases_metric_silver` and `diseases_deaths_age_silver` (by-age rows UNIONed in with their own `age_group`), with `diseases_source_coverage_silver` for `is_complete_year` (source complete AND the area holds every source period) |
 | `dim_disease` | `diseases_directory_silver` (now including the `phic_*` packages) |
-| TB case study (coverage, success rates) | `diseases_tb_programme_silver` |
-| claims by hospital / area / condition group | `diseases_hospital_claims_silver` (aggregate only; join `dim_facility` on `facility_key` where not null) |
-| `dim_period` | periods of the silver rows, with `diseases_source_coverage_silver` for year coverage |
+| `dim_date` | periods of the silver rows (year, month, week, snapshot) |
+| TB case study (coverage, success rates) | `diseases_tb_programme_silver` — not yet read by any gold v2 file; planned as extra `fact_disease_metric` rows (metric_name = indicator) |
+| claims by hospital / area / condition group | `diseases_hospital_claims_silver` — not yet read by any gold v2 file (aggregate only; join `dim_facility` on `facility_key` where not null) |
 | `source_priority` | seeded from plan section 7 (preferred source per measure, level and grain) |
-| `mart_area_burden_indicator`, `mart_tb_case_study`, `mart_kidney_case_study` | through the tables above |
+| `mart_area_burden_indicator`, `mart_tb_case_study`, `mart_kidney_case_study` | through the tables above (the v1 marts still read v1 names and need a rewrite to v2) |
 
-What gold must do and must not redo (gold design is in [gold-model.md](gold-model.md)):
+What gold must do and must not redo (gold design is in [gold-model.md](gold-model.md) and `gold_v2/README.md`):
 
 - **Gold computes rates.** Silver holds counts only. Rates use the population domain.
 - **Do not re-classify, de-duplicate or re-map.** Duplicates (F1, F2), non-data rows and unresolved areas are already handled. Use `disease_key` and `area_key` as given.
 - **Do not combine sources by matching keys.** Pick the preferred row through `source_priority`. Modelled IHME values are never mixed with registered or reported values.
 - **Sum over causes only through `diseases_cause_aggregation`.** Do not sum a cause with its descendants, and do not sum prevalence across diseases.
-- **Read `diseases_source_coverage_silver` before comparing years.** Compare the same months on both sides.
+- **Read `diseases_source_coverage_silver` before comparing years.** Compare the same months on both sides. For HDX, annual totals are safe only where `is_complete_year` is true on the fact row (2018 everywhere; 2017 and 2020 for the provinces that hold all weeks). Peaks do not need it.
 - **Exclude `ph` and `foreign` from regional sums.** Show `measure_definition` and `location_basis` when different measurements or area meanings share a chart.
-- **Hospital encounters are not read by gold v3.** If they are used later, publish aggregates only, suppress small cells and do not name the hospital.
+- **Hospital encounters are not read by gold.** If they are used later, publish aggregates only, suppress small cells and do not name the hospital.
 - **IHME licence:** no row-level export, and the attribution line goes on every chart that uses it.
 - **Claims:** never sum claim statuses into "money paid" (use `paid`); do not trend `claims_amount_php` across 2024 or IHD with MI into 2025 without the flags; label 2025 preliminary; 2020-2021 is the COVID period, not less disease. Place is the hospital, not the patient. Publish aggregates only (FOI terms).
 - **TB programme:** coverage = `tpt_given / tpt_eligible_contacts` (an estimate); success rate = `treatment_success / treatment_cohort` (both sexes; the cohort has no sex split).
+- **Week dates (D4):** until the HDX week convention is confirmed, label peaks by week number, not by date.
