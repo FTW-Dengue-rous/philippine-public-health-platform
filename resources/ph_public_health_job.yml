@@ -47,7 +47,10 @@ resources:
 
       # Set per run ("Run now with different parameters") after admin_boundaries ingestion, e.g.
       #   /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/<RUN_ID>
-      # No trailing slash. Blank fails fast in bronze_admin_boundaries (not a /Volumes path).
+      # No trailing slash. Blank fails fast in bronze_admin_boundaries (not a /Volumes path) and
+      # that failure blocks admin boundaries silver -> facilities 00a/04a/04 -> facilities QC ->
+      # cross-domain QC -> gold. Until the loader treats a blank dir as "no new run, skip"
+      # (exit 0), every run must set this parameter to the latest completed _runs folder.
       parameters:
         - name: admin_boundaries_run_dir
           default: ""
@@ -99,9 +102,10 @@ resources:
               - --write_to_bronze
               - "yes"                          # script default is "no" (preview only)
 
-        - task_key: bronze_admin_boundaries
+        - task_key: bronze_admin_boundaries     # needs job parameter admin_boundaries_run_dir
           depends_on:
             - task_key: setup
+          max_retries: 0                        # a blank run dir fails fast; retrying cannot fix it
           environment_key: default
           spark_python_task:
             python_file: ../src/02_bronze/admin_boundaries_bronze.py
@@ -185,6 +189,7 @@ resources:
         - task_key: qc_bronze_admin_boundaries
           depends_on:
             - task_key: bronze_admin_boundaries
+          max_retries: 0
           environment_key: default
           spark_python_task:
             python_file: ../src/05_quality/bronze/admin_boundaries_bronze_qc.py
