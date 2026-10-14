@@ -22,7 +22,7 @@ sources:
 
     base_url: "https://data.humdata.org"
 
-    landing_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/psgc"
+    landing_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries"
     staging_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/psgc/_staging/geojson_to_jsonl"
 
     required_levels: [1, 2, 3]
