@@ -56,7 +56,8 @@
 #     psa_bhs/region_annual/         psa_bhs_region_annual_2006_2023.csv
 #     hdx_healthsites/               hdx_healthsites_facility_asof_20260929.csv, ..._20261014.csv (derived)
 #     hdx_healthsites/raw_geojson/   hdx_healthsites_facility_asof_20261014.geojson (not loaded)
-#     restricted/                  bed_occupancy_hospital_annual_2020_2025.xlsx
+#     restricted/                  bed_occupancy_hospital_annual_2020_2025.xlsx (superseded, kept for lineage)
+#     restricted/                  doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx (FOI DOH-984883683631)
 #   workforce/doh_fhsis_demographic/ (BGY & BHS tab, read by the last entry)
 #
 # Ingestion-contract checks (run by the loader BEFORE anything is written)
@@ -176,7 +177,7 @@ sources:
   doh_nhfr:
     description: National Health Facility Registry export of active hospitals (level, bed capacity, ownership, PSGC)
     agency: Department of Health
-    obtained_via: NHFR website export (nhfr.doh.gov.ph)   # CONFIRM
+    obtained_via: NHFR website export (nhfr.doh.gov.ph)
     original_file: nhfr_activefacilities_asof_20260929.csv
     path: facilities/doh_nhfr
     files:
@@ -432,7 +433,7 @@ sources:
     skip_rows: 1                           # row 0 is the table title
     required_columns: ["Region"]   # from column_map
     bronze_table: "public_health.bronze.facilities_psa_hospitals_region_annual_bronze"
-    as_of_date: 2026-09-29                 # download date; CONFIRM
+    as_of_date: 2026-09-29
     load_mode: upsert
     merge_keys: [region_name, ownership, year]
     sharing: open
@@ -570,7 +571,7 @@ sources:
       - Region I 2014 (3,267) is an outlier.
 
   # ---------------------------------------------------------------------------
-  # 12. Bed occupancy rate by hospital, 2020-2025  (RESTRICTED)
+  # 12. Bed occupancy rate by hospital, 2020-2025  (RESTRICTED)  SUPERSEDED by 12a
   # ---------------------------------------------------------------------------
   bed_occupancy:
     description: Bed occupancy rate (based on authorized beds) by hospital level and ownership; 2025 adds authorized and implementing beds
@@ -590,6 +591,8 @@ sources:
     bronze_table: "public_health.bronze.facilities_bed_occupancy_bronze"
     as_of_date: 2026-09-29
     load_mode: upsert
+    silver_enabled: false                  # superseded 2026-10-14 by doh_foi_hospital_beds (12a); bronze rows kept for lineage
+    superseded_by: doh_foi_hospital_beds
     sharing: restricted                    # permission to quote still to confirm
     qc:
       expected_rows: 1977                  # 174 + 184 + 174 + 160 + 123 + 1,162 (one file, six sheets)
@@ -602,6 +605,70 @@ sources:
       - General = hospital level (Level 1/2/3); blank on some rows. BOR above 100 is possible (more patients than authorized beds).
       - 2020-2024 sheets are PRIVATE hospitals only (123-184 rows). 2025 has 418 Government and 744 Private. Government BOR exists for 2025 only.
       - Do not trend counts across years; the 2020-2024 sample is not the same set of hospitals.
+      - "SUPERSEDED 2026-10-14: the HFSRB FOI release (entry 12a) holds the same series, 2018-2025, all ownerships. Rows of this file found in 12a: 2021, 2022, 2024 all; 2020 168 of 174; 2023 158 of 160; 2025 1,150 of 1,162 (the rest look revised). facilities_silver_03 reads 12a only."
+
+  # ---------------------------------------------------------------------------
+  # 12a. Hospital beds and utilization by hospital, 2018-2025  (RESTRICTED, FOI)
+  # ---------------------------------------------------------------------------
+  doh_foi_hospital_beds:
+    description: Authorized beds, implementing beds, bed occupancy rate and inpatient bed days per reporting hospital (no name), by region, province and city/municipality, 2018-2025
+    agency: DOH Health Facilities and Services Regulatory Bureau (HFSRB)
+    obtained_via: eFOI
+    ticket_number: DOH-984883683631     # "Request for Hospital Bed Capacity and Utilization Data", reply 2026-10-14
+    request_date: CONFIRM                # date the FOI request was filed
+    original_file: Response_to_DOH-984883683631.xlsx    # published Google Sheet (tinyurl.com/HOSPDT1825), downloaded as xlsx
+    original_sha256: 24cf84b068c856079003c48e40e365c12d04ec6d4a4c6ea54049e40be69ac33b
+    path: facilities/restricted
+    header_mode: single
+    skip_rows: 0
+    files:
+      - {name: doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx, sheet: "2018"}
+      - {name: doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx, sheet: "2019"}
+      - {name: doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx, sheet: "2020"}
+      - {name: doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx, sheet: "2021"}
+      - {name: doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx, sheet: "2022"}
+      - {name: doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx, sheet: "2023"}
+      - {name: doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx, sheet: "2024"}
+      - {name: doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx, sheet: "2025"}
+    bronze_table: "public_health.bronze.facilities_bed_occupancy_bronze"   # same table as entry 12; new columns are added
+    as_of_date: 2026-10-14
+    load_mode: upsert
+    sharing: restricted                  # FOI release, no terms stated: aggregates only, small cells suppressed
+    silver_target: "public_health.silver.facilities_bed_occupancy_silver"
+    # Two headers do not describe their column: "Service Capability" holds General / Specialty,
+    # "General" holds the hospital level. The check stops the load if the layout moves.
+    header_check:
+      - {row: 0, expect: {0: "Region", 1: "Province", 2: "City", 3: "Service Capability", 4: "General",
+                          5: "Ownership", 6: "Authorized Bed", 7: "Implementing", 8: "Bed Occupancy Rate",
+                          9: "inpatient bed days"}}
+    required_columns: ["Region", "Province/District", "City/Municipality", "Service Capability", "General",
+                       "Nature of Ownership", "Authorized Bed Capacity", "Implementing Beds",
+                       "Bed Occupancy Rate (BOR) Based on Authorized Beds",
+                       "Total number of inpatient bed days (service days)"]
+    column_map:
+      Region: region_label
+      Province/District: province_label
+      City/Municipality: city_label
+      Service_Capability: hospital_type          # General / Specialty
+      General: service_level                     # Level 1 / 2 / 3 Hospital (blank on 29-40 rows a year)
+      Nature_of_Ownership: ownership
+      Authorized_Bed_Capacity: authorized_beds
+      Implementing_Beds: implementing_beds
+      Bed_Occupancy_Rate_BOR_Based_on_Authorized_Beds: bor_pct
+      Total_number_of_inpatient_bed_days_service_days: inpatient_bed_days
+    qc:
+      expected_rows: 9145                # 1,098 + 1,093 + 1,101 + 1,127 + 1,128 + 1,179 + 1,210 + 1,209 (one file, eight sheets)
+      skip_checks: [B08]                # no hospital id: identical rows can be different hospitals (1 in 2020)
+      numeric_columns: [Authorized_Bed_Capacity, Implementing_Beds, Bed_Occupancy_Rate_BOR_Based_on_Authorized_Beds,
+                        Total_number_of_inpatient_bed_days_service_days]
+    notes:
+      - Year is the sheet name (_source_sheet). One row per reporting hospital, no name or code, so rows are never matched to facilities_registry_silver.
+      - "Replaces entry 12 (bed_occupancy): same HFSRB series with 2018-2019, government hospitals every year, city/municipality every year, and bed days."
+      - "BOR = inpatient bed days / (authorized beds x days in year) x 100 (366 days in 2020 and 2024): every row with numbers agrees within 0.5 points (checked 2026-10-14)."
+      - BOR and bed days are both blank on 11-18 rows a year. BOR above 150 on 46-150 rows a year, mostly where implementing beds exceed authorized beds.
+      - Region labels use ARMM in every year and have no NIR; take the region from the PSGC code, not the label. City labels carry suffixes such as "(Capital)"; Manila is printed by district ("NCR, CITY OF MANILA, FIRST DISTRICT (Not a Province)").
+      - "Coverage: reporting hospitals only (about 1,100-1,200 a year), not every licensed hospital."
+      - "2025 control: 427 government, 782 private, authorized beds 111,833."
 
   # ---------------------------------------------------------------------------
   # 13. DOH FHSIS primary care facilities: region/province/city x year, 2018-2025  (PUBLIC)

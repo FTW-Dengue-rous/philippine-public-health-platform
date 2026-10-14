@@ -3,7 +3,7 @@
 --   one de-identified hospital encounter. RESTRICTED: keep access to this table limited.
 --   Key: the bronze row reference (_source_key, _source_file, _source_sheet, _source_row_num).
 --
--- Restricted-data rules (plan section 5.3)
+-- Restricted-data rules
 --   * Dropped: EncounterID, Brgy, Height, Weight, Total_Bill, PhilHealth_Coverage,
 --     Guarantee_Letter_Coverage, Final_Diagnosis, PHIC_Description, and all times of day.
 --   * Exact age becomes an age band.
@@ -12,7 +12,7 @@
 --     If a gate fails it is kept for inspection: treat it as restricted too.
 --   * Gold publishes aggregates only, with small cells suppressed, and does not name the hospital.
 --
--- What is not established (plan 5.2)
+-- What is not established
 --   * The file has no column that confirms an inpatient admission: is_inpatient_confirmed = false.
 --   * Occupancy convention: a bed is occupied on each date from the admission date up to, but not
 --     including, the discharge date (midnight census). Use admission_date and discharge_date,

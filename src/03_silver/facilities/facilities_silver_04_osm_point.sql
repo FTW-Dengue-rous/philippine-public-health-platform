@@ -1,38 +1,4 @@
 -- =============================================================================
--- Builds public_health.silver.facilities_osm_point_silver.
--- Grain: one OpenStreetMap health facility from the Healthsites.io/HDX export.
--- Key: (osm_type, osm_id).
---
--- Purpose
---   Provides facility locations for mapping, distance analysis, and cross-checking
---   the official facility registry. Do not use this table for official facility
---   counts because OSM coverage is crowd-sourced and uneven.
---
--- Geography assignment
---   Assigns each facility to a city/municipality using the first matching rule:
---     1. Point-in-polygon using HDX administrative boundaries
---     2. Nearest boundary within 1 km
---     3. Configured OSM geography exception
---     4. Unique addr:city match for rows without usable coordinates
---   Quarantines rows that cannot be assigned. Coordinates take precedence over
---   addr:city when the two disagree.
---
--- Source limitation
---   Some OSM ways have no coordinates and can only be located at municipality
---   level using addr:city. Areas without usable HDX polygons may also fall back
---   to the nearest-boundary or addr:city rules.
---
--- Requires:
---   facilities_silver_00_reference.sql
---   facilities_silver_04a_osm_locate.py
---   geography silver tables
---   bronze QC for hdx_healthsites
---
--- Source: OpenStreetMap / Healthsites.io via HDX (ODbL 1.0).
--- Attribution required: © OpenStreetMap contributors.
--- =============================================================================
--- =============================================================================
--- facilities_silver_04_osm_point.sql
 -- Builds public_health.silver.facilities_osm_point_silver:
 --   one OpenStreetMap health facility (healthsites.io export via HDX), with its location and the
 --   city / municipality it is in. Key: (osm_type, osm_id).
@@ -57,9 +23,19 @@
 --   For a point placed by its coordinates, the addr:city label is only compared: a different
 --   LGU sets addr_city_conflict (reported, coordinates win).
 --
+-- Which bronze file (2026-10-14)
+--   hdx_healthsites is load_mode latest_file and bronze keeps every snapshot. This build reads only
+--   the newest file (latest _as_of_date). Older snapshots are not inputs (no build_inputs or
+--   row_disposition rows). Two files with the same latest _as_of_date stop the build (gate
+--   'inputs: not exactly one healthsites file'). 04a, the exceptions builder and
+--   facilities_silver_qc.py use the same rule.
+--
 -- Known limits of this source (plan 12.3)
---   * In this export the 3,870 OSM ways (building outlines; 1,593 of the 1,946 hospitals) have no
---     coordinates. They get an area only from addr:city, and location_precision = 'municipality'.
+--   * The HDX CSV export (as of 2026-09-29) has no coordinates for the 3,870 OSM ways (building
+--     outlines; 1,593 of the 1,946 hospitals). The 2026-10-14 file is derived from the GeoJSON export
+--     (build_hdx_healthsites_csv_from_geojson.py, decision D12) and has the outline centroid for
+--     every way, so they are placed by point_in_polygon too. Rows without coordinates (none in the
+--     2026-10-14 file) get an area only from addr:city, with location_precision = 'municipality'.
 --   * Boundaries are the team's HDX polygons (facilities_silver_00a_area_boundary.sql). Areas with
 --     boundary_rule other than 'hdx' have no polygon (SGA municipalities, and any HDX code whose
 --     name disagrees with geography): points there fall to nearest_boundary or addr:city.
@@ -75,9 +51,6 @@
 --   geography silver, bronze QC for hdx_healthsites. The versions of the boundary and exceptions
 --   tables are recorded in build_inputs as reference inputs.
 -- SHARING: open (ODbL 1.0). Gold and the dashboard must show "© OpenStreetMap contributors".
--- Status: ran on local Spark 4.0 against the landing file and the exported geography_silver
---   (2026-10-09; rerun 2026-10-12 with a stand-in admin_boundaries_silver: 13,367 rows, gates 0).
---   Not yet run on Databricks. NOT tested locally: Delta, DESCRIBE HISTORY in a subquery ([2], [8]).
 -- =============================================================================
 
 -- [0] settings
@@ -128,8 +101,17 @@ SELECT * FROM VALUES ('hospital'), ('clinic'), ('doctors'), ('dentist'), ('pharm
                      ('health_post'), ('nursing_home'), ('blood_bank') AS t(amenity);
 
 
+-- The newest Healthsites file (see "Which bronze file" above)
+CREATE OR REPLACE TEMP VIEW fac_osm_latest_file AS
+SELECT DISTINCT _source_file
+FROM public_health.bronze.facilities_hdx_healthsites_bronze
+WHERE _source_key = 'hdx_healthsites'
+  AND _as_of_date = (SELECT max(_as_of_date) FROM public_health.bronze.facilities_hdx_healthsites_bronze
+                     WHERE _source_key = 'hdx_healthsites');
+
+
 -- =============================================================================
--- [1] classify every bronze row
+-- [1] classify every bronze row of the newest file
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.facilities_osm_point_silver__classified AS
 SELECT 'public_health.bronze.facilities_hdx_healthsites_bronze' AS input_table, t.*,
@@ -139,7 +121,8 @@ SELECT 'public_health.bronze.facilities_hdx_healthsites_bronze' AS input_table, 
        CASE WHEN a.amenity IS NULL AND nullif(trim(t.healthcare), '') IS NULL THEN 'not_a_health_facility' END AS reason
 FROM public_health.bronze.facilities_hdx_healthsites_bronze t
 LEFT JOIN fac_osm_health_amenity a ON a.amenity = lower(trim(t.amenity))
-WHERE t._source_key = 'hdx_healthsites';
+WHERE t._source_key = 'hdx_healthsites'
+  AND t._source_file IN (SELECT _source_file FROM fac_osm_latest_file);
 
 
 -- =============================================================================
@@ -397,7 +380,7 @@ LEFT JOIN (
   ON nl.source_key = i.source_key AND nl.source_file = i.source_file AND nl.source_sheet <=> i.source_sheet
 WHERE i.input_kind = 'bronze_source' AND i.input_rows - coalesce(nl.n, 0) <> coalesce(ref.n, 0)
 UNION ALL
-SELECT 'control: bronze rows = 16,032 (bronze QC expected_rows)', 'fail',
+SELECT 'control: bronze rows of the newest file = 16,032 (bronze QC expected_rows)', 'fail',
        CASE WHEN (SELECT count(*) FROM public_health.silver.facilities_osm_point_silver__classified) = 16032 THEN 0 ELSE 1 END
 UNION ALL
 -- warnings: reported, never block

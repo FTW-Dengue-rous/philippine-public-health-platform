@@ -13,7 +13,7 @@ Each one writes a file that a person reviews before the pipeline uses it.
 
 1. **Not a pipeline step.** No job task runs a builder. Bronze, silver and gold read only the reviewed output.
 2. **Review before use.** Run the script, read its printed report, compare the new CSV with the committed copy (`git diff`), then commit it in the same PR as the change that caused the rerun.
-3. **Two copies of each reference CSV.** The Volume copy is what silver reads (`<landing_root>/reference/<domain>/`). The repo copy is the reviewed record (`reference/<domain>/`). Keep them identical.
+3. **Two copies of each reference CSV.** The Volume copy is what silver reads (`<landing_root>/reference/<domain>/`). The repo copy is the reviewed record (`config/reference/<domain>/`). See `config/reference/README.md`. Keep them identical.
 4. **Decisions live in one place.** A manual decision goes into the builder's decision table or decisions CSV, never into the generated CSV. Editing a generated CSV by hand is lost on the next run.
 5. **Stop, don't guess.** Every builder stops and writes nothing when a label matches no rule or a code fails the geography check. Fix the rule or add a decision, then rerun.
 6. **Geography first.** All `silver/` builders read PSGC codes only from `public_health.silver.geography_silver` (one snapshot). Rebuild geography silver before running them.
@@ -37,24 +37,25 @@ Each one writes a file that a person reviews before the pipeline uses it.
 ### silver/build_diseases_reference_maps.py
 | | |
 |---|---|
-| Purpose | Map every published area label and cause label of the disease sources to an `area_key` / `disease_key` |
+| Purpose | Map every published area label and cause label of the disease sources to an `area_key` / `disease_key`. Since 2026-10-14 also the PhilHealth claims hospital locations (province + municipality label pairs, section 6b) and case-rate packages (sections 7 and 8) |
 | Reads | Diseases bronze tables, `silver.geography_silver` |
 | Writes | `reference/diseases/`: `diseases_area_map.csv`, `diseases_cause_map.csv`, `diseases_directory.csv` (becomes `dim_disease`), `diseases_cause_aggregation.csv` |
 | Rerun when | A new disease source or file reaches bronze; geography silver gets a new snapshot |
 | Then | `diseases_silver_00_reference.sql` |
-| Manual input | Decision tables in the script (`HDX_MANUAL`, `IHME_MANUAL`, `ENC_PROV_MANUAL`, `RELATED`, ...) |
-| Safety | Stops if the CSVs exist; pass `--overwrite true` to replace them |
-| Status | Tested on local Spark 2026-10-09; not yet run on Databricks |
+| Manual input | Decision tables in the script (`HDX_MANUAL`, `IHME_MANUAL`, `ENC_PROV_MANUAL`, `RELATED`, `CLAIMS_PROV_ALIAS`, `CLAIMS_AREA_MANUAL`, `CLAIMS_PACKAGES`, ...) |
+| Safety | Stops if the CSVs exist; pass `--overwrite true` to replace them. Stops on a claims label pair or package that matches no rule. Rows resolved by initials, spelling, other-province city or a manual decision say `REVIEW` in `review_note` (21 now) |
+| Status | Run on Databricks 2026-10-11. Claims sections run on local Spark 2026-10-14 (894 pairs, 14 packages); rerun on Databricks after the claims bronze load |
 
 ### silver/build_facilities_area_exceptions.py
 | | |
 |---|---|
 | Purpose | Resolve the facility place labels (NHFR, HFSRB, FHSIS, bed occupancy, OSM `addr:city`) that the silver matching rules cannot, each with the rule and evidence that support it |
-| Reads | Facilities bronze tables, `silver.geography_silver`, `silver.facilities_area_boundary`, `reference/facilities/facilities_area_decisions.csv` |
-| Writes | `reference/facilities/facilities_area_exceptions.csv` |
+| Reads | Facilities bronze tables, `silver.geography_silver`, `silver.facilities_area_boundary` |
+| Writes | `reference/facilities/`: `facilities_area_exceptions.csv`, `facilities_area_decisions.csv` (record of `DECISIONS`), `facilities_id_map_override.csv` (from `ID_MAP_OVERRIDES`, header only while empty) |
 | Rerun when | A new facility file reaches bronze; geography silver gets a new snapshot; a decision is added |
+| Bed occupancy | Since 2026-10-14 the BOR section reads `doh_foi_hospital_beds` (constant `BOR_SOURCE`); the older `bed_occupancy` rows are ignored. New rule: when a bracketed label has a part that is a place elsewhere, only the part inside the parent scope counts (MARAGUSAN (SAN MARIANO), PRES. CARLOS P. GARCIA (PITOGO)) |
 | Run order | geography silver → admin boundaries silver → `facilities_silver_00a_area_boundary.sql` → this script → `facilities_silver_00_reference.sql` → 01 … 04 |
-| Manual input | `facilities_area_decisions.csv` (accept / set / reject, with reviewer and date). **Hand-edited: the script never writes it.** |
+| Manual input | Decision tables in the script: `DECISIONS` (accept / set / reject, with reviewer and date) and `ID_MAP_OVERRIDES`. Since 2026-10-14 no facilities CSV is edited by hand |
 | Safety | Stops if a usable row fails the geography check. A stale `accept` sends the row back to `needs_review`. Needs `%pip install shapely`. |
 | Status | Run locally 2026-10-12; not yet run on Databricks |
 
@@ -82,14 +83,9 @@ Each one writes a file that a person reviews before the pipeline uses it.
 | Safety | Stops on an unknown area, duplicate keys or codes, or a code with no match in geography silver. Overwrites `--out` if it exists. |
 | Status | Codes aligned to the geography silver snapshot 2026-10-13 (Sulu fix) |
 
-## Hand-edited reference files (no builder)
+## Hand-edited reference files
 
-| File | Used by | Note |
-|---|---|---|
-| `reference/facilities/facilities_area_decisions.csv` | `build_facilities_area_exceptions.py` | Reviewer decisions; the only hand-written input of that builder |
-| `reference/facilities/facilities_id_map_override.csv` | facilities silver | Manual facility ID matches |
-
-Never run a builder with its output path pointing at one of these files.
+None since 2026-10-14. The two facilities files that used to be hand-edited (`facilities_area_decisions.csv`, `facilities_id_map_override.csv`) are written by `build_facilities_area_exceptions.py` from its `DECISIONS` and `ID_MAP_OVERRIDES` tables. A decision is a code change, reviewed in the PR.
 
 ## Adding a builder
 
