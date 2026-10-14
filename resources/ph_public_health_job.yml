@@ -13,8 +13,15 @@
 # Paths are relative to THIS file (resources/), hence ../src/...
 # Task types:
 #   .ipynb + "Databricks notebook source" .py -> notebook_task (serverless)
-#   plain .py                                 -> spark_python_task (env "default")
+#   plain .py                                 -> spark_python_task (env "default" or "geo")
 #   plain .sql                                -> sql_task.file (${var.warehouse_id})
+#
+# Environments (2026-10-15): two serverless environments, both on environment_version 2
+# (numpy 1.26 base). "default" has no geometry library. "geo" adds shapely for the single
+# task that needs it (facilities 04a point-in-polygon) and pins numpy<2 + shapely<2.1: an
+# unpinned shapely resolves to 2.1 whose wheels are built against numpy 2, and installing it
+# into every task broke pandas imports ("numpy.dtype size changed"). All dependencies are
+# pinned so a run resolves to the same versions every time.
 #
 # Bronze
 #   diseases / facilities / socioeconomic / workforce: one task per domain runs
@@ -54,13 +61,20 @@ resources:
       #     - jghsantiago91@gmail.com
 
       environments:
-        - environment_key: default
+        - environment_key: default         # every Python task except the OSM locate step
           spec:
             environment_version: "2"
             dependencies:
-              - pyyaml
-              - openpyxl
-              - shapely                    # silver geometry (facilities 04a point-in-polygon)
+              - pyyaml==6.0.2
+              - openpyxl==3.1.5
+        - environment_key: geo             # facilities 04a only (point-in-polygon)
+          spec:
+            environment_version: "2"
+            dependencies:
+              - "numpy<2"                  # keep the base numpy 1.26; shapely 2.1 wheels need numpy 2
+              - pyyaml==6.0.2
+              - openpyxl==3.1.5
+              - "shapely<2.1"              # 2.0.x = last series with numpy-1 wheels
 
       tasks:
         # ================================================================
@@ -290,7 +304,7 @@ resources:
           depends_on:
             - task_key: bronze_facilities
             - task_key: silver_facilities_00a_area_boundary
-          environment_key: default               # gets shapely from the job environment
+          environment_key: geo                   # the only task that needs shapely
           spark_python_task:
             python_file: ../src/03_silver/facilities/facilities_silver_04a_osm_locate.py
 
@@ -543,10 +557,254 @@ resources:
               - "{{job.run_id}}"
 
         # ================================================================
-        # 9. GOLD (next) — every gold task depends on qc_silver_cross_domain, e.g.
+        # 9. GOLD — data model v2 (public_health.test_gold2), every file is plain .sql
+        #    -> sql_task.file on the warehouse. Each file stops itself on a failed gate
+        #    (raise_error), which fails the task and everything downstream.
+        #    Dependencies follow what each file reads; files that read only silver run in
+        #    parallel after 00. Paths assume src/04_gold/ — adjust if the folder differs.
+        #    Order: 00 -> {11,21,31,12,13} -> {20,30,35,40} -> {41,43,42,44} -> 51 -> 52 ->
+        #    {53,54} -> {55,56,57} ; 61,62,63 ; 71 last (reads build_log of every table).
         # ================================================================
-        # - task_key: gold_<model>
-        #   depends_on:
-        #     - task_key: qc_silver_cross_domain
-        #   notebook_task:
-        #     notebook_path: ../src/04_gold/<notebook>.ipynb
+        # --- gold: dims and setup
+        - task_key: gold_00_setup
+          depends_on:
+            - task_key: qc_silver_cross_domain
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_00_setup.sql
+
+        - task_key: gold_11_dim_geography
+          depends_on:
+            - task_key: gold_00_setup
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_11_dim_geography.sql
+
+        - task_key: gold_21_dim_facility
+          depends_on:
+            - task_key: gold_00_setup
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_21_dim_facility.sql
+
+        - task_key: gold_31_dim_disease
+          depends_on:
+            - task_key: gold_00_setup
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_31_dim_disease.sql
+
+        - task_key: gold_12_dim_date
+          depends_on:
+            - task_key: gold_00_setup
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_12_dim_date.sql
+
+        - task_key: gold_13_dim_data_source
+          depends_on:
+            - task_key: gold_00_setup
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_13_dim_data_source.sql
+
+        # --- gold: facts
+        - task_key: gold_20_fact_facility_capacity
+          depends_on:
+            - task_key: gold_11_dim_geography
+            - task_key: gold_21_dim_facility
+            - task_key: gold_12_dim_date
+            - task_key: gold_13_dim_data_source
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_20_fact_facility_capacity.sql
+
+        - task_key: gold_30_fact_disease_metric
+          depends_on:
+            - task_key: gold_11_dim_geography
+            - task_key: gold_31_dim_disease
+            - task_key: gold_12_dim_date
+            - task_key: gold_13_dim_data_source
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_30_fact_disease_metric.sql
+
+        - task_key: gold_35_fact_workforce_capacity
+          depends_on:
+            - task_key: gold_11_dim_geography
+            - task_key: gold_12_dim_date
+            - task_key: gold_13_dim_data_source
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_35_fact_workforce_capacity.sql
+
+        - task_key: gold_40_fact_area_indicator
+          depends_on:
+            - task_key: gold_11_dim_geography
+            - task_key: gold_12_dim_date
+            - task_key: gold_13_dim_data_source
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_40_fact_area_indicator.sql
+
+        # --- gold: seeds, maps, reference, default views
+        - task_key: gold_41_source_priority
+          depends_on:
+            - task_key: gold_13_dim_data_source
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_41_source_priority.sql
+
+        - task_key: gold_43_ref_osm_healthsite_point
+          depends_on:
+            - task_key: gold_11_dim_geography
+            - task_key: gold_13_dim_data_source
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_43_ref_osm_healthsite_point.sql
+
+        - task_key: gold_42_area_coverage_map
+          depends_on:
+            - task_key: gold_20_fact_facility_capacity
+            - task_key: gold_30_fact_disease_metric
+            - task_key: gold_35_fact_workforce_capacity
+            - task_key: gold_40_fact_area_indicator
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_42_area_coverage_map.sql
+
+        - task_key: gold_44_fact_default_views
+          depends_on:
+            - task_key: gold_41_source_priority
+            - task_key: gold_20_fact_facility_capacity
+            - task_key: gold_30_fact_disease_metric
+            - task_key: gold_35_fact_workforce_capacity
+            - task_key: gold_40_fact_area_indicator
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_44_fact_default_views.sql
+
+        # --- gold: marts: BQ1 spine
+        - task_key: gold_51_mart_locality_service_presence
+          depends_on:
+            - task_key: gold_20_fact_facility_capacity
+            - task_key: gold_40_fact_area_indicator
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_51_mart_locality_service_presence.sql
+
+        - task_key: gold_52_mart_base_planning_unit
+          depends_on:
+            - task_key: gold_51_mart_locality_service_presence
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_52_mart_base_planning_unit.sql
+
+        - task_key: gold_53_mart_area_service_profile
+          depends_on:
+            - task_key: gold_52_mart_base_planning_unit
+            - task_key: gold_42_area_coverage_map
+            - task_key: gold_35_fact_workforce_capacity
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_53_mart_area_service_profile.sql
+
+        - task_key: gold_54_mart_area_burden_indicator
+          depends_on:
+            - task_key: gold_52_mart_base_planning_unit
+            - task_key: gold_42_area_coverage_map
+            - task_key: gold_41_source_priority
+            - task_key: gold_30_fact_disease_metric
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_54_mart_area_burden_indicator.sql
+
+        - task_key: gold_55_mart_area_evidence
+          depends_on:
+            - task_key: gold_53_mart_area_service_profile
+            - task_key: gold_54_mart_area_burden_indicator
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_55_mart_area_evidence.sql
+
+        - task_key: gold_56_mart_area_priority
+          depends_on:
+            - task_key: gold_53_mart_area_service_profile
+            - task_key: gold_54_mart_area_burden_indicator
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_56_mart_area_priority.sql
+
+        - task_key: gold_57_fact_area_access
+          depends_on:
+            - task_key: gold_51_mart_locality_service_presence
+            - task_key: gold_43_ref_osm_healthsite_point
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_57_fact_area_access.sql
+
+        # --- gold: marts: case studies, preparedness, readiness
+        - task_key: gold_61_mart_tb_case_study
+          depends_on:
+            - task_key: gold_51_mart_locality_service_presence
+            - task_key: gold_30_fact_disease_metric
+            - task_key: gold_35_fact_workforce_capacity
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_61_mart_tb_case_study.sql
+
+        - task_key: gold_62_mart_kidney_case_study
+          depends_on:
+            - task_key: gold_51_mart_locality_service_presence
+            - task_key: gold_42_area_coverage_map
+            - task_key: gold_30_fact_disease_metric
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_62_mart_kidney_case_study.sql
+
+        - task_key: gold_63_mart_dengue_peak_capacity
+          depends_on:
+            - task_key: gold_51_mart_locality_service_presence
+            - task_key: gold_42_area_coverage_map
+            - task_key: gold_30_fact_disease_metric
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_63_mart_dengue_peak_capacity.sql
+
+        - task_key: gold_71_mart_evidence_readiness
+          depends_on:
+            - task_key: gold_44_fact_default_views
+            - task_key: gold_55_mart_area_evidence
+            - task_key: gold_56_mart_area_priority
+            - task_key: gold_57_fact_area_access
+            - task_key: gold_61_mart_tb_case_study
+            - task_key: gold_62_mart_kidney_case_study
+            - task_key: gold_63_mart_dengue_peak_capacity
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/04_gold/gold_v2_71_mart_evidence_readiness.sql
