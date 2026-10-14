@@ -54,7 +54,8 @@
 #     psa_beds/national_annual/     psa_hospitals_beds_national_annual_1990_2015.csv
 #     psa_beds/region_annual/        psa_beds_region_annual_2020_2024.csv
 #     psa_bhs/region_annual/         psa_bhs_region_annual_2006_2023.csv
-#     hdx_healthsites/               hdx_healthsites_facility_asof_20260929.csv
+#     hdx_healthsites/               hdx_healthsites_facility_asof_20260929.csv, ..._20261014.csv (derived)
+#     hdx_healthsites/raw_geojson/   hdx_healthsites_facility_asof_20261014.geojson (not loaded)
 #     restricted/                  bed_occupancy_hospital_annual_2020_2025.xlsx
 #   workforce/doh_fhsis_demographic/ (BGY & BHS tab, read by the last entry)
 #
@@ -73,10 +74,6 @@
 #     Set replace on an entry to load anyway; replaced bytes are counted and logged.
 #   - Each file must give at least one data row. After the write, rows in the table
 #     per file must equal rows read. Any failure stops that source.
-#
-# Items marked CONFIRM were not verified against the actual file.
-# Entries 1-13 have no header_check yet: fill them with --show_headers (TODO).
-# required_columns on single-header entries come from their column_map names.
 # =============================================================================
 
 version: 1
@@ -166,7 +163,6 @@ layouts:
      health_centers_total, health_centers_ratio, bhs_no, bhs_ratio]
   bgy_2025: &bgy_2025
     [area_name, population, barangays_no, barangays_ratio, rhu_no, rhu_ratio, bhs_no, bhs_ratio]
-
 
 sources:
 
@@ -357,29 +353,40 @@ sources:
 
   # ---------------------------------------------------------------------------
   # 7. HDX / healthsites.io: OpenStreetMap health facilities with coordinates  (OPEN, ODbL)
+  #    Two snapshots of the same HDX release. The 2026-10-14 file is DERIVED from the
+  #    GeoJSON export by build_hdx_healthsites_csv_from_geojson.py (decision D12): same 35
+  #    columns, plus X / Y for the 3,870 building outlines that the CSV export leaves blank.
   # ---------------------------------------------------------------------------
   hdx_healthsites:
     description: Health facility points from OpenStreetMap via healthsites.io (pharmacies, clinics, hospitals, dentists, doctors)
     agency: Healthsites.io / OpenStreetMap contributors
-    obtained_via: HDX download
+    obtained_via: HDX download (CSV and GeoJSON exports of the same dataset)
     url: https://data.humdata.org/dataset/philippines-healthsites
     original_file: philippines_healthsites.csv
     path: facilities/hdx_healthsites
     files:
-      - hdx_healthsites_facility_asof_20260929.csv
+      - {name: hdx_healthsites_facility_asof_20260929.csv, as_of_date: 2026-09-29}   # HDX CSV export; X / Y blank for OSM ways
+      - {name: hdx_healthsites_facility_asof_20261014.csv, as_of_date: 2026-10-14}   # derived from the GeoJSON (see derived_from)
     format: csv
     delimiter: ","
     encoding: utf-8
     header_mode: single
     skip_rows: 0
-    required_columns: ["X", "Y", "osm_id", "amenity", "name"]   # from column_map
+    required_columns: ["X", "Y", "osm_id", "osm_type", "amenity", "name", "changeset_timestamp"]
     bronze_table: "public_health.bronze.facilities_hdx_healthsites_bronze"
-    as_of_date: 2026-09-29                 # latest changeset in the file is 2026-09-29; CONFIRM download date
-    load_mode: latest_file
+    as_of_date: 2026-10-14                 # entry default; each file sets its own above
+    load_mode: latest_file                 # silver must read the newest file only (see notes)
     merge_keys: [osm_type, osm_id]
     sharing: open
     license: ODbL v1.0 (OpenStreetMap)
-    coverage: 16,032 points; amenity = pharmacy 6,982, clinic 2,945, hospital 1,946, dentist 1,855, doctors 1,526, blank 709, other 69
+    coverage: 16,032 facilities (12,162 OSM nodes + 3,870 ways); amenity = pharmacy 6,982, clinic 2,945, hospital 1,946, dentist 1,855, doctors 1,526, blank 709, other 69
+    derived_from:                          # bronze does not read this file; recorded for lineage
+      file: facilities/hdx_healthsites/raw_geojson/hdx_healthsites_facility_asof_20261014.geojson
+      sha256: d042c70bb0ca3092a5321d855637e1ed84d9fa6067defe57cdc66eee316c3b53
+      script: build_hdx_healthsites_csv_from_geojson.py
+      geometry: {Point: 12162, Polygon: 3869, MultiPolygon: 1}
+      method: Point = the point; Polygon / MultiPolygon = area-weighted centroid of the outer ring(s), 7 decimals
+      output_sha256: 987915fd7f26815b3178c5db73192fadc9a624297a207cfd7445ef0b844fb5f4
     column_map:
       X: longitude
       Y: latitude
@@ -387,13 +394,21 @@ sources:
       amenity: amenity
       name: facility_name
     qc:
-      expected_rows: 16032
-      numeric_columns: [X, Y]
+      expected_rows:
+        hdx_healthsites_facility_asof_20260929.csv: 16032
+        hdx_healthsites_facility_asof_20261014.csv: 16032
+      numeric_columns: [X, Y, completeness]
     notes:
-      - X = longitude, Y = latitude (WGS84).
-      - Crowd-sourced; completeness is a percentage of filled tags. beds is filled for 141 points only.
-      - No PSGC. Assign province and municipality by point-in-polygon or nearest centroid in silver.
+      - X = longitude, Y = latitude (WGS84). In the 2026-10-14 file every row has coordinates (0 blank); in the 2026-09-29 file 3,870 are blank.
+      - "Same HDX release in both files: same 16,032 (osm_type, osm_id) keys, last changeset 2026-09-29 05:04 UTC. Checked 2026-10-14: every cell is equal except the 3,870 filled X / Y."
+      - "Filled coordinates are mostly hospitals: hospitals with coordinates go from 353 to 1,946 (ways: hospital 1,593, clinic 1,064, pharmacy 516, doctors 405)."
+      - A building centroid is the centre of the outline, not an entrance. 12 L- or U-shaped outlines have their centroid just outside the building; kept.
+      - "changeset_timestamp: the GeoJSON writes 2021-06-26T00:51:51Z; the script rewrites it to the CSV form 2021/06/26 00:51:51+00, which silver parses with 'yyyy/MM/dd HH:mm:ssx'."
+      - "latest_file: bronze keeps both files (32,064 rows). Silver must filter to the newest _source_file for this source key, or every facility is counted twice."
+      - Crowd-sourced; completeness is a percentage of filled tags. beds is filled for 141 points only; name is blank for 1,119.
+      - No PSGC. Assign province and municipality by point-in-polygon or nearest boundary in silver.
       - Use for distance-to-facility (B4) as a fallback where NHFR has no coordinates.
+      - "Licence: ODbL. Credit \"© OpenStreetMap contributors\"; a derived database shared outside the team must also be ODbL."
 
   # ===========================================================================
   # Aggregate tables (by area and period)
@@ -534,7 +549,7 @@ sources:
     data_start_row: 5
     columns: *psa_bhs_region
     bronze_table: "public_health.bronze.facilities_psa_bhs_region_annual_bronze"
-    as_of_date: 2026-09-29                 # download date; CONFIRM
+    as_of_date: 2026-09-29
     load_mode: upsert
     merge_keys: [year, region_code]
     sharing: open
@@ -573,7 +588,7 @@ sources:
       - {name: bed_occupancy_hospital_annual_2020_2025.xlsx, sheet: "2024"}
       - {name: bed_occupancy_hospital_annual_2020_2025.xlsx, sheet: "2025"}
     bronze_table: "public_health.bronze.facilities_bed_occupancy_bronze"
-    as_of_date: 2026-09-29                 # CONFIRM
+    as_of_date: 2026-09-29
     load_mode: upsert
     sharing: restricted                    # permission to quote still to confirm
     qc:
@@ -670,7 +685,7 @@ sources:
       - {row: 2, expect: {0: "Year", 1: "Number of Hospitals", 7: "Bed Capacity", 13: "per 10,000"}}
       - {row: 4, expect: {1: "Total", 3: "Government", 5: "Private", 7: "Total", 9: "Government", 11: "Private"}}
     bronze_table: "public_health.bronze.facilities_psa_hospitals_beds_national_annual_bronze"
-    as_of_date: 2026-10-06                 # download date; CONFIRM
+    as_of_date: 2026-10-06
     load_mode: upsert
     merge_keys: [year]
     sharing: open
@@ -715,7 +730,7 @@ sources:
       - {row: 2, expect: {0: "Year", 1: "Philippines"}}
       - {row: 3, expect: {3: "NCR", 4: "CAR", 9: "MIMAROPA", 18: "Caraga", 19: "BARMM"}}
     bronze_table: "public_health.bronze.facilities_psa_hospitals_region_annual_legacy_bronze"
-    as_of_date: 2026-10-06                 # download date; CONFIRM
+    as_of_date: 2026-10-06
     load_mode: upsert
     merge_keys: [region_name, ownership, year]
     sharing: open
