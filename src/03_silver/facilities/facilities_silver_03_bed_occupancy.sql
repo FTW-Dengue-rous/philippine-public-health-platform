@@ -1,23 +1,33 @@
 -- =============================================================================
--- Builds public_health.silver.facilities_bed_occupancy_silver.
--- Grain: one anonymous hospital record for one reporting year.
--- Key: (_source_key, _source_file, _source_sheet, _source_row_num).
--- Source lineage defines the key because the dataset has no hospital identifiers.
+-- Builds public_health.silver.facilities_bed_occupancy_silver:
+--   one anonymous hospital record (no name, no code) of one year from the HFSRB bed file.
+--   Key: (_source_key, _source_file, _source_sheet, _source_row_num). The records are
+--   anonymous, so the lineage columns are the key; identical rows are kept apart (plan 3, 5.2).
+-- Follows facilities-silver-plan.md v2.1 (section 3: occupancy definitions) and lineage-qc-contract.md
+-- v1.3 (lineage columns are the key here; build_log / build_inputs per build; row_disposition holds
+-- only the bronze rows that were NOT loaded).
+-- Run order: 00a -> build_facilities_area_exceptions.py (when inputs change) -> 00 -> 01 -> 02 -> [03] -> 04a -> 04
 --
--- Source coverage
---   2020-2024: private hospitals only; city/municipality-level BOR.
---   2025: government and private hospitals; province-level BOR plus authorized
---         and implementing bed counts.
+-- SHARING: restricted. FOI release (DOH-984883683631, HFSRB, 2026-10-14) with no stated terms.
+-- Keep the table's access limited and publish only aggregates with small cells suppressed.
 --
--- Use
---   Preserves all source records, including identical rows, for traceability.
---   Treats 2025 as the candidate occupancy baseline, subject to validation of
---   bed definitions, duplicate records, and reporting coverage.
+-- Source (changed 2026-10-14): sources_facilities.yaml entry 12a, doh_foi_hospital_beds, one
+-- workbook with sheets 2018-2025. It replaces entry 12 (bed_occupancy, 2020-2025), whose rows stay
+-- in the same bronze table for lineage but are no longer read here.
+--   Every sheet: government and private hospitals, region / province / city-municipality,
+--   hospital type (General / Specialty), level, authorized beds, implementing beds, BOR (based on
+--   authorized beds) and inpatient bed days. Reporting hospitals only (about 1,100-1,200 a year).
+--   BOR = bed days / (authorized beds x days in the year) x 100: a warn gate checks it per row.
+--   The 2025 records remain the preferred CANDIDATE occupancy baseline, subject to validation of
+--   bed definitions, duplicate records and reporting coverage (decision D6); 2018-2024 are now a
+--   comparable series (same layout, both ownerships).
+--   Header quirk: the column "Service Capability" holds General / Specialty, the column "General"
+--   holds the level (Level 1 / 2 / 3 Hospital).
 --
--- Requires:
---   facilities_silver_00_reference.sql
---   geography silver tables
---   bronze QC for bed occupancy
+-- Build sequence: [0] settings  [1] classify  [2] inputs  [3] areas  [4] candidate
+--                 [4b] dispositions  [5] gates  [6] build log  [7] STOP on failure  [8] write  [9] record  [10] summary
+-- Needs: facilities_silver_00_reference.sql (exceptions), quality_setup.sql, geography silver, bronze QC.
+-- Status: rewritten 2026-10-14 for doh_foi_hospital_beds
 -- =============================================================================
 
 -- [0] settings
@@ -28,6 +38,8 @@ DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;
 -- BOR above this value is kept and flagged but is not eligible for the baseline (plan 3.3)
 DECLARE OR REPLACE VARIABLE bor_baseline_max DECIMAL(7,2) DEFAULT 150;
+-- the bronze source this build reads (sources_facilities.yaml entry 12a)
+DECLARE OR REPLACE VARIABLE bor_source_key STRING DEFAULT 'doh_foi_hospital_beds';
 DECLARE OR REPLACE VARIABLE geography_checksum STRING;
 SET VARIABLE geography_checksum =
   (SELECT max_by(content_checksum, silver_processed_at) FROM public_health.silver.geography_silver);
@@ -97,7 +109,7 @@ SELECT 'public_health.bronze.facilities_bed_occupancy_bronze' AS input_table, t.
        CASE WHEN Region IS NOT NULL THEN 'data' ELSE 'non_data' END AS row_class,
        CASE WHEN Region IS NULL THEN 'blank_or_note' END AS reason
 FROM public_health.bronze.facilities_bed_occupancy_bronze t
-WHERE _source_key = 'bed_occupancy';
+WHERE _source_key = bor_source_key;
 
 
 -- =============================================================================
@@ -146,8 +158,8 @@ LEFT JOIN fac_bor_table_versions v ON v.table_name = t.table_name;
 --   province unit (every year): the Province/District label -> province, or a city / NCR district
 --     printed in that column (exceptions, source_group 'bor', match_type 'province_label').
 --     The unit is AS PRINTED: a highly urbanized city sits under its geographic province, so a
---     2025 province unit includes those cities (geo_coverage_basis).
---   city / municipality (2020-2024 only): name within the province, else the region, else the country.
+--     record kept at province level (city label not resolved) includes those cities (geo_coverage_basis).
+--   city / municipality (every year): name within the province, else the region, else the country.
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.facilities_bed_occupancy_silver__geo AS
 WITH r AS (
@@ -178,7 +190,7 @@ rp AS (
          pe.area_key AS prov_named_key,
          CASE WHEN pe.match_value IS NOT NULL THEN 'exception' WHEN pr.n = 1 THEN 'name_level_parent'
               WHEN pr.n IS NULL AND pa.n = 1 THEN 'name_level_other_region' END AS prov_method,
-         CASE WHEN pu.match_value IS NOT NULL THEN concat('place_', 'needs_review') END AS quarantine_reason
+         CASE WHEN pu.match_value IS NOT NULL THEN concat('place_', coalesce(pu.review_status, 'needs_review')) END AS quarantine_reason
   FROM r
   LEFT JOIN pe ON pe.match_value = r.prov_norm
   LEFT JOIN pu ON pu.match_value = r.prov_norm AND pu.parent_label_norm IS NULL
@@ -223,11 +235,15 @@ CREATE OR REPLACE TABLE public_health.silver.facilities_bed_occupancy_silver__ca
 WITH d AS (
   SELECT c.*, g.province_unit_key, g.prov_method, g.city_psgc, g.city_method, g.city_candidates,
          fac_num(c.Bed_Occupancy_Rate_BOR_Based_on_Authorized_Beds) AS bor,
+         fac_num(c.Total_number_of_inpatient_bed_days_service_days) AS bed_days,
+         fac_num(c.Authorized_Bed_Capacity) AS abc,
+         dayofyear(make_date(c.sheet_year, 12, 31)) AS days_in_year,
          -- identical rows in one sheet: the first is kept for the baseline, the others are flagged
          row_number() OVER (PARTITION BY c._source_file, c._source_sheet, c.Region, c.`Province/District`,
                                          c.`City/Municipality`, c.General, c.Nature_of_Ownership,
                                          c.Bed_Occupancy_Rate_BOR_Based_on_Authorized_Beds,
-                                         c.Authorized_Bed_Capacity, c.Implementing_Beds
+                                         c.Authorized_Bed_Capacity, c.Implementing_Beds,
+                                         c.Service_Capability, c.Total_number_of_inpatient_bed_days_service_days
                             ORDER BY c._source_row_num) AS copy_no
   FROM public_health.silver.facilities_bed_occupancy_silver__classified c
   JOIN public_health.silver.facilities_bed_occupancy_silver__geo g
@@ -239,7 +255,7 @@ SELECT
   make_date(sheet_year, 1, 1)                                       AS reporting_period_start,   -- assumed
   make_date(sheet_year, 12, 31)                                     AS reporting_period_end,     -- assumed
   false                                                             AS period_confirmed,
-  -- finest area available: city / municipality (2020-2024), else the province unit
+  -- finest area available: city / municipality, else the province unit
   coalesce(concat('psgc:', city_psgc), province_unit_key)           AS area_key,
   coalesce(city_psgc, CASE WHEN province_unit_key LIKE 'psgc:%' THEN substr(province_unit_key, 6) END) AS psgc_code,
   CASE WHEN city_psgc IS NOT NULL THEN 'city_municipality' ELSE 'province_or_district' END AS area_level_published,
@@ -248,34 +264,43 @@ SELECT
   province_unit_key,
   trim(`Province/District`)                                         AS province_label_source,
   trim(Region)                                                      AS region_as_published,
-  CASE WHEN province_unit_key LIKE 'ncr-district:%' THEN 'ncr_district'
-       WHEN sheet_year = 2025 THEN 'province_incl_cities_as_reported' ELSE 'city_municipality' END AS geo_coverage_basis,
+  CASE WHEN city_psgc IS NOT NULL THEN 'city_municipality'
+       WHEN province_unit_key LIKE 'ncr-district:%' THEN 'ncr_district'
+       ELSE 'province_incl_cities_as_reported' END                  AS geo_coverage_basis,
   regexp_extract(General, '(Level [1-3])', 1)                       AS service_level,
+  initcap(trim(Service_Capability))                                 AS hospital_type,            -- General / Specialty
   lower(trim(Nature_of_Ownership))                                  AS ownership,
   CAST(bor AS DECIMAL(7,2))                                         AS bor_pct,
   'authorized'                                                      AS bor_bed_basis,            -- per the column header
   false                                                             AS bor_basis_confirmed,
-  CAST(fac_num(Authorized_Bed_Capacity) AS INT)                     AS authorized_beds,           -- 2025 only
-  CAST(fac_num(Implementing_Beds) AS INT)                           AS implementing_beds,         -- 2025 only
+  CAST(abc AS INT)                                                  AS authorized_beds,
+  CAST(fac_num(Implementing_Beds) AS INT)                           AS implementing_beds,
+  CAST(bed_days AS BIGINT)                                          AS inpatient_bed_days,        -- service days in the year
+  days_in_year,
   (bor > 100)                                                       AS is_bor_over_100,
   (copy_no > 1)                                                     AS is_exact_duplicate_in_sheet,
   CASE WHEN bor IS NULL THEN 'bor_null'
        WHEN bor < 0 THEN 'bor_negative'
        WHEN bor > bor_baseline_max THEN 'bor_gt_150'
-       WHEN regexp_extract(General, '(Level [1-3])', 1) = '' OR General IS NULL THEN 'level_missing'
-       WHEN copy_no > 1 THEN 'exact_duplicate'
-       WHEN sheet_year < 2025 THEN 'private_only_year' END         AS exclusion_reason,
+       -- a specialty hospital has no level in the source: only a general hospital needs one
+       WHEN (regexp_extract(General, '(Level [1-3])', 1) = '' OR General IS NULL)
+            AND initcap(trim(Service_Capability)) = 'General' THEN 'level_missing'
+       WHEN copy_no > 1 THEN 'exact_duplicate' END                  AS exclusion_reason,
   'restricted'                                                      AS sharing,
   bor_build_id                                                      AS _silver_build_id,
   _source_key, _source_file, _source_sheet, _source_row_num, _as_of_date,
-  map_filter(map('bor_pct', 'Bed_Occupancy_Rate_BOR_Based_on_Authorized_Beds',
-                 'authorized_beds', CASE WHEN sheet_year = 2025 THEN 'Authorized_Bed_Capacity' END,
-                 'implementing_beds', CASE WHEN sheet_year = 2025 THEN 'Implementing_Beds' END,
-                 'service_level', 'General', 'ownership', 'Nature_of_Ownership'),
-             (k, v) -> v IS NOT NULL)                               AS _metric_source_columns,
+  map('bor_pct', 'Bed_Occupancy_Rate_BOR_Based_on_Authorized_Beds',
+      'authorized_beds', 'Authorized_Bed_Capacity', 'implementing_beds', 'Implementing_Beds',
+      'inpatient_bed_days', 'Total_number_of_inpatient_bed_days_service_days',
+      'service_level', 'General', 'hospital_type', 'Service_Capability',
+      'ownership', 'Nature_of_Ownership')                           AS _metric_source_columns,
   -- validation only
   fac_parse_error(Bed_Occupancy_Rate_BOR_Based_on_Authorized_Beds) + fac_parse_error(Authorized_Bed_Capacity)
-    + fac_parse_error(Implementing_Beds)                            AS parse_errors,
+    + fac_parse_error(Implementing_Beds)
+    + fac_parse_error(Total_number_of_inpatient_bed_days_service_days) AS parse_errors,
+  -- published BOR minus the BOR recomputed from bed days (null when either is missing)
+  CASE WHEN abc > 0 AND bed_days IS NOT NULL AND bor IS NOT NULL
+       THEN bor - bed_days / (abc * days_in_year) * 100 END        AS bor_check_diff,
   city_candidates,
   `City/Municipality` AS city_label_raw
 FROM d;
@@ -283,15 +308,16 @@ FROM d;
 -- baseline_eligible is derived from exclusion_reason so the two can never disagree
 CREATE OR REPLACE TABLE public_health.silver.facilities_bed_occupancy_silver__candidate2 AS
 SELECT c.* EXCEPT (exclusion_reason, sharing, _silver_build_id, _source_key, _source_file, _source_sheet,
-                   _source_row_num, _as_of_date, _metric_source_columns, parse_errors, city_candidates, city_label_raw),
+                   _source_row_num, _as_of_date, _metric_source_columns, parse_errors, bor_check_diff,
+                   city_candidates, city_label_raw),
        (exclusion_reason IS NULL) AS baseline_eligible, exclusion_reason, sharing,
        _silver_build_id, _source_key, _source_file, _source_sheet, _source_row_num, _as_of_date, _metric_source_columns,
-       parse_errors, city_candidates, city_label_raw
+       parse_errors, bor_check_diff, city_candidates, city_label_raw
 FROM public_health.silver.facilities_bed_occupancy_silver__candidate c;
 
 
 -- =============================================================================
--- [4b] dispositions: one row per bronze row that was
+-- [4b] dispositions (lineage-qc-contract.md v1.3, section 7.1): one row per bronze row that was
 --      NOT loaded. Loaded rows are not stored: the silver rows carry their bronze row reference, and
 --      rows loaded per input = input_rows - rows here (quality.v_build_reconciliation).
 --      Every data row is loaded (ineligible and identical rows too: eligibility is a flag), except
@@ -327,10 +353,11 @@ WHERE g.quarantine_reason IS NOT NULL;
 -- [5] gates
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.facilities_bed_occupancy_silver__gates AS
-SELECT 'inputs: the six sheets 2020-2025 are read, once each' AS gate, 'fail' AS severity,
-       CASE WHEN (SELECT count(*) FROM public_health.silver.facilities_bed_occupancy_silver__inputs
-                  WHERE input_kind = 'bronze_source' AND source_sheet IN ('2020','2021','2022','2023','2024','2025')) = 6
-             AND (SELECT count(*) FROM public_health.silver.facilities_bed_occupancy_silver__inputs WHERE input_kind = 'bronze_source') = 6
+SELECT 'inputs: the eight sheets 2018-2025 are read, once each' AS gate, 'fail' AS severity,
+       CASE WHEN (SELECT count(DISTINCT source_sheet) FROM public_health.silver.facilities_bed_occupancy_silver__inputs
+                  WHERE input_kind = 'bronze_source'
+                    AND source_sheet IN ('2018','2019','2020','2021','2022','2023','2024','2025')) = 8
+             AND (SELECT count(*) FROM public_health.silver.facilities_bed_occupancy_silver__inputs WHERE input_kind = 'bronze_source') = 8
             THEN 0 ELSE 1 END AS failures
 UNION ALL
 SELECT 'inputs: more than one ingestion log match', 'fail', count(*)
@@ -355,6 +382,17 @@ SELECT 'cell that is not a number', 'fail', coalesce(sum(parse_errors), 0)
 UNION ALL
 SELECT 'ownership not government / private', 'fail', count(*)
   FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE ownership NOT IN ('government', 'private') OR ownership IS NULL
+UNION ALL
+SELECT 'hospital type not General / Specialty (column layout moved?)', 'fail', count(*)
+  FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE hospital_type NOT IN ('General', 'Specialty') OR hospital_type IS NULL
+UNION ALL
+SELECT 'level column holds something other than Level 1 / 2 / 3 Hospital (column layout moved?)', 'fail', count(*)
+  FROM public_health.silver.facilities_bed_occupancy_silver__classified
+  WHERE row_class = 'data' AND General IS NOT NULL AND NOT General RLIKE '^Level [1-3] Hospital$'
+UNION ALL
+SELECT 'negative beds or bed days', 'fail', count(*)
+  FROM public_health.silver.facilities_bed_occupancy_silver__candidate2
+  WHERE authorized_beds < 0 OR implementing_beds < 0 OR inpatient_bed_days < 0
 UNION ALL
 SELECT 'key not unique', 'fail', count(*) FROM (
   SELECT 1 FROM public_health.silver.facilities_bed_occupancy_silver__candidate2
@@ -384,20 +422,30 @@ SELECT 'output: silver rows <> bronze data rows', 'fail',
          - (SELECT count_if(row_class = 'data') FROM public_health.silver.facilities_bed_occupancy_silver__classified)
          + (SELECT count(*) FROM public_health.silver.facilities_bed_occupancy_silver__geo WHERE quarantine_reason IS NOT NULL))
 UNION ALL
-SELECT 'control: 2025 rows = 1,162 (418 government, 744 private)', 'fail',
-       CASE WHEN (SELECT count_if(ownership = 'government') FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE year = 2025) = 418
-             AND (SELECT count_if(ownership = 'private') FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE year = 2025) = 744
+SELECT 'control: data rows per sheet (2018 1,098 ... 2025 1,209; silver + quarantined)', 'fail', count(*)
+  FROM (SELECT * FROM VALUES (2018, 1098), (2019, 1093), (2020, 1101), (2021, 1127), (2022, 1128), (2023, 1179),
+                             (2024, 1210), (2025, 1209) AS t(y, n)) e
+  LEFT JOIN (SELECT sheet_year, count_if(row_class = 'data') AS n
+             FROM public_health.silver.facilities_bed_occupancy_silver__classified GROUP BY sheet_year) c ON c.sheet_year = e.y
+  WHERE coalesce(c.n, 0) <> e.n
+UNION ALL
+SELECT 'control: 2025 bronze rows 427 government and 782 private, authorized beds 111,833', 'fail',
+       CASE WHEN (SELECT count_if(lower(trim(Nature_of_Ownership)) = 'government') FROM public_health.silver.facilities_bed_occupancy_silver__classified
+                  WHERE row_class = 'data' AND sheet_year = 2025) = 427
+             AND (SELECT count_if(lower(trim(Nature_of_Ownership)) = 'private') FROM public_health.silver.facilities_bed_occupancy_silver__classified
+                  WHERE row_class = 'data' AND sheet_year = 2025) = 782
+             AND (SELECT sum(fac_num(Authorized_Bed_Capacity)) FROM public_health.silver.facilities_bed_occupancy_silver__classified
+                  WHERE row_class = 'data' AND sheet_year = 2025) = 111833
             THEN 0 ELSE 1 END
 UNION ALL
-SELECT 'control: 2025 authorized beds = 109,251', 'fail',
-       CASE WHEN (SELECT sum(authorized_beds) FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE year = 2025) = 109251
-            THEN 0 ELSE 1 END
+SELECT 'warn: city / municipality not resolved (record kept at province level)', 'warn', count(*)
+  FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE area_level_published <> 'city_municipality'
 UNION ALL
-SELECT 'control: 2020-2024 sheets are private only', 'fail', count(*)
-  FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE year < 2025 AND ownership <> 'private'
+SELECT 'warn: published BOR differs from bed days / (authorized beds x days) by more than 0.5 points', 'warn', count(*)
+  FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE abs(bor_check_diff) > 0.5
 UNION ALL
-SELECT 'warn: 2020-2024 city / municipality not resolved (record kept at province level)', 'warn', count(*)
-  FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE year < 2025 AND area_level_published <> 'city_municipality'
+SELECT 'warn: BOR filled but bed days blank, or the reverse', 'warn', count(*)
+  FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE (bor_pct IS NULL) <> (inpatient_bed_days IS NULL)
 UNION ALL
 SELECT 'warn: BOR above 100 (kept, flagged)', 'warn', count_if(is_bor_over_100)
   FROM public_health.silver.facilities_bed_occupancy_silver__candidate2
@@ -440,7 +488,7 @@ FROM fac_bor_build_log WHERE status = 'failed';
 -- [8] write (full rebuild). Keep access to this table restricted.
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.facilities_bed_occupancy_silver AS
-SELECT * EXCEPT (parse_errors, city_candidates, city_label_raw)
+SELECT * EXCEPT (parse_errors, bor_check_diff, city_candidates, city_label_raw)
 FROM public_health.silver.facilities_bed_occupancy_silver__candidate2;
 
 
@@ -463,7 +511,7 @@ SELECT build_id, target_table, input_kind, input_table, input_table_version, sou
        source_sheet, load_batch_id, content_checksum, ingested_at, input_rows, reference_version
 FROM public_health.silver.facilities_bed_occupancy_silver__inputs;
 
--- bronze rows not loaded (staged in [4b]); loaded rows are not written
+-- bronze rows not loaded (staged in [4b]); loaded rows are not written (contract 7.1)
 INSERT INTO public_health.quality.row_disposition
   (build_id, target_table, source_key, source_file, source_sheet, source_row_num, load_batch_id,
    content_checksum, disposition, reason, target_key, recorded_at)
@@ -478,7 +526,8 @@ FROM public_health.silver.facilities_bed_occupancy_silver__dispositions;
 CREATE OR REPLACE TEMP VIEW fac_bor_summary AS
 SELECT year, ownership, count(*) AS records, count_if(baseline_eligible) AS baseline_eligible,
        count_if(is_bor_over_100) AS bor_over_100, sum(authorized_beds) AS authorized_beds,
-       -- bed-weighted occupancy of eligible 2025 records (same period for every record assumed)
+       sum(inpatient_bed_days) AS inpatient_bed_days,
+       -- bed-weighted occupancy of eligible records (same period for every record assumed)
        round(sum(CASE WHEN baseline_eligible THEN bor_pct * authorized_beds END)
              / sum(CASE WHEN baseline_eligible THEN authorized_beds END), 1) AS weighted_bor_eligible
 FROM public_health.silver.facilities_bed_occupancy_silver
