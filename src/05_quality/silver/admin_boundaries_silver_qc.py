@@ -1,31 +1,187 @@
-# Databricks notebook source
-# Databricks notebook source
-# Run this file as a Databricks notebook after the Silver load.
-# dq_utils.py must be a Python file in the same quality folder.
-# quality_setup.sql must already have been run.
-# These checks only read Bronze/Silver and write quality audit results.
+# =============================================================================
+# admin_boundaries_silver_qc.py
+# Silver QC for HDX administrative boundaries (public_health.silver.admin_boundaries_silver)
+#
+# Checks one persisted HDX boundary snapshot in Silver against its Bronze source and the PSGC
+# reference it was reconciled to, and writes the results through dq_utils.DQRun
+# (quality.qc_results + quality.run_log). Any FAIL makes the run raise at the end.
+#
+#   AS01   snapshot exists and has rows (Bronze and Silver)                     FAIL
+#   AS02   required boundary fields complete (psgc_code excluded: special
+#          structures keep a null code)                                         FAIL
+#   AS03   boundary logical key unique (admin_level + boundary_pcode + version)  FAIL
+#   AS04   admin level 1/2/3 and Polygon/MultiPolygon only                       FAIL
+#   ASB05  Bronze and Silver total rows reconcile                                FAIL
+#   AS07   area positive, latitude -90..90, longitude -180..180                 FAIL
+#   AS08   PSGC match status valid; null code only for documented special
+#          structures                                                          FAIL
+#   AS09   recorded PSGC reference snapshot exists and each code is at the
+#          right geographic level                                               FAIL
+#
+# Which snapshot is checked
+#   source_version  --source_version if given; otherwise the single HDX version in Silver
+#   batch_id        --batch_id if given; otherwise the single batch Silver holds for it.
+#   The run stops if Silver holds none or more than one. All tables are read at one fixed
+#   Delta version, so every check sees the same data.
+#
+# How to run (Databricks, Serverless or classic)
+#   Python script task:  admin_boundaries_silver_qc.py  [--job_run_id {{job.run_id}}]
+#                        [--config_path ...] [--source_version ...] [--batch_id ...]
+#                        [--fail_on_error true|false]
+#   Notebook cell:       import runpy; runpy.run_path("<repo>/src/05_quality/silver/admin_boundaries_silver_qc.py",
+#                                                     run_name="__main__")
+#   All parameters are optional; job/widget parameters of the same names work too.
+#   Run after admin_boundaries_silver.py.
+#
+# Changes from the notebook (2026-10-15)
+#   - dq_utils.py is found from this file's location and the working directory. The notebook
+#     only looked next to __file__, which a notebook does not have (No module named 'dq_utils').
+#   - Table names come from config/sources_geography.yaml; source version and batch are found
+#     instead of hard-coded.
+# =============================================================================
 
+import argparse
+import importlib.util
+import os
 import sys
 from pathlib import Path
 
+import yaml
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-# Make the script folder available for importing dq_utils.py.
-if "__file__" in globals():
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dq_utils import DQRun
+
+# -----------------------------------------------------------------------------
+# Find dq_utils.py (same search as the other QC scripts)
+# -----------------------------------------------------------------------------
+def _start_dirs():
+    starts = []
+    try:
+        starts.append(os.path.dirname(os.path.abspath(__file__)))
+    except NameError:
+        pass
+    starts.append(os.getcwd())
+    return starts
+
+
+def _add_dq_utils_to_path():
+    # Looks in this file's folder and the working directory, up to five levels above each, and in
+    # any *quality* folder there (e.g. src/05_quality/). Already importable: nothing to do.
+    if importlib.util.find_spec("dq_utils") is not None:
+        return None
+    searched = []
+    for start in _start_dirs():
+        folder = start
+        for _ in range(6):
+            candidates = [folder]
+            for base in (folder, os.path.join(folder, "src")):
+                try:
+                    candidates += [os.path.join(base, d) for d in sorted(os.listdir(base))
+                                   if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))]
+                except OSError:
+                    pass
+            for c in candidates:
+                searched.append(c)
+                if os.path.isfile(os.path.join(c, "dq_utils.py")):
+                    if c not in sys.path:
+                        sys.path.insert(0, c)
+                    return c
+            parent = os.path.dirname(folder)
+            if parent == folder:
+                break
+            folder = parent
+    raise ModuleNotFoundError(
+        "dq_utils.py not found. It must be a Python FILE named dq_utils.py (not a notebook) in "
+        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched)))
+
+
+_add_dq_utils_to_path()
+from dq_utils import DQ_SCHEMA, DQRun  # noqa: E402
 
 spark = SparkSession.builder.getOrCreate()
 
-# =============================================================================
-# 1. SETTINGS: change these when checking a different source batch.
-# =============================================================================
-SILVER_TABLE = "public_health.silver.admin_boundaries_silver"
-BRONZE_TABLE = "public_health.bronze.admin_boundaries_bronze"
-PSGC_TABLE = "public_health.silver.geography_silver"
-SOURCE_VERSION = "032db5d91fcb8a13aef378d6b4453da7225ef7f0fb9c0a1c3bf3c2205d0010d6"
-BATCH_ID = "cod-ab-phl:" + SOURCE_VERSION
+
+# -----------------------------------------------------------------------------
+# Run parameters: command-line arguments (Python script task), then job/widget
+# parameters (notebook task), then defaults.
+# -----------------------------------------------------------------------------
+def parse_args():
+    p = argparse.ArgumentParser(description="HDX administrative boundaries Silver QC")
+    p.add_argument("--config_path", default=None, help="Default: config/sources_geography.yaml above this file")
+    p.add_argument("--source_version", default=None, help="Default: the single HDX source version in Silver")
+    p.add_argument("--batch_id", default=None, help="Default: the single batch Silver holds for that version")
+    p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
+    p.add_argument("--fail_on_error", default=None, help="true (default): raise if any check FAILs")
+    p.add_argument("--dq_schema", default=None, help=f"Default {DQ_SCHEMA}")
+    a, _ = p.parse_known_args()  # notebook kernels pass their own arguments
+    return a
+
+
+def _dbutils():
+    handle = globals().get("dbutils")
+    if handle is not None:
+        return handle
+    try:
+        from databricks.sdk.runtime import dbutils as handle
+        return handle
+    except Exception:
+        return None
+
+
+def param(value, name, env=None, default=None):
+    if value is not None and str(value).strip():
+        return str(value).strip()
+    handle = _dbutils()
+    if handle is not None:
+        try:
+            widget_value = handle.widgets.get(name).strip()
+            if widget_value:
+                return widget_value
+        except Exception:
+            pass
+    if env and os.environ.get(env, "").strip():
+        return os.environ[env].strip()
+    return default
+
+
+def find_config(explicit, name="sources_geography.yaml"):
+    if explicit:
+        path = Path(explicit)
+        if not path.is_file():
+            raise FileNotFoundError(f"Config file not found: {explicit}")
+        return path.resolve()
+    searched = []
+    for start in map(Path, _start_dirs()):
+        for folder in (start, *list(start.parents)[:5]):
+            candidate = folder / "config" / name
+            searched.append(str(candidate))
+            if candidate.is_file():
+                return candidate.resolve()
+    raise FileNotFoundError(
+        f"{name} not found. Pass --config_path (or the job parameter config_path). Looked in:\n  "
+        + "\n  ".join(dict.fromkeys(searched)))
+
+
+ARGS = parse_args()
+CONFIG_PATH = find_config(param(ARGS.config_path, "config_path", env="PSGC_CONFIG_PATH"))
+with CONFIG_PATH.open(encoding="utf-8") as file:
+    config = yaml.safe_load(file)
+hdx_cfg = config["sources"]["hdx_phl_admin"]
+psgc_cfg = config["sources"]["psgc"]
+
+SILVER_TABLE = hdx_cfg["admin_boundaries_silver_table"]
+BRONZE_TABLE = hdx_cfg["bronze_table"]
+PSGC_TABLE = psgc_cfg["geography_silver_table"]
+REQUESTED_VERSION = param(ARGS.source_version, "source_version")
+REQUESTED_BATCH_ID = param(ARGS.batch_id, "batch_id")
+JOB_RUN_ID = param(ARGS.job_run_id, "job_run_id")
+FAIL_ON_ERROR = param(ARGS.fail_on_error, "fail_on_error", default="true").lower() == "true"
+DQ_SCHEMA_NAME = param(ARGS.dq_schema, "dq_schema", default=DQ_SCHEMA)
+
+print(f"Config          : {CONFIG_PATH}")
+print(f"Silver table    : {SILVER_TABLE}")
+print(f"Bronze table    : {BRONZE_TABLE}")
+print(f"PSGC reference  : {PSGC_TABLE}")
 
 
 # Read one fixed Delta version so every check sees the same data.
@@ -41,11 +197,35 @@ def count_sql(query):
 
 
 # =============================================================================
-# 2. READ THE PERSISTED SNAPSHOTS.
+# READ THE PERSISTED SNAPSHOTS.
 # =============================================================================
-silver = read_snapshot(SILVER_TABLE).filter(F.col("source_version") == SOURCE_VERSION)
-bronze = read_snapshot(BRONZE_TABLE).filter(F.col("_source_version") == SOURCE_VERSION)
+silver_all = read_snapshot(SILVER_TABLE)
+bronze_all = read_snapshot(BRONZE_TABLE)
 psgc = read_snapshot(PSGC_TABLE)
+
+# Require exactly one source version + batch in Silver; do not guess "latest".
+candidates = silver_all
+if REQUESTED_VERSION:
+    candidates = candidates.filter(F.col("source_version") == REQUESTED_VERSION)
+if REQUESTED_BATCH_ID:
+    candidates = candidates.filter(F.col("batch_id") == REQUESTED_BATCH_ID)
+snapshots = candidates.groupBy("source_version", "batch_id").count().collect()
+if len(snapshots) != 1:
+    found = [(r["source_version"], r["batch_id"], r["count"]) for r in snapshots]
+    raise ValueError(
+        f"{SILVER_TABLE} must hold exactly one snapshot"
+        + (f" for source_version={REQUESTED_VERSION}" if REQUESTED_VERSION else "")
+        + (f" and batch_id={REQUESTED_BATCH_ID}" if REQUESTED_BATCH_ID else "")
+        + f"; found {len(found)}: {found}. Run admin_boundaries_silver.py, "
+        "or pass --source_version / --batch_id."
+    )
+SOURCE_VERSION = snapshots[0]["source_version"]
+BATCH_ID = snapshots[0]["batch_id"]
+print(f"Source version  : {SOURCE_VERSION}")
+print(f"Batch ID        : {BATCH_ID}")
+
+silver = silver_all.filter(F.col("source_version") == SOURCE_VERSION)
+bronze = bronze_all.filter(F.col("_source_version") == SOURCE_VERSION)
 silver.createOrReplaceTempView("beginner_boundaries_silver")
 psgc.createOrReplaceTempView("beginner_boundaries_psgc")
 silver_rows = silver.count()
@@ -53,14 +233,17 @@ bronze_rows = bronze.count()
 print(f"Bronze rows: {bronze_rows}; Silver rows: {silver_rows}")
 
 # =============================================================================
-# 3. CHECKS: DQRun saves the results, then raises if any check is FAIL.
+# CHECKS: DQRun saves the results, then raises if any check is FAIL.
 # =============================================================================
 with DQRun(
     layer="silver",
     domain="admin_boundaries",
-    script_name="admin_boundaries_silver_qc_beginner.py",
+    script_name="admin_boundaries_silver_qc.py",
+    job_run_id=JOB_RUN_ID,
     source_keys="hdx_phl_admin",
-    fail_on_error=True,
+    fail_on_error=FAIL_ON_ERROR,
+    dq_schema=DQ_SCHEMA_NAME,
+    spark=spark,
 ) as dq:
     # AS01: both source and target snapshots must contain records.
     dq.record(
@@ -141,8 +324,7 @@ with DQRun(
         total_count=silver_rows,
     )
 
-    # ASB05: this beginner check compares total counts only.
-    # It has its own code because AS05 in the detailed script also compares counts per level.
+    # ASB05: compares total counts only (AS05 in the detailed script also compares per level).
     dq.record(
         "ASB05",
         table_name=SILVER_TABLE,
@@ -234,4 +416,4 @@ with DQRun(
         total_count=silver_rows,
     )
 
-print("Admin boundaries Silver QC completed. Results: public_health.quality.qc_results")
+print(f"Admin boundaries Silver QC completed. Results: {DQ_SCHEMA_NAME}.qc_results")
