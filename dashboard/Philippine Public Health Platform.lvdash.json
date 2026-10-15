@@ -1228,9 +1228,1846 @@
           "expression": "COUNT(DISTINCT CASE WHEN `exclusion_reason` = 'province_estimate_assumed_to_include_its_huc' THEN `area_name` END)"
         }
       ]
+    },
+    {
+      "name": "ov_facility_level",
+      "displayName": "OV Hospitals and beds by level (registry)",
+      "config": {
+        "source": "public_health.test_gold2.dim_facility",
+        "measures": [
+          {
+            "name": "hospitals",
+            "expr": "COUNT(1)",
+            "comment": "Currently listed hospitals"
+          },
+          {
+            "name": "authorized_beds",
+            "expr": "SUM(authorized_beds)",
+            "comment": "Total authorized beds"
+          }
+        ],
+        "filter": "LOWER(facility_category) LIKE '%hospital%'",
+        "version": "1.1",
+        "comment": "Currently listed hospital facilities in the registry, with authorized beds, by hospital level.",
+        "dimensions": [
+          {
+            "name": "hospital_level",
+            "expr": "COALESCE(hospital_level, 'Unspecified')",
+            "comment": "Hospital level (Level 1/2/3 or unspecified)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_population",
+      "displayName": "OV Population tiles (2024 census)",
+      "config": {
+        "source": "SELECT 'total_population_2024' AS tile, SUM(population) AS value, NULL AS year, NULL AS source_key\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE population IS NOT NULL\nUNION ALL\nSELECT 'provinces_null_population', COUNT(*), NULL, NULL\nFROM public_health.test_gold2.mart_base_planning_unit\nWHERE unit_level = 'province' AND population IS NULL\nUNION ALL\nSELECT 'national_all_cause_deaths', MAX(v.value), MAX(v.year), MAX(v.source_dataset)\nFROM public_health.test_gold2.v_disease_metric_totals v\nWHERE v.source_dataset = 'psa_deaths_region_annual'\n  AND v.metric_name = 'deaths'\n  AND v.disease_code = 'all_causes'\n  AND v.geographic_level = 'country'\n  AND v.value_status = 'ok'\n  AND v.year = (\n    SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n    WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n      AND disease_code = 'all_causes' AND geographic_level = 'country' AND value_status = 'ok'\n  )",
+        "measures": [
+          {
+            "name": "value",
+            "expr": "MAX(value)",
+            "comment": "Tile value"
+          }
+        ],
+        "version": "1.1",
+        "comment": "National population (2024 census, sum of localities), provinces with a null population, and the PSA all-cause registered-deaths total for the latest PSA year (the reported total row, not a sum of causes).",
+        "dimensions": [
+          {
+            "name": "tile",
+            "expr": "tile",
+            "comment": "KPI tile key"
+          },
+          {
+            "name": "year",
+            "expr": "year"
+          },
+          {
+            "name": "source_key",
+            "expr": "source_key"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_workforce_10k",
+      "displayName": "OV Doctors and nurses per 10k",
+      "config": {
+        "source": "WITH latest AS (\n  SELECT MAX(d.year) AS yr\n  FROM public_health.test_gold2.fact_workforce_capacity f\n  JOIN public_health.test_gold2.dim_date d ON d.date_key = f.date_key\n  WHERE f.source_role = 'preferred' AND f.analysis_eligible\n),\nw AS (\n  SELECT g.planning_unit_key,\n         CASE\n           WHEN LOWER(f.profession_name) LIKE '%doctor%' THEN 'Doctors'\n           WHEN LOWER(f.profession_name) LIKE '%nurse%' THEN 'Nurses'\n         END AS profession_label,\n         SUM(f.headcount_total) AS headcount\n  FROM public_health.test_gold2.fact_workforce_capacity f\n  JOIN public_health.test_gold2.dim_date d ON d.date_key = f.date_key\n  JOIN public_health.test_gold2.dim_geography g ON g.area_key = f.area_key\n  CROSS JOIN latest l\n  WHERE f.source_role = 'preferred' AND f.analysis_eligible AND d.year = l.yr\n    AND (LOWER(f.profession_name) LIKE '%doctor%' OR LOWER(f.profession_name) LIKE '%nurse%')\n  GROUP BY g.planning_unit_key, 2\n),\nprov AS (\n  SELECT p.area_name, w.profession_label, w.headcount, p.population\n  FROM w\n  JOIN public_health.test_gold2.mart_base_planning_unit p\n    ON p.planning_unit_key = w.planning_unit_key AND p.population > 0\n),\nnat AS (\n  SELECT 'NATIONAL' AS area_name, profession_label, SUM(headcount) AS headcount, SUM(population) AS population\n  FROM prov GROUP BY profession_label\n)\nSELECT area_name, profession_label, headcount, population FROM prov\nUNION ALL\nSELECT area_name, profession_label, headcount, population FROM nat",
+        "measures": [
+          {
+            "name": "headcount",
+            "expr": "SUM(headcount)",
+            "comment": "Registered professionals"
+          },
+          {
+            "name": "population",
+            "expr": "SUM(population)"
+          },
+          {
+            "name": "per_10k",
+            "expr": "MEASURE(`headcount`) / MEASURE(`population`) * 10000",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            },
+            "comment": "Professionals per 10,000 residents (benchmark 44.5)"
+          }
+        ],
+        "version": "1.1",
+        "comment": "Doctors and nurses per 10,000 residents, national and by province (preferred source, latest year; 2024 census denominator).",
+        "dimensions": [
+          {
+            "name": "area_name",
+            "expr": "area_name"
+          },
+          {
+            "name": "profession_label",
+            "expr": "profession_label"
+          },
+          {
+            "name": "unit_level",
+            "expr": "CASE WHEN area_name = 'NATIONAL' THEN 'national' ELSE 'province' END"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_top_cause",
+      "displayName": "OV Top cause of death (latest)",
+      "config": {
+        "source": "WITH base AS (\n  SELECT disease_name, SUM(value) AS deaths\n  FROM public_health.test_gold2.v_disease_metric_totals\n  WHERE source_dataset = 'psa_deaths_region_annual'\n    AND metric_name = 'deaths'\n    AND geographic_level = 'country'\n    AND value_status = 'ok'\n    AND disease_code <> 'all_causes'\n    AND disease_code NOT IN (\n      'psa_1_001', 'psa_1_026', 'psa_1_048', 'psa_1_051', 'psa_1_055',\n      'psa_1_058', 'psa_1_062', 'psa_1_063', 'psa_1_064', 'psa_1_072',\n      'psa_1_078', 'psa_1_082', 'psa_1_083', 'psa_1_084', 'psa_1_087',\n      'psa_1_092', 'psa_1_093', 'psa_1_094', 'psa_1_095'\n    )\n    AND disease_code NOT RLIKE '^psa_1_[0-9]{3}[a-z]$'\n    AND disease_code NOT IN (\n      'psa_covid19_vaccine_adverse_effects', 'psa_covid19_virus_identified',\n      'psa_covid19_virus_not_identified', 'psa_mis_covid19', 'psa_post_covid19_condition'\n    )\n    AND year = (\n      SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n      WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n        AND geographic_level = 'country' AND value_status = 'ok' AND disease_code = 'all_causes'\n    )\n  GROUP BY disease_name\n)\nSELECT v.disease_name, v.deaths,\n       (SELECT value FROM public_health.test_gold2.v_disease_metric_totals\n        WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n          AND disease_code = 'all_causes' AND geographic_level = 'country' AND value_status = 'ok'\n          AND year = (\n            SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n            WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n              AND disease_code = 'all_causes' AND geographic_level = 'country' AND value_status = 'ok'\n          )) AS deaths_all_causes,\n       ROW_NUMBER() OVER (ORDER BY v.deaths DESC) = 1 AS is_top_cause,\n       w.year, w.source_dataset AS source_key\nFROM base v\nJOIN (\n  SELECT disease_name, MAX(year) AS year, MAX(source_dataset) AS source_dataset\n  FROM public_health.test_gold2.v_disease_metric_totals\n  WHERE source_dataset = 'psa_deaths_region_annual'\n    AND metric_name = 'deaths' AND geographic_level = 'country'\n    AND value_status = 'ok' AND disease_code <> 'all_causes'\n    AND disease_code NOT IN (\n      'psa_1_001', 'psa_1_026', 'psa_1_048', 'psa_1_051', 'psa_1_055',\n      'psa_1_058', 'psa_1_062', 'psa_1_063', 'psa_1_064', 'psa_1_072',\n      'psa_1_078', 'psa_1_082', 'psa_1_083', 'psa_1_084', 'psa_1_087',\n      'psa_1_092', 'psa_1_093', 'psa_1_094', 'psa_1_095'\n    )\n    AND disease_code NOT RLIKE '^psa_1_[0-9]{3}[a-z]$'\n    AND disease_code NOT IN (\n      'psa_covid19_vaccine_adverse_effects', 'psa_covid19_virus_identified',\n      'psa_covid19_virus_not_identified', 'psa_mis_covid19', 'psa_post_covid19_condition'\n    )\n    AND year = (\n      SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n      WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n        AND geographic_level = 'country' AND value_status = 'ok' AND disease_code = 'all_causes'\n    )\n  GROUP BY disease_name\n) w ON w.disease_name = v.disease_name",
+        "measures": [
+          {
+            "name": "deaths",
+            "expr": "SUM(deaths)",
+            "comment": "Registered deaths for the cause"
+          },
+          {
+            "name": "pct_of_all_deaths",
+            "expr": "MEASURE(`deaths`) / MAX(deaths_all_causes)",
+            "format": {
+              "type": "percentage",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            },
+            "comment": "Share of the all-cause registered-deaths total row"
+          }
+        ],
+        "version": "1.1",
+        "comment": "Registered deaths by cause at leading-cause level (ICD chapter group headers, sub-cause breakdowns and the all-cause total excluded — same level as the tab 1 trend chart), latest complete PSA year; share of all causes uses the all-cause total row.",
+        "dimensions": [
+          {
+            "name": "disease_name",
+            "expr": "disease_name"
+          },
+          {
+            "name": "year",
+            "expr": "year"
+          },
+          {
+            "name": "source_key",
+            "expr": "source_key"
+          },
+          {
+            "name": "is_top_cause",
+            "expr": "is_top_cause"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_poverty",
+      "displayName": "OV Poverty incidence (latest)",
+      "config": {
+        "source": "SELECT p.area_key, g.area_name, p.geo_level, TRY_CAST(p.year AS INT) AS year, p.poverty_incidence_pct\nFROM public_health.silver.socioeconomic_poverty_silver p\nLEFT JOIN public_health.test_gold2.dim_geography g ON CAST(g.area_key AS STRING) = p.area_key\nWHERE p.comparison_eligible = true\n  AND p.poverty_incidence_pct IS NOT NULL\n  AND TRY_CAST(p.year AS INT) IS NOT NULL\n  AND TRY_CAST(p.year AS INT) = (\n    SELECT MAX(TRY_CAST(year AS INT))\n    FROM public_health.silver.socioeconomic_poverty_silver\n    WHERE comparison_eligible = true AND TRY_CAST(year AS INT) IS NOT NULL\n  )",
+        "measures": [
+          {
+            "name": "poverty_incidence_pct",
+            "expr": "MAX(poverty_incidence_pct)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            },
+            "comment": "Poverty incidence among population (%)"
+          }
+        ],
+        "version": "1.1",
+        "comment": "Poverty incidence among population, latest year with comparison-eligible estimates (PSA). Non-numeric year values are excluded, never cast-to-null silently.",
+        "dimensions": [
+          {
+            "name": "area_name",
+            "expr": "COALESCE(area_name, 'Unknown')"
+          },
+          {
+            "name": "geo_level",
+            "expr": "geo_level"
+          },
+          {
+            "name": "year",
+            "expr": "year"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_no_hospital",
+      "displayName": "OV Localities with no hospital",
+      "config": {
+        "source": "SELECT 'localities_no_hospital' AS tile, COUNT(*) AS value\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE NOT has_hospital_recorded\nUNION ALL\nSELECT 'population_no_hospital', SUM(population)\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE NOT has_hospital_recorded AND population IS NOT NULL\nUNION ALL\nSELECT 'population_total', SUM(population)\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE population IS NOT NULL\nUNION ALL\nSELECT 'population_share_no_hospital_pct', ROUND(100.0 * SUM(CASE WHEN NOT has_hospital_recorded THEN population END) / SUM(population), 1)\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE population IS NOT NULL",
+        "measures": [
+          {
+            "name": "value",
+            "expr": "MAX(value)"
+          }
+        ],
+        "version": "1.1",
+        "comment": "Municipalities and cities with no hospital recorded (NHFR) and residents living in them (2024 census).",
+        "dimensions": [
+          {
+            "name": "tile",
+            "expr": "tile"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_beds_per_10k",
+      "displayName": "OV Beds per 10k by province",
+      "config": {
+        "source": "public_health.test_gold2.mart_area_service_profile",
+        "measures": [
+          {
+            "name": "beds_total",
+            "expr": "SUM(beds)"
+          },
+          {
+            "name": "population",
+            "expr": "SUM(population)"
+          },
+          {
+            "name": "beds_per_10k",
+            "expr": "MEASURE(`beds_total`) / MEASURE(`population`) * 10000",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          }
+        ],
+        "filter": "unit_level = 'province' AND beds_per_10k IS NOT NULL AND population > 0",
+        "version": "1.1",
+        "comment": "Beds per 10,000 residents per province; national value aggregates naturally. Benchmark = 10 per 10k.",
+        "dimensions": [
+          {
+            "name": "area_name",
+            "expr": "area_name"
+          },
+          {
+            "name": "population_year",
+            "expr": "population_year"
+          },
+          {
+            "name": "below_benchmark",
+            "expr": "beds_per_10k < 10"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_priority",
+      "displayName": "OV Priority provinces (TB, latest)",
+      "config": {
+        "source": "WITH t AS (\n  SELECT area_name, MAX(tb_notifications_per_100k_2025) AS disease_rate_per_100k\n  FROM public_health.test_gold2.mart_tb_case_study\n  WHERE comparison_eligible AND tb_notifications_per_100k_2025 IS NOT NULL\n  GROUP BY area_name\n),\ns AS (\n  SELECT area_name, beds_per_10k, poverty_incidence_pct\n  FROM public_health.test_gold2.mart_area_service_profile\n  WHERE unit_level = 'province' AND beds_per_10k IS NOT NULL AND population > 0\n),\nj AS (\n  SELECT t.area_name, t.disease_rate_per_100k, s.beds_per_10k, s.poverty_incidence_pct\n  FROM t JOIN s ON s.area_name = t.area_name\n),\nr AS (\n  SELECT j.*,\n    ROUND(PERCENTILE(disease_rate_per_100k, 0.5) OVER (), 1) AS median_disease_rate,\n    ROW_NUMBER() OVER (ORDER BY disease_rate_per_100k DESC, area_name) AS rank_disease,\n    ROW_NUMBER() OVER (ORDER BY beds_per_10k ASC, area_name) AS rank_beds_inverse,\n    ROW_NUMBER() OVER (ORDER BY poverty_incidence_pct DESC, area_name) AS rank_poverty,\n    (disease_rate_per_100k > PERCENTILE(disease_rate_per_100k, 0.5) OVER ()\n      AND beds_per_10k < 10) AS is_priority\n  FROM j\n)\nSELECT area_name, disease_rate_per_100k, beds_per_10k, poverty_incidence_pct,\n       rank_disease, rank_beds_inverse, rank_poverty,\n       rank_disease + rank_beds_inverse + rank_poverty AS gap_score,\n       median_disease_rate, is_priority,\n       rank_disease <= 10 AS in_top10_tb\nFROM r",
+        "measures": [
+          {
+            "name": "disease_rate_per_100k",
+            "expr": "MAX(disease_rate_per_100k)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "beds_per_10k",
+            "expr": "MAX(beds_per_10k)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "poverty_incidence_pct",
+            "expr": "MAX(poverty_incidence_pct)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "rank_disease",
+            "expr": "MAX(rank_disease)"
+          },
+          {
+            "name": "rank_beds_inverse",
+            "expr": "MAX(rank_beds_inverse)"
+          },
+          {
+            "name": "rank_poverty",
+            "expr": "MAX(rank_poverty)"
+          },
+          {
+            "name": "gap_score",
+            "expr": "MAX(gap_score)"
+          },
+          {
+            "name": "median_disease_rate",
+            "expr": "MAX(median_disease_rate)"
+          }
+        ],
+        "version": "1.1",
+        "comment": "TB notification rate per 100k (FHSIS 2025) above the national median AND beds per 10k below the 10 benchmark; gap score = incidence rank + inverse beds rank + poverty rank.",
+        "dimensions": [
+          {
+            "name": "area_name",
+            "expr": "area_name"
+          },
+          {
+            "name": "is_priority",
+            "expr": "is_priority"
+          },
+          {
+            "name": "in_top10_tb",
+            "expr": "in_top10_tb",
+            "comment": "Top 10 by TB notification rate per 100k (same rate as the priority table)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_beds_map",
+      "displayName": "OV Beds by province with centroids (symbol map)",
+      "config": {
+        "source": "WITH cen AS (\n  SELECT psgc_code, MAX(center_lat) AS center_lat, MAX(center_lon) AS center_lon\n  FROM public_health.silver.admin_boundaries_silver\n  WHERE center_lat IS NOT NULL AND center_lon IS NOT NULL\n  GROUP BY psgc_code\n)\nSELECT\n  s.area_name AS province_name,\n  s.beds AS authorized_beds,\n  s.beds_per_10k,\n  s.population AS population_2024,\n  CASE WHEN s.beds_per_10k < 10 THEN 'Below benchmark' ELSE 'At or above benchmark' END AS below_benchmark,\n  b.center_lat,\n  b.center_lon\nFROM public_health.test_gold2.mart_area_service_profile s\nLEFT JOIN cen b\n  ON b.psgc_code = REPLACE(s.area_code, 'psgc:', '')\nWHERE s.unit_level = 'province'\n  AND s.beds_per_10k IS NOT NULL\n  AND s.population > 0",
+        "measures": [
+          {
+            "name": "beds_per_10k",
+            "expr": "MAX(beds_per_10k)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "authorized_beds",
+            "expr": "SUM(authorized_beds)"
+          },
+          {
+            "name": "population_2024",
+            "expr": "SUM(population_2024)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 0.0
+              }
+            }
+          }
+        ],
+        "version": "1.1",
+        "comment": "Hospital beds per 10,000 residents per province, with province centroids from silver.admin_boundaries_silver (psgc_code join, prefix stripped) for the Overview symbol map. Benchmark = 10 beds per 10k.",
+        "dimensions": [
+          {
+            "name": "province_name",
+            "expr": "province_name"
+          },
+          {
+            "name": "below_benchmark",
+            "expr": "below_benchmark",
+            "comment": "Below benchmark (red) or At or above benchmark (blue), threshold 10 beds per 10k"
+          },
+          {
+            "name": "center_lat",
+            "expr": "center_lat"
+          },
+          {
+            "name": "center_lon",
+            "expr": "center_lon"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_dengue_kpi",
+      "displayName": "OV TB notifications tile (FHSIS, latest)",
+      "config": {
+        "source": "WITH c AS (\n  SELECT v.year, v.source_dataset AS source_name, SUM(v.value) AS cases\n  FROM public_health.test_gold2.v_disease_metric_totals v\n  WHERE v.source_dataset = 'doh_fhsis'\n    AND v.metric_name = 'cases'\n    AND v.disease_code = 'tb_all_forms'\n    AND v.geographic_level = 'country'\n    AND v.value_status = 'ok'\n    AND v.year = (\n      SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n      WHERE source_dataset = 'doh_fhsis' AND metric_name = 'cases'\n        AND disease_code = 'tb_all_forms' AND geographic_level = 'country' AND value_status = 'ok'\n    )\n  GROUP BY 1, 2\n),\np AS (\n  SELECT SUM(value) AS population\n  FROM public_health.test_gold2.v_area_indicator_latest\n  WHERE indicator_name = 'population' AND indicator_category = 'census' AND is_latest_period\n)\nSELECT 'tb_notifications' AS tile, c.year, c.source_name, c.cases,\n       ROUND(c.cases * 100000.0 / p.population, 1) AS per_100k\nFROM c CROSS JOIN p",
+        "measures": [
+          {
+            "name": "cases",
+            "expr": "SUM(cases)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 0.0
+              }
+            }
+          },
+          {
+            "name": "per_100k",
+            "expr": "MAX(per_100k)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          }
+        ],
+        "version": "1.1",
+        "comment": "National TB notifications (all forms), latest FHSIS year (2025) — same source and rate basis as the priority table; per-100k uses the 2024 census population.",
+        "dimensions": [
+          {
+            "name": "tile",
+            "expr": "tile"
+          },
+          {
+            "name": "year",
+            "expr": "year"
+          },
+          {
+            "name": "source_name",
+            "expr": "source_name"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ov_dengue_incidence",
+      "displayName": "OV Dengue incidence per 100k by province (latest full year)",
+      "config": {
+        "source": "WITH latest AS (\n  SELECT year AS yr FROM (\n    SELECT year, COUNT(*) AS rows_cnt, COUNT(DISTINCT area_key) AS areas\n    FROM public_health.test_gold2.v_disease_metric_totals\n    WHERE disease_code = 'dengue' AND source_dataset = 'hdx_dengue' AND metric_name = 'cases'\n      AND value_status = 'ok' AND geographic_level = 'province'\n    GROUP BY year\n  )\n  WHERE rows_cnt >= areas * 40\n  ORDER BY year DESC\n  LIMIT 1\n),\nacm AS (\n  SELECT area_key, MAX(area_name) AS area_name, MAX(REPLACE(area_code, 'psgc:', '')) AS psgc_code\n  FROM public_health.test_gold2.area_coverage_map\n  WHERE area_key IN (\n    SELECT DISTINCT area_key FROM public_health.test_gold2.v_disease_metric_totals\n    WHERE disease_code = 'dengue' AND source_dataset = 'hdx_dengue' AND metric_name = 'cases'\n      AND value_status = 'ok' AND geographic_level = 'province')\n  GROUP BY area_key\n),\nc AS (\n  SELECT v.area_key, SUM(v.value) AS cases\n  FROM public_health.test_gold2.v_disease_metric_totals v\n  WHERE v.disease_code = 'dengue' AND v.source_dataset = 'hdx_dengue' AND v.metric_name = 'cases'\n    AND v.value_status = 'ok' AND v.geographic_level = 'province'\n    AND v.year = (SELECT yr FROM latest)\n  GROUP BY 1\n),\np AS (\n  SELECT REPLACE(area_code, 'psgc:', '') AS psgc_code, MAX(area_name) AS province_name, SUM(population) AS population\n  FROM public_health.test_gold2.mart_area_service_profile\n  WHERE unit_level = 'province' AND population > 0\n  GROUP BY 1\n)\nSELECT\n  p.province_name,\n  c.cases,\n  p.population,\n  ROUND(c.cases * 100000.0 / p.population, 1) AS incidence_per_100k,\n  ROW_NUMBER() OVER (ORDER BY ROUND(c.cases * 100000.0 / p.population, 1) DESC) AS rnk,\n  ROW_NUMBER() OVER (ORDER BY ROUND(c.cases * 100000.0 / p.population, 1) DESC) <= 10 AS in_top10\nFROM c\nJOIN acm ON acm.area_key = c.area_key\nJOIN p ON p.psgc_code = acm.psgc_code\nWHERE p.population > 0",
+        "measures": [
+          {
+            "name": "cases",
+            "expr": "SUM(cases)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 0.0
+              }
+            }
+          },
+          {
+            "name": "population",
+            "expr": "MAX(population)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 0.0
+              }
+            }
+          },
+          {
+            "name": "incidence_per_100k",
+            "expr": "MAX(incidence_per_100k)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "rnk",
+            "expr": "MAX(rnk)"
+          }
+        ],
+        "version": "1.1",
+        "comment": "Dengue cases per 100,000 residents by province (HDX weekly source, province grain; latest full year). Population = 2024 census aggregated to province before the join; psgc join is 1:1 (prefix stripped both sides). HDX is a weekly surveillance source, not the DOH reported totals used elsewhere.",
+        "dimensions": [
+          {
+            "name": "province_name",
+            "expr": "province_name"
+          },
+          {
+            "name": "in_top10",
+            "expr": "in_top10"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tmp_dengue_grain_check",
+      "displayName": "TMP dengue grain check",
+      "queryLines": [
+        "SELECT\n",
+        "  'done' AS x"
+      ]
     }
   ],
   "pages": [
+    {
+      "name": "overview",
+      "displayName": "0. Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "header_text",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Overview\n",
+                "National snapshot at province grain. Beds and workforce per 10,000 residents (benchmarks: beds 10, health workers 44.5); disease rates per 100,000. 'No hospital recorded' = listed in the NHFR registry as of 2026-09-29 — recorded ≠ existing."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_pop",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_population",
+                  "fields": [
+                    {
+                      "name": "measure(value)",
+                      "expression": "MEASURE(`value`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`tile` IN ('total_population_2024')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Population (2024 census)",
+                "description": {
+                  "fields": [],
+                  "value": "Philippines · 2024 census · sum over localities"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(value)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "max"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_null_pop",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_population",
+                  "fields": [
+                    {
+                      "name": "measure(value)",
+                      "expression": "MEASURE(`value`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`tile` IN ('national_all_cause_deaths')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba455511a99fa42c9b49fd234b",
+                "query": {
+                  "datasetName": "ov_population",
+                  "fields": [
+                    {
+                      "name": "year",
+                      "expression": "MAX(`year`)"
+                    },
+                    {
+                      "name": "source_key",
+                      "expression": "MAX(`source_key`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`tile` IN ('national_all_cause_deaths')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Reported deaths",
+                "description": {
+                  "fields": [
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba455511a99fa42c9b49fd234b",
+                      "fieldName": "year"
+                    },
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba455511a99fa42c9b49fd234b",
+                      "fieldName": "source_key"
+                    }
+                  ],
+                  "value": "{{ field:year }} · {{ field:source_key }} · all causes, PSA vital statistics"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(value)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "max"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 8,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_beds10k",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_beds_per_10k",
+                  "fields": [
+                    {
+                      "name": "measure(beds_per_10k)",
+                      "expression": "MEASURE(`beds_per_10k`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Hospital beds per 10,000 (national)",
+                "description": {
+                  "fields": [],
+                  "value": "authorized beds / population (2024 census) · benchmark 10"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(beds_per_10k)",
+                  "format": {
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_no_hosp",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_no_hospital",
+                  "fields": [
+                    {
+                      "name": "measure(value)",
+                      "expression": "MEASURE(`value`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`tile` IN ('localities_no_hospital')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Municipalities with no hospital recorded",
+                "description": {
+                  "fields": [],
+                  "value": "cities and municipalities, NHFR registry"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(value)",
+                  "format": {
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "places": 0,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_doctors",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_workforce_10k",
+                  "fields": [
+                    {
+                      "name": "measure(per_10k)",
+                      "expression": "MEASURE(`per_10k`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`area_name` IN ('NATIONAL')"
+                    },
+                    {
+                      "expression": "`profession_label` IN ('Doctors')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba45c91ea89540d80fb068df88",
+                "query": {
+                  "datasetName": "ov_workforce_10k",
+                  "fields": [
+                    {
+                      "name": "measure(headcount)",
+                      "expression": "MEASURE(`headcount`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`area_name` IN ('NATIONAL')"
+                    },
+                    {
+                      "expression": "`profession_label` IN ('Doctors')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Doctors per 10,000 (national)",
+                  "fields": []
+                },
+                "description": {
+                  "fields": [
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba45c91ea89540d80fb068df88",
+                      "fieldName": "measure(headcount)"
+                    }
+                  ],
+                  "value": "{{ field:measure(headcount) }} doctors · preferred source, latest year"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(per_10k)",
+                  "format": {
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_nurses",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_workforce_10k",
+                  "fields": [
+                    {
+                      "name": "measure(per_10k)",
+                      "expression": "MEASURE(`per_10k`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`area_name` IN ('NATIONAL')"
+                    },
+                    {
+                      "expression": "`profession_label` IN ('Nurses')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba45c91ea89540d80fb068df88",
+                "query": {
+                  "datasetName": "ov_workforce_10k",
+                  "fields": [
+                    {
+                      "name": "measure(headcount)",
+                      "expression": "MEASURE(`headcount`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`area_name` IN ('NATIONAL')"
+                    },
+                    {
+                      "expression": "`profession_label` IN ('Nurses')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Nurses per 10,000 (national)",
+                "description": {
+                  "fields": [
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba45c91ea89540d80fb068df88",
+                      "fieldName": "measure(headcount)"
+                    }
+                  ],
+                  "value": "{{ field:measure(headcount) }} nurses · preferred source, latest year"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(per_10k)",
+                  "format": {
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_no_hosp_share",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_no_hospital",
+                  "fields": [
+                    {
+                      "name": "measure(value)",
+                      "expression": "MEASURE(`value`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`tile` IN ('population_share_no_hospital_pct')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Share of population with no recorded hospital",
+                "description": {
+                  "fields": [],
+                  "value": "residents of cities/municipalities with no hospital recorded (2024 census)"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(value)",
+                  "format": {
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  },
+                  "formatTemplate": "{{ @formatted }}%"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_poverty",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_poverty",
+                  "fields": [
+                    {
+                      "name": "measure(poverty_incidence_pct)",
+                      "expression": "MEASURE(`poverty_incidence_pct`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`geo_level` IN ('country')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba543315db813c4517e9123673",
+                "query": {
+                  "datasetName": "ov_poverty",
+                  "fields": [
+                    {
+                      "name": "year",
+                      "expression": "MAX(`year`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`geo_level` IN ('country')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Poverty incidence (national, latest)",
+                  "fields": []
+                },
+                "description": {
+                  "fields": [
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba543315db813c4517e9123673",
+                      "fieldName": "year"
+                    }
+                  ],
+                  "value": "PSA · comparison-eligible · {{ field:year }}"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(poverty_incidence_pct)",
+                  "format": {
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  },
+                  "formatTemplate": "{{ @formatted }}%"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 5,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "choro_beds",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_beds_map",
+                  "fields": [
+                    {
+                      "name": "below_benchmark",
+                      "expression": "`below_benchmark`"
+                    },
+                    {
+                      "name": "center_lat",
+                      "expression": "`center_lat`"
+                    },
+                    {
+                      "name": "center_lon",
+                      "expression": "`center_lon`"
+                    },
+                    {
+                      "name": "province_name",
+                      "expression": "`province_name`"
+                    },
+                    {
+                      "name": "measure(beds_per_10k)",
+                      "expression": "MEASURE(`beds_per_10k`)"
+                    },
+                    {
+                      "name": "measure(authorized_beds)",
+                      "expression": "MEASURE(`authorized_beds`)"
+                    },
+                    {
+                      "name": "measure(population_2024)",
+                      "expression": "MEASURE(`population_2024`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Provinces below bed benchmark (10/10k)",
+                  "fields": []
+                },
+                "description": {
+                  "value": "Point = province centroid (silver boundaries, psgc join). Red = below the benchmark of 10 beds per 10,000 residents (2024 census); blue = at or above. Point size = population. Registry as of 2026-09-29 — recorded ≠ existing.",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "symbol-map",
+              "encodings": {
+                "coordinates": {
+                  "coordinateType": "longitude-latitude",
+                  "latitude": {
+                    "fieldName": "center_lat"
+                  },
+                  "longitude": {
+                    "fieldName": "center_lon"
+                  }
+                },
+                "color": {
+                  "fieldName": "below_benchmark",
+                  "legend": {
+                    "position": "top"
+                  },
+                  "displayName": "Benchmark status",
+                  "scale": {
+                    "mappings": [
+                      {
+                        "color": "#FF3621",
+                        "value": "Below benchmark"
+                      },
+                      {
+                        "color": "#243E74",
+                        "value": "At or above benchmark"
+                      }
+                    ],
+                    "type": "categorical"
+                  }
+                },
+                "size": {
+                  "fieldName": "measure(population_2024)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "max"
+                    },
+                    "type": "number-plain"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Population (2024)"
+                },
+                "extra": [
+                  {
+                    "fieldName": "province_name",
+                    "displayName": "Province"
+                  },
+                  {
+                    "fieldName": "measure(beds_per_10k)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 1,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "displayName": "Beds per 10,000"
+                  },
+                  {
+                    "fieldName": "measure(authorized_beds)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "displayName": "Authorized beds"
+                  },
+                  {
+                    "fieldName": "measure(population_2024)",
+                    "format": {
+                      "abbreviation": "compact",
+                      "decimalPlaces": {
+                        "places": 1,
+                        "type": "max"
+                      },
+                      "type": "number-plain"
+                    },
+                    "displayName": "Population (2024)"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 8,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "table_levels",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_facility_level",
+                  "fields": [
+                    {
+                      "name": "hospital_level",
+                      "expression": "`hospital_level`"
+                    },
+                    {
+                      "name": "measure(hospitals)",
+                      "expression": "MEASURE(`hospitals`)"
+                    },
+                    {
+                      "name": "measure(authorized_beds)",
+                      "expression": "MEASURE(`authorized_beds`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Hospitals and authorized beds by level",
+                "description": {
+                  "fields": [],
+                  "value": "Currently listed hospitals (NHFR registry)"
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "hospital_level",
+                    "headerAlignment": "left",
+                    "displayName": "Hospital level"
+                  },
+                  {
+                    "fieldName": "measure(hospitals)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "contentAlignment": "right",
+                    "displayName": "Hospitals listed"
+                  },
+                  {
+                    "fieldName": "measure(authorized_beds)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "contentAlignment": "right",
+                    "displayName": "Authorized beds"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "table_priority",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_priority",
+                  "fields": [
+                    {
+                      "name": "area_name",
+                      "expression": "`area_name`"
+                    },
+                    {
+                      "name": "measure(disease_rate_per_100k)",
+                      "expression": "MEASURE(`disease_rate_per_100k`)"
+                    },
+                    {
+                      "name": "measure(beds_per_10k)",
+                      "expression": "MEASURE(`beds_per_10k`)"
+                    },
+                    {
+                      "name": "measure(poverty_incidence_pct)",
+                      "expression": "MEASURE(`poverty_incidence_pct`)"
+                    },
+                    {
+                      "name": "measure(rank_disease)",
+                      "expression": "MEASURE(`rank_disease`)"
+                    },
+                    {
+                      "name": "measure(rank_beds_inverse)",
+                      "expression": "MEASURE(`rank_beds_inverse`)"
+                    },
+                    {
+                      "name": "measure(rank_poverty)",
+                      "expression": "MEASURE(`rank_poverty`)"
+                    },
+                    {
+                      "name": "measure(gap_score)",
+                      "expression": "MEASURE(`gap_score`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`is_priority`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Priority provinces: burden, supply and poverty detail",
+                "description": {
+                  "fields": [],
+                  "value": "All provinces with TB notifications above the national median AND beds per 10k below the 10 benchmark, sorted in the chart above."
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "area_name",
+                    "headerAlignment": "left",
+                    "displayName": "Province"
+                  },
+                  {
+                    "fieldName": "measure(disease_rate_per_100k)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 1,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "contentAlignment": "right",
+                    "displayName": "TB cases per 100k (2025)"
+                  },
+                  {
+                    "fieldName": "measure(beds_per_10k)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 1,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "contentAlignment": "right",
+                    "displayName": "Beds per 10,000"
+                  },
+                  {
+                    "fieldName": "measure(poverty_incidence_pct)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 1,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "contentAlignment": "right",
+                    "displayName": "Poverty incidence %"
+                  },
+                  {
+                    "fieldName": "measure(rank_disease)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "contentAlignment": "right",
+                    "displayName": "Rank (disease)"
+                  },
+                  {
+                    "fieldName": "measure(rank_beds_inverse)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "contentAlignment": "right",
+                    "displayName": "Rank (beds, fewest first)"
+                  },
+                  {
+                    "fieldName": "measure(rank_poverty)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "contentAlignment": "right",
+                    "displayName": "Rank (poverty)"
+                  },
+                  {
+                    "fieldName": "measure(gap_score)",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "contentAlignment": "right",
+                    "displayName": "Gap score"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_top_cause",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_top_cause",
+                  "fields": [
+                    {
+                      "name": "measure(pct_of_all_deaths)",
+                      "expression": "MEASURE(`pct_of_all_deaths`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`is_top_cause`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba53ba1aa9a7266aadfa1d13dd",
+                "query": {
+                  "datasetName": "ov_top_cause",
+                  "fields": [
+                    {
+                      "name": "cause",
+                      "expression": "MAX(`disease_name`)"
+                    },
+                    {
+                      "name": "year",
+                      "expression": "MAX(`year`)"
+                    },
+                    {
+                      "name": "source_key",
+                      "expression": "MAX(`source_key`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`is_top_cause`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Top cause of death",
+                  "fields": []
+                },
+                "description": {
+                  "fields": [
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba53ba1aa9a7266aadfa1d13dd",
+                      "fieldName": "cause"
+                    },
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba53ba1aa9a7266aadfa1d13dd",
+                      "fieldName": "year"
+                    },
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ba53ba1aa9a7266aadfa1d13dd",
+                      "fieldName": "source_key"
+                    }
+                  ],
+                  "value": "{{ field:cause }} · {{ field:year }} · {{ field:source_key }} · share of all registered deaths"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(pct_of_all_deaths)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 0,
+                      "type": "exact"
+                    },
+                    "type": "number-percent"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_dengue_ov",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_dengue_kpi",
+                  "fields": [
+                    {
+                      "name": "measure(cases)",
+                      "expression": "MEASURE(`cases`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`tile` IN ('tb_notifications')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ec07241c39a10449980c669c1b",
+                "query": {
+                  "datasetName": "ov_dengue_kpi",
+                  "fields": [
+                    {
+                      "name": "year",
+                      "expression": "MAX(`year`)"
+                    },
+                    {
+                      "name": "source_name",
+                      "expression": "MAX(`source_name`)"
+                    },
+                    {
+                      "name": "per100k",
+                      "expression": "MEASURE(`per_100k`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`tile` IN ('tb_notifications')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "TB notifications (2025)",
+                "description": {
+                  "fields": [
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ec07241c39a10449980c669c1b",
+                      "fieldName": "year"
+                    },
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ec07241c39a10449980c669c1b",
+                      "fieldName": "source_name"
+                    },
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c8ec07241c39a10449980c669c1b",
+                      "fieldName": "per100k"
+                    }
+                  ],
+                  "value": "{{ field:year }} · {{ field:source_name }} · {{ field:per100k }} per 100,000 residents"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(cases)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 0,
+                      "type": "max"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 8,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_dengue_top10",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ov_priority",
+                  "fields": [
+                    {
+                      "name": "area_name",
+                      "expression": "`area_name`"
+                    },
+                    {
+                      "name": "measure(disease_rate_per_100k)",
+                      "expression": "MEASURE(`disease_rate_per_100k`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`in_top10_tb`"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "MEASURE(`disease_rate_per_100k`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Top 10 TB incidence (per 100k, 2025)",
+                  "fields": []
+                },
+                "description": {
+                  "value": "Top 10 provinces by TB notification rate per 100,000 residents (FHSIS 2025) — the same rate as the Priority provinces table below.",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "area_name",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "measure-reversed",
+                      "measure": {
+                        "fieldName": "measure(disease_rate_per_100k)"
+                      }
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(disease_rate_per_100k)",
+                  "format": {
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 10,
+            "width": 4,
+            "height": 8
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
     {
       "name": "0fca350b",
       "displayName": "1. Need: what burdens the health system",
@@ -3485,7 +5322,7 @@
     },
     {
       "name": "philhealth_claims",
-      "displayName": "Reported care (PhilHealth Claims)",
+      "displayName": "4. Reported care (PhilHealth Claims)",
       "layout": [
         {
           "widget": {
@@ -4811,7 +6648,9 @@
             "multilineTextboxSpec": {
               "lines": [
                 "## About the data\n",
-                "Where the numbers come from, how fresh they are, and where the evidence is thin. Restricted sources (DOH FOI occupancy, PhilHealth claims) are shown as aggregates only; cells from fewer than 3 hospitals are suppressed. IHME estimates © IHME, used with permission. OSM points © OpenStreetMap contributors."
+                "Where the numbers come from, how fresh they are, and where the evidence is thin. Restricted sources (DOH FOI occupancy, PhilHealth claims) are shown as aggregates only; cells from fewer than 3 hospitals are suppressed. IHME estimates © IHME, used with permission. OSM points © OpenStreetMap contributors.\n",
+                "\n",
+                "*Sulu: no 2024 census count — population-based rates shown as n/a.*"
               ]
             }
           },
@@ -5079,7 +6918,7 @@
           },
           "position": {
             "x": 0,
-            "y": 11,
+            "y": 10,
             "width": 12,
             "height": 10
           }
@@ -5131,7 +6970,7 @@
           },
           "position": {
             "x": 0,
-            "y": 22,
+            "y": 20,
             "width": 4,
             "height": 3
           }
@@ -5183,7 +7022,7 @@
           },
           "position": {
             "x": 4,
-            "y": 22,
+            "y": 20,
             "width": 4,
             "height": 3
           }
@@ -5235,7 +7074,7 @@
           },
           "position": {
             "x": 8,
-            "y": 22,
+            "y": 20,
             "width": 4,
             "height": 3
           }
@@ -5343,7 +7182,7 @@
           },
           "position": {
             "x": 0,
-            "y": 26,
+            "y": 23,
             "width": 12,
             "height": 12
           }
@@ -5363,9 +7202,9 @@
           },
           "position": {
             "x": 0,
-            "y": 38,
+            "y": 35,
             "width": 12,
-            "height": 6
+            "height": 3
           }
         }
       ],
