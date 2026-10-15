@@ -31,7 +31,9 @@
 #     geography: bronze_geography publishes its QC handoff as task values ->
 #       qc_bronze_geography reads {{tasks.bronze_geography.values.*}}
 #     admin_boundaries: job parameter admin_boundaries_run_dir (ingestion _runs/<RUN_ID> folder)
-#       -> bronze reads handoff.json, QC reads bronze_handoff.json in the same folder
+#       -> bronze reads <dir>/handoff.json, QC reads <dir>/bronze_handoff.json
+#       (both tasks use {{job.parameters.admin_boundaries_run_dir}}; changed 2026-10-16,
+#       they had the 0b68b72b folder hard-coded and ignored the parameter)
 #
 # Dependency rule: a task waits for the tables it reads AND the QC of those tables,
 # so a failing QC (dq_utils raises on ERROR) stops everything downstream of it.
@@ -45,14 +47,14 @@ resources:
         project: ph-public-health
         team: ftw-dengue-rous
 
-      # Set per run ("Run now with different parameters") after admin_boundaries ingestion, e.g.
+      # Folder of the admin_boundaries ingestion run that bronze loads (no trailing slash).
+      # Default = the last completed run (0b68b72b). After a new admin_boundaries ingestion,
+      # set it per run ("Run now with different parameters") or change the default here, e.g.
       #   /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/<RUN_ID>
-      # No trailing slash. Blank fails fast in bronze_admin_boundaries (not a /Volumes path) and
-      # that failure blocks admin boundaries silver -> facilities 00a/04a/04 -> facilities QC ->
-      # cross-domain QC -> gold. Until the loader treats a blank dir as "no new run, skip"
-      # (exit 0), every run must set this parameter to the latest completed _runs folder.
+      # Re-running bronze on the same folder is safe (the loader skips a batch it already holds).
       parameters:
         - name: admin_boundaries_run_dir
+          default: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2
       # schedule:                          # auto-paused in dev target
       #   quartz_cron_expression: "0 0 6 ? * MON"
       #   timezone_id: Asia/Manila
@@ -100,7 +102,7 @@ resources:
               - --write_to_bronze
               - "yes" # script default is "no" (preview only)
 
-        - task_key: bronze_admin_boundaries # needs job parameter admin_boundaries_run_dir
+        - task_key: bronze_admin_boundaries # reads job parameter admin_boundaries_run_dir
           depends_on:
             - task_key: setup
           max_retries: 0 # a blank run dir fails fast; retrying cannot fix it
@@ -109,7 +111,7 @@ resources:
             python_file: ../src/02_bronze/admin_boundaries_bronze.py
             parameters:
               - --handoff_path
-              - /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2/handoff.json
+              - "{{job.parameters.admin_boundaries_run_dir}}/handoff.json"
         # loader (incremental) + bronze QC of the loaded sources, one task per domain
         - task_key: bronze_diseases
           depends_on:
@@ -192,9 +194,8 @@ resources:
             python_file: ../src/05_quality/bronze/admin_boundaries_bronze_qc.py
             parameters:
               - --bronze_handoff_path
-              - /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2/bronze_handoff.json
-              - --dq_utils_path
-              - ../src/05_quality/dq_utils.py
+              - "{{job.parameters.admin_boundaries_run_dir}}/bronze_handoff.json"
+              # no --dq_utils_path: the script finds src/05_quality/dq_utils.py itself
               - --fail_on_error
               - "true"
               - --profile
@@ -584,7 +585,7 @@ resources:
         #    (raise_error), which fails the task and everything downstream.
         #    Dependencies follow what each file reads; files that read only silver run in
         #    parallel after 00. Files live in src/04_gold/test_v2/ (test_gold2 schema); move the paths when promoted.
-        #    Order: 00 -> {11,21,31,12,13} -> {20,30,35,40} -> {41,43,42,44} -> 51 -> 52 ->
+        #    Order: 00 -> {11,31,12,13} -> 21 (reads dim_geography) -> {20,30,35,40} -> {41,43,42,44} -> 51 -> 52 ->
         #    {53,54} -> {55,56,57} ; 61,62,63 ; 71 last (reads build_log of every table).
         # ================================================================
         # --- gold: dims and setup
@@ -606,7 +607,7 @@ resources:
 
         - task_key: gold_21_dim_facility
           depends_on:
-            - task_key: gold_00_setup
+            - task_key: gold_11_dim_geography # reads dim_geography (also a gate input); 11 waits for 00
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
