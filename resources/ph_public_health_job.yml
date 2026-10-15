@@ -53,8 +53,6 @@ resources:
       # (exit 0), every run must set this parameter to the latest completed _runs folder.
       parameters:
         - name: admin_boundaries_run_dir
-          default: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2/
-
       # schedule:                          # auto-paused in dev target
       #   quartz_cron_expression: "0 0 6 ? * MON"
       #   timezone_id: Asia/Manila
@@ -194,14 +192,13 @@ resources:
             python_file: ../src/05_quality/bronze/admin_boundaries_bronze_qc.py
             parameters:
               - --bronze_handoff_path
-              - "{{job.parameters.admin_boundaries_run_dir}}/bronze_handoff.json"
+              - /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2/bronze_handoff.json
+              - --dq_utils_path
+              - ../src/05_quality/dq_utils.py
               - --fail_on_error
               - "true"
-              - --job_run_id
-              - "{{job.run_id}}"
-              - --dq_utils_path
-              - ${workspace.file_path}/src/05_quality/dq_utils.py
-
+              - --profile
+              - "false"
         - task_key: qc_bronze_psgc_population
           depends_on:
             - task_key: bronze_geography
