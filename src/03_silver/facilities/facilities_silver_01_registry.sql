@@ -29,6 +29,15 @@
 --   geography silver tables
 --   quality_setup.sql
 --   bronze QC for all five facility registry sources
+--
+-- Changes 2026-10-15
+--   A previous facility is carried forward as 'not_listed' only while the id map still holds
+--   one of its source records. When its records now belong to another facility (identity moved
+--   between builds, e.g. an HFSRB record that now joins an NHFR facility), or it has no id map
+--   row at all, it is recorded in public_health.silver.facilities_registry_silver__moved and not
+--   carried. This stopped the gate 'registry: every registry key is in the id map' failing
+--   while keeping every other facility_key stable. Counts go to build_log.parameters
+--   (moved_facilities, dropped_without_id_map). __moved is kept after the run for review.
 -- =============================================================================
 
 -- [0] build ids and settings
@@ -729,6 +738,35 @@ UNION ALL
 SELECT p.* FROM public_health.silver.facilities_id_map_silver p
 LEFT ANTI JOIN cur c ON c._source_key = p._source_key AND c.source_record_id = p.source_record_id;
 
+-- [5a2] previous facilities the id map no longer holds: not carried forward in [5b].
+--       reason 'records_now_in_another_facility': their source records now map to another
+--         facility_key (new_facility_keys lists it). The facility continues under that key.
+--       reason 'no_id_map_rows': the previous id map had no row for the key either.
+--       Review: SELECT * FROM public_health.silver.facilities_registry_silver__moved
+CREATE OR REPLACE TABLE public_health.silver.facilities_registry_silver__moved AS
+WITH gone AS (
+  SELECT p.facility_key, p.facility_category, p.facility_name
+  FROM public_health.silver.facilities_registry_silver p
+  LEFT ANTI JOIN public_health.silver.facilities_id_map_silver__candidate k ON k.facility_key = p.facility_key
+),
+moved_to AS (
+  SELECT pm.facility_key,
+         array_join(array_sort(collect_set(c.facility_key)), ',') AS new_facility_keys,
+         array_join(array_sort(collect_set(concat(pm._source_key, ':', pm.source_record_id))), ',') AS source_records
+  FROM public_health.silver.facilities_id_map_silver pm
+  JOIN public_health.silver.facilities_id_map_silver__candidate c
+    ON c._source_key = pm._source_key AND c.source_record_id = pm.source_record_id
+   AND c.facility_key <> pm.facility_key
+  GROUP BY pm.facility_key
+)
+SELECT g.facility_key AS old_facility_key, g.facility_category, g.facility_name,
+       m.new_facility_keys, m.source_records,
+       CASE WHEN m.facility_key IS NOT NULL THEN 'records_now_in_another_facility'
+            ELSE 'no_id_map_rows' END AS reason,
+       registry_build_id AS _detected_build_id
+FROM gone g
+LEFT JOIN moved_to m ON m.facility_key = g.facility_key;
+
 -- [5b] registry
 CREATE OR REPLACE TABLE public_health.silver.facilities_registry_silver__candidate AS
 WITH n AS (SELECT * FROM public_health.silver.facilities_registry_silver__records
@@ -838,6 +876,7 @@ UNION ALL
 -- facilities no source lists any more: kept unchanged, so their lineage still points at the build
 -- that last read them; only the listing flags and _delisted_build_id change (plan 5.3).
 -- The declared-inputs gate in [6] guarantees this build read every source completely.
+-- Facilities recorded in __moved ([5a2]) are not carried: the id map no longer holds them.
 SELECT p.facility_key, p.facility_category, p.facility_name, p.nhfr_id, p.license_no, p.ownership, p.ownership_class,
        p.service_level, p.area_key, p.psgc_code, p.barangay_psgc, p.geo_name_source, p.geo_resolution_method,
        p.geo_conflict_nhfr_hfsrb, p.nhfr_reported_beds, p.hfsrb_abc, p.authorized_beds, p.analysis_beds,
@@ -851,7 +890,8 @@ SELECT p.facility_key, p.facility_category, p.facility_name, p.nhfr_id, p.licens
        p._hfsrb_source_key, p._hfsrb_source_file, p._hfsrb_source_sheet, p._hfsrb_source_row_num, p._hfsrb_as_of_date,
        p._metric_source_columns
 FROM prev p
-LEFT ANTI JOIN hashed h ON h.facility_key = p.facility_key;
+LEFT ANTI JOIN hashed h ON h.facility_key = p.facility_key
+LEFT ANTI JOIN public_health.silver.facilities_registry_silver__moved mv ON mv.old_facility_key = p.facility_key;
 
 
 -- =============================================================================
@@ -1054,7 +1094,8 @@ SELECT b.build_id, 'silver' AS layer, 'facilities' AS domain, b.target_table,
        CAST(NULL AS BIGINT) AS target_table_version,
        code_version AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup, 'geography_checksum', geography_checksum,
-                            'companion_build_id', b.companion)) AS parameters,
+                            'companion_build_id', b.companion,
+                            'moved_facilities', mv.moved, 'dropped_without_id_map', mv.no_id_map)) AS parameters,
        job_run_id AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT registry_build_id AS build_id, 'public_health.silver.facilities_registry_silver' AS target_table,
@@ -1062,7 +1103,10 @@ FROM (SELECT registry_build_id AS build_id, 'public_health.silver.facilities_reg
       UNION ALL
       SELECT idmap_build_id, 'public_health.silver.facilities_id_map_silver',
              (SELECT count(*) FROM public_health.silver.facilities_id_map_silver__candidate), registry_build_id) b
-CROSS JOIN g;
+CROSS JOIN g
+CROSS JOIN (SELECT count_if(reason = 'records_now_in_another_facility') AS moved,
+                   count_if(reason = 'no_id_map_rows') AS no_id_map
+            FROM public_health.silver.facilities_registry_silver__moved) mv;
 
 
 -- =============================================================================
@@ -1128,8 +1172,9 @@ FROM public_health.silver.facilities_registry_silver__dispositions;
 
 
 -- =============================================================================
--- [11] summary, then remove the staging tables (__classified and __records are kept until the
---      next run: they show how every bronze row was parsed and matched)
+-- [11] summary, then remove the staging tables (__classified, __records and __moved are kept
+--      until the next run: they show how every bronze row was parsed and matched, and which
+--      previous facilities were not carried forward)
 -- =============================================================================
 CREATE OR REPLACE TEMP VIEW fac_registry_summary AS
 SELECT facility_category, facility_status, match_method, count(*) AS facilities,
