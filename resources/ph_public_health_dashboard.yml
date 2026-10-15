@@ -1,0 +1,15 @@
+# AI/BI (Lakeview) dashboard on the gold v2 marts (public_health.test_gold2).
+# Deployed by the bundle from dashboard/*.lvdash.json and refreshed by the last task of
+# ph_public_health_job.yml (dashboard_refresh), after gold_71 finishes.
+#
+# The .lvdash.json is read at deploy time, so dashboard/** can stay in sync.exclude.
+# Edits made in the workspace UI are overwritten on the next deploy: export them back with
+#   databricks bundle generate dashboard --resource ph_public_health_dashboard --force
+
+resources:
+  dashboards:
+    ph_public_health_dashboard:
+      display_name: "Philippine Public Health Platform"
+      file_path: "../dashboard/Philippine Public Health Platform_gold_v2.lvdash.json"
+      warehouse_id: ${var.warehouse_id}
+      embed_credentials: false # viewers query with their own permissions

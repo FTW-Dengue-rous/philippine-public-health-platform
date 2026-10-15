@@ -1,5 +1,5 @@
 # Pipeline job: setup (Run Job) -> bronze (+ bronze QC) -> silver -> silver QC
-#               -> cross-domain silver QC (gold: next)
+#               -> cross-domain silver QC -> gold -> dashboard refresh
 #
 # Setup is its own job (ph_public_health_setup_job.yml). The first task here runs it as a
 # Run Job task; every bronze task waits for it. The setup scripts only create what is missing,
@@ -213,34 +213,55 @@ resources:
         - task_key: silver_geography
           depends_on:
             - task_key: qc_bronze_geography
-          notebook_task:
-            notebook_path: ../src/03_silver/geography_silver.ipynb
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/03_silver/geography/geography_silver.py
+            parameters:
+              - --config_path
+              - ${workspace.file_path}/config/sources_geography.yaml
+              - --job_run_id
+              - "{{job.run_id}}"
 
         - task_key: qc_silver_geography
           depends_on:
             - task_key: silver_geography
-          notebook_task:
-            notebook_path: ../src/05_quality/silver/geography_silver_qc.py
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/silver/geography_silver_qc.py
+            parameters:
+              - --job_run_id
+              - "{{job.run_id}}"
 
         - task_key: silver_admin_boundaries
           depends_on:
             - task_key: qc_bronze_admin_boundaries
             - task_key: qc_silver_geography
-          notebook_task:
-            notebook_path: ../src/03_silver/admin_boundaries_silver.ipynb
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/03_silver/geography/admin_boundaries_silver.py
+            parameters:
+              - --config_path
+              - ${workspace.file_path}/config/sources_geography.yaml
+              - --job_run_id
+              - "{{job.run_id}}"
 
         - task_key: qc_silver_admin_boundaries
           depends_on:
             - task_key: silver_admin_boundaries
-          notebook_task:
-            notebook_path: ../src/05_quality/silver/admin_boundaries_silver_qc.py
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/silver/admin_boundaries_silver_qc.py
+            parameters:
+              - --job_run_id
+              - "{{job.run_id}}"
 
         - task_key: silver_psgc_population
           depends_on:
             - task_key: qc_bronze_psgc_population
             - task_key: qc_silver_geography
-          notebook_task:
-            notebook_path: ../src/03_silver/psgc_population_silver.ipynb
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/03_silver/geography/psgc_population_silver.py
 
         - task_key: qc_silver_psgc_population
           depends_on:
@@ -809,3 +830,14 @@ resources:
             warehouse_id: ${var.warehouse_id}
             file:
               path: ../src/04_gold/test_v2/gold_v2_71_mart_evidence_readiness.sql
+
+        # ================================================================
+        # 10. DASHBOARD — refresh the AI/BI dashboard after the last gold mart
+        #     (dashboard resource: resources/ph_public_health_dashboard.yml)
+        # ================================================================
+        - task_key: dashboard_refresh
+          depends_on:
+            - task_key: gold_71_mart_evidence_readiness
+          dashboard_task:
+            dashboard_id: ${resources.dashboards.ph_public_health_dashboard.id}
+            warehouse_id: ${var.warehouse_id}
