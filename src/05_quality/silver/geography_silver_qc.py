@@ -1,9 +1,8 @@
 # Databricks notebook source
-# Run this file as a Databricks notebook after the Silver load.
-# dq_utils.py must be a Python file in the same quality folder.
-# quality_setup.sql must already have been run.
-# These checks only read Bronze/Silver and write quality audit results.
-
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 import sys
 from pathlib import Path
 
@@ -11,12 +10,35 @@ import yaml
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-# Make the script folder available for importing dq_utils.py.
+# Locate the shared QC helper.
 if "__file__" in globals():
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    # Python script execution
+    script_dir = Path(__file__).resolve().parent
+    candidates = [script_dir, script_dir.parent]
+
+    quality_dir = next(
+        (p for p in candidates if (p / "dq_utils.py").is_file()),
+        None
+    )
+else:
+    # Databricks notebook execution
+    quality_dir = Path(
+        "/Workspace/Users/shiena.arico@ftwfoundation.org/"
+        "philippine-public-health-platform/src/05_quality"
+    )
+
+if quality_dir is None or not (quality_dir / "dq_utils.py").is_file():
+    raise FileNotFoundError(
+        f"dq_utils.py not found in expected quality directory: {quality_dir}"
+    )
+
+# Register the directory containing dq_utils.py
+if str(quality_dir) not in sys.path:
+    sys.path.insert(0, str(quality_dir))
+
 from dq_utils import DQRun
 
-spark = SparkSession.builder.getOrCreate()
+print("SUCCESS: dq_utils imported!")
 
 # =============================================================================
 # 1. SETTINGS: change these when checking a different source batch.
