@@ -612,8 +612,12 @@
         "    unit_level,\n",
         "    population,\n",
         "    beds_per_10k,\n",
-        "    lvl AS hospital_level,\n",
-        "    round(beds_lvl * 10000.0 / population, 2) AS beds_per_10k_level\n",
+        "    CASE\n",
+        "      WHEN hospitals > 0 THEN true\n",
+        "      ELSE false\n",
+        "    END AS has_hospital,\n",
+        "    s.lvl AS hospital_level,\n",
+        "    s.beds_lvl\n",
         "  FROM\n",
         "    public_health.test_gold2.mart_area_service_profile\n",
         "    LATERAL VIEW\n",
@@ -626,8 +630,18 @@
         "ranked AS (\n",
         "  SELECT\n",
         "    b.*,\n",
-        "    DENSE_RANK() OVER (PARTITION BY unit_level ORDER BY beds_per_10k DESC) AS rank_top,\n",
-        "    DENSE_RANK() OVER (PARTITION BY unit_level ORDER BY beds_per_10k ASC) AS rank_bottom\n",
+        "    CASE\n",
+        "      WHEN\n",
+        "        has_hospital\n",
+        "      THEN\n",
+        "        ROW_NUMBER() OVER (PARTITION BY unit_level ORDER BY beds_per_10k DESC, area_name)\n",
+        "    END AS rank_top,\n",
+        "    CASE\n",
+        "      WHEN\n",
+        "        has_hospital\n",
+        "      THEN\n",
+        "        ROW_NUMBER() OVER (PARTITION BY unit_level ORDER BY beds_per_10k ASC, area_name)\n",
+        "    END AS rank_bottom\n",
         "  FROM\n",
         "    base b\n",
         ")\n",
@@ -637,7 +651,10 @@
         "  population,\n",
         "  beds_per_10k,\n",
         "  hospital_level,\n",
-        "  beds_per_10k_level,\n",
+        "  CASE\n",
+        "    WHEN has_hospital THEN round(beds_lvl * 10000.0 / population, 2)\n",
+        "  END AS beds_per_10k_level,\n",
+        "  has_hospital,\n",
         "  CASE\n",
         "    WHEN rank_top <= 20 THEN true\n",
         "    ELSE false\n",
@@ -648,6 +665,13 @@
         "  END AS in_bottom20\n",
         "FROM\n",
         "  ranked"
+      ],
+      "columns": [
+        {
+          "displayName": "no_hospital_units",
+          "description": "Units in the selected planning-unit level with no hospital recorded (NHFR).",
+          "expression": "COUNT(DISTINCT CASE WHEN `has_hospital` = false THEN `area_name` END)"
+        }
       ]
     },
     {
@@ -1080,6 +1104,130 @@
         "ORDER BY\n",
         "  units DESC"
       ]
+    },
+    {
+      "name": "kpi_top10_share",
+      "displayName": "KPI top-10 causes share of registered deaths 2024 (PSA)",
+      "queryLines": [
+        "WITH a AS (\n",
+        "  SELECT\n",
+        "    sum(value) AS all_causes\n",
+        "  FROM\n",
+        "    public_health.test_gold2.v_disease_metric_totals\n",
+        "  WHERE\n",
+        "    source_dataset = 'psa_deaths_region_annual'\n",
+        "    AND metric_name = 'deaths'\n",
+        "    AND disease_code = 'all_causes'\n",
+        "    AND geographic_level = 'country'\n",
+        "    AND year = 2024\n",
+        "    AND value_status = 'ok'\n",
+        "),\n",
+        "causes AS (\n",
+        "  -- Leaf causes only, same level as the top-10 bar chart: PSA 3-digit codes\n",
+        "  -- with the 19 ICD-chapter group headers excluded, letter-suffixed sub-causes\n",
+        "  -- excluded, and the COVID-19 breakdown codes excluded (psa_covid19 kept).\n",
+        "  SELECT\n",
+        "    disease_code,\n",
+        "    sum(value) AS deaths\n",
+        "  FROM\n",
+        "    public_health.test_gold2.v_disease_metric_totals\n",
+        "  WHERE\n",
+        "    source_dataset = 'psa_deaths_region_annual'\n",
+        "    AND metric_name = 'deaths'\n",
+        "    AND geographic_level = 'country'\n",
+        "    AND year = 2024\n",
+        "    AND value_status = 'ok'\n",
+        "    AND disease_code <> 'all_causes'\n",
+        "    AND disease_code NOT IN (\n",
+        "      'psa_1_001',\n",
+        "      'psa_1_026',\n",
+        "      'psa_1_048',\n",
+        "      'psa_1_051',\n",
+        "      'psa_1_055',\n",
+        "      'psa_1_058',\n",
+        "      'psa_1_062',\n",
+        "      'psa_1_063',\n",
+        "      'psa_1_064',\n",
+        "      'psa_1_072',\n",
+        "      'psa_1_078',\n",
+        "      'psa_1_082',\n",
+        "      'psa_1_083',\n",
+        "      'psa_1_084',\n",
+        "      'psa_1_087',\n",
+        "      'psa_1_092',\n",
+        "      'psa_1_093',\n",
+        "      'psa_1_094',\n",
+        "      'psa_1_095'\n",
+        "    )\n",
+        "    AND disease_code NOT RLIKE '^psa_1_[0-9]{3}[a-z]$'\n",
+        "    AND disease_code NOT IN (\n",
+        "      'psa_covid19_vaccine_adverse_effects',\n",
+        "      'psa_covid19_virus_identified',\n",
+        "      'psa_covid19_virus_not_identified',\n",
+        "      'psa_mis_covid19',\n",
+        "      'psa_post_covid19_condition'\n",
+        "    )\n",
+        "  GROUP BY\n",
+        "    disease_code\n",
+        "),\n",
+        "t AS (\n",
+        "  SELECT\n",
+        "    sum(deaths) AS top10\n",
+        "  FROM\n",
+        "    (\n",
+        "      SELECT\n",
+        "        deaths\n",
+        "      FROM\n",
+        "        causes\n",
+        "      ORDER BY\n",
+        "        deaths DESC\n",
+        "      LIMIT 10\n",
+        "    )\n",
+        ")\n",
+        "SELECT\n",
+        "  round(t.top10 / a.all_causes, 4) AS top10_share_ratio,\n",
+        "  round(100.0 * t.top10 / a.all_causes, 1) AS top10_share_pct,\n",
+        "  t.top10,\n",
+        "  a.all_causes\n",
+        "FROM\n",
+        "  t CROSS JOIN a"
+      ]
+    },
+    {
+      "name": "ds_ihme_burden_rate",
+      "displayName": "ds_ihme_burden_rate",
+      "queryLines": [
+        "SELECT\n",
+        "  area_name,\n",
+        "  metric_name,\n",
+        "  disease_name,\n",
+        "  reference_year,\n",
+        "  rate_per_100k,\n",
+        "  CASE\n",
+        "    WHEN rate_per_100k IS NOT NULL THEN value_lower / population * 100000\n",
+        "  END AS rate_lower_per_100k,\n",
+        "  CASE\n",
+        "    WHEN rate_per_100k IS NOT NULL THEN value_upper / population * 100000\n",
+        "  END AS rate_upper_per_100k,\n",
+        "  quintile,\n",
+        "  exclusion_reason\n",
+        "FROM\n",
+        "  public_health.test_gold2.mart_area_burden_indicator\n",
+        "WHERE\n",
+        "  source_dataset = 'ihme_gbd'"
+      ],
+      "columns": [
+        {
+          "displayName": "provinces_compared",
+          "description": "Count of distinct areas with a non-null rate under the current filters.",
+          "expression": "COUNT(DISTINCT CASE WHEN `rate_per_100k` IS NOT NULL THEN `area_name` END)"
+        },
+        {
+          "displayName": "huc_held_back",
+          "description": "Count of distinct areas excluded because their province estimate is assumed to include its highly urbanized city.",
+          "expression": "COUNT(DISTINCT CASE WHEN `exclusion_reason` = 'province_estimate_assumed_to_include_its_huc' THEN `area_name` END)"
+        }
+      ]
     }
   ],
   "pages": [
@@ -1092,8 +1240,10 @@
             "name": "text_measure_types",
             "multilineTextboxSpec": {
               "lines": [
-                "## Modelled ≠ registered ≠ reported\n",
-                "IHME values are **modelled** (© IHME). PSA counts **registered** deaths. DOH FOI dengue and PhilHealth claims are **reported** administrative data. Never place these three on one axis."
+                "## Understanding health needs\n",
+                "Explore leading causes of registered deaths, geographic differences in estimated disease burden, and seasonal dengue surges. The following pages examine healthcare availability, access, and preparedness.\n",
+                "\n",
+                "*PSA counts registered deaths; IHME values are modelled estimates (© IHME); DOH dengue is reported administrative data. The three are never placed on one axis.*"
               ]
             }
           },
@@ -1101,131 +1251,7 @@
             "x": 0,
             "y": 0,
             "width": 12,
-            "height": 2
-          }
-        },
-        {
-          "widget": {
-            "name": "ihme_metric_filter",
-            "queries": [
-              {
-                "name": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7e0910a1d939d70bf319f7d248c_metric_name",
-                "query": {
-                  "datasetName": "p1_ihme_burden",
-                  "fields": [
-                    {
-                      "name": "metric_name",
-                      "expression": "`metric_name`"
-                    },
-                    {
-                      "name": "metric_name_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "selection": {
-                "defaultSelection": {
-                  "values": {
-                    "dataType": "STRING",
-                    "values": [
-                      {
-                        "value": "deaths"
-                      }
-                    ]
-                  }
-                }
-              },
-              "disallowAll": true,
-              "frame": {
-                "showTitle": true,
-                "title": {
-                  "value": "IHME metric",
-                  "fields": []
-                }
-              },
-              "widgetType": "filter-single-select",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "metric_name",
-                    "queryName": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7e0910a1d939d70bf319f7d248c_metric_name"
-                  }
-                ]
-              }
-            }
-          },
-          "position": {
-            "x": 6,
-            "y": 5,
-            "width": 3,
-            "height": 1
-          }
-        },
-        {
-          "widget": {
-            "name": "ihme_disease_filter",
-            "queries": [
-              {
-                "name": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7e0910a1d939d70bf319f7d248c_disease_name",
-                "query": {
-                  "datasetName": "p1_ihme_burden",
-                  "fields": [
-                    {
-                      "name": "disease_name",
-                      "expression": "`disease_name`"
-                    },
-                    {
-                      "name": "disease_name_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "selection": {
-                "defaultSelection": {
-                  "values": {
-                    "dataType": "STRING",
-                    "values": [
-                      {
-                        "value": "Ischemic heart disease"
-                      }
-                    ]
-                  }
-                }
-              },
-              "disallowAll": true,
-              "frame": {
-                "showTitle": true,
-                "title": {
-                  "value": "IHME disease",
-                  "fields": []
-                }
-              },
-              "widgetType": "filter-single-select",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "disease_name",
-                    "queryName": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7e0910a1d939d70bf319f7d248c_disease_name"
-                  }
-                ]
-              }
-            }
-          },
-          "position": {
-            "x": 9,
-            "y": 5,
-            "width": 3,
-            "height": 1
+            "height": 3
           }
         },
         {
@@ -1263,18 +1289,18 @@
                 "showTitle": true,
                 "showDescription": true,
                 "title": {
-                  "value": "Top 10 causes of registered deaths (2024 vs 2023)",
+                  "value": "Leading causes of registered deaths, 2023–2024",
                   "fields": []
                 },
                 "description": {
-                  "value": "Registered deaths (PSA, open). Top 10 causes of the latest year (2024), with 2023 shown for comparison.",
+                  "value": "Top 10 causes in 2024, compared with 2023 (PSA). These ten account for 62.0% of all 2024 registered deaths; ischaemic heart disease alone about 135,000, one in five.",
                   "fields": []
                 }
               },
               "version": 1,
               "jsonSpec": {
                 "type": "vega-lite",
-                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"autosize\":{\"contains\":\"padding\",\"type\":\"fit\"},\"axis\":{\"labelLimit\":200},\"title\":{\"color\":\"#42525F\",\"fontSize\":12,\"fontWeight\":\"normal\"},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"resolve\":{\"scale\":{\"y\":\"shared\"}},\"vconcat\":[{\"encoding\":{\"color\":{\"field\":\"yearLabel\",\"scale\":{\"range\":[\"#8696A7\",\"#243E74\"]},\"type\":\"nominal\"},\"x\":{\"axis\":{\"format\":\",.0f\",\"tickCount\":5,\"title\":null},\"field\":\"totalDeaths\",\"type\":\"quantitative\"},\"y\":{\"axis\":{\"labelLimit\":200,\"title\":\"Cause\"},\"field\":\"diseaseName\",\"sort\":{\"field\":\"sortValue\",\"op\":\"max\",\"order\":\"descending\"},\"type\":\"nominal\"}},\"height\":{\"step\":13},\"mark\":{\"tooltip\":true,\"type\":\"bar\"},\"title\":\"2024\",\"transform\":[{\"filter\":\"datum.yearLabel === '2024'\"}]},{\"encoding\":{\"color\":{\"field\":\"yearLabel\",\"scale\":{\"range\":[\"#8696A7\",\"#243E74\"]},\"type\":\"nominal\"},\"x\":{\"axis\":{\"format\":\",.0f\",\"tickCount\":5,\"title\":\"Registered deaths\"},\"field\":\"totalDeaths\",\"type\":\"quantitative\"},\"y\":{\"axis\":{\"labelLimit\":200,\"title\":null},\"field\":\"diseaseName\",\"sort\":{\"field\":\"sortValue\",\"op\":\"max\",\"order\":\"descending\"},\"type\":\"nominal\"}},\"height\":{\"step\":13},\"mark\":{\"tooltip\":true,\"type\":\"bar\"},\"title\":\"2023\",\"transform\":[{\"filter\":\"datum.yearLabel === '2023'\"}]}],\"width\":\"container\"}"
+                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"encoding\":{\"color\":{\"field\":\"yearLabel\",\"legend\":{\"orient\":\"top-right\",\"title\":null},\"scale\":{\"domain\":[\"2023\",\"2024\"],\"range\":[\"#8696A7\",\"#243E74\"]},\"type\":\"nominal\"},\"x\":{\"axis\":{\"format\":\",.0f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"tickCount\":5,\"title\":\"Registered deaths\"},\"field\":\"totalDeaths\",\"type\":\"quantitative\"},\"y\":{\"axis\":{\"labelColor\":\"#42525F\",\"labelFontSize\":12,\"labelLimit\":200,\"title\":\"Cause\"},\"field\":\"diseaseName\",\"sort\":{\"field\":\"sortValue\",\"op\":\"max\",\"order\":\"descending\"},\"type\":\"nominal\"},\"yOffset\":{\"field\":\"yearLabel\",\"type\":\"nominal\"}},\"height\":\"container\",\"mark\":{\"tooltip\":true,\"type\":\"bar\"},\"width\":\"container\"}"
               },
               "widgetType": "custom-vega-viz",
               "encodings": {
@@ -1300,86 +1326,9 @@
           },
           "position": {
             "x": 0,
-            "y": 5,
-            "width": 6,
-            "height": 9
-          }
-        },
-        {
-          "widget": {
-            "name": "ihme_burden_chart",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "p1_ihme_burden",
-                  "fields": [
-                    {
-                      "name": "Province",
-                      "expression": "`province_name`"
-                    },
-                    {
-                      "name": "val",
-                      "expression": "SUM(`value`)"
-                    },
-                    {
-                      "name": "valLower",
-                      "expression": "MIN(`value_lower`)"
-                    },
-                    {
-                      "name": "valUpper",
-                      "expression": "MAX(`value_upper`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "frame": {
-                "showDescription": true,
-                "showTitle": true,
-                "title": {
-                  "fields": [],
-                  "value": "Modelled burden by province (IHME)"
-                },
-                "description": {
-                  "value": "Modelled estimates (© IHME). Top 15 provinces by estimate; lines show the uncertainty interval (value\\_lower–value\\_upper). Provinces as published by IHME; NCR is one area. Source: Institute for Health Metrics and Evaluation. Used with permission. All rights reserved.",
-                  "fields": []
-                }
-              },
-              "jsonSpec": {
-                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"layer\":[{\"encoding\":{\"x\":{\"axis\":{\"format\":\",.0f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"tickCount\":7,\"title\":\"Modelled value (95% interval)\"},\"field\":\"val\",\"scale\":{\"nice\":true,\"type\":\"linear\"},\"type\":\"quantitative\"},\"y\":{\"axis\":{\"domain\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":12,\"labelLimit\":200,\"ticks\":false,\"title\":\"Province\"},\"field\":\"Province\",\"sort\":{\"field\":\"val\",\"op\":\"sum\",\"order\":\"descending\"},\"type\":\"nominal\"}},\"mark\":{\"fill\":\"#243E74\",\"stroke\":\"#243E74\",\"strokeWidth\":2,\"tooltip\":true,\"type\":\"bar\"}},{\"encoding\":{\"x\":{\"axis\":{\"domain\":false,\"format\":\",.0f\",\"grid\":false,\"labels\":false,\"ticks\":false,\"title\":\"Modelled value (95% interval)\"},\"field\":\"valLower\",\"scale\":{\"nice\":true,\"type\":\"linear\"},\"type\":\"quantitative\"},\"x2\":{\"field\":\"valUpper\"},\"y\":{\"axis\":null,\"field\":\"Province\",\"sort\":{\"field\":\"val\",\"op\":\"sum\",\"order\":\"descending\"},\"type\":\"nominal\"}},\"mark\":{\"opacity\":0.7,\"stroke\":\"#0f2965\",\"strokeWidth\":2,\"tooltip\":false,\"type\":\"rule\"}}],\"transform\":[{\"sort\":[{\"field\":\"val\",\"order\":\"descending\"}],\"window\":[{\"as\":\"rank\",\"op\":\"row_number\"}]},{\"filter\":\"datum.rank <= 15\"}]}",
-                "type": "vega-lite"
-              },
-              "version": 1,
-              "widgetType": "custom-vega-viz",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "Province"
-                  },
-                  {
-                    "fieldName": "val"
-                  },
-                  {
-                    "fieldName": "valLower"
-                  },
-                  {
-                    "fieldName": "valUpper"
-                  }
-                ]
-              },
-              "data": {
-                "queryName": "main_query"
-              }
-            }
-          },
-          "position": {
-            "x": 6,
             "y": 6,
-            "width": 6,
-            "height": 8
+            "width": 7,
+            "height": 12
           }
         },
         {
@@ -1413,18 +1362,18 @@
                 "showTitle": true,
                 "showDescription": true,
                 "title": {
-                  "value": "Dengue seasonality (cases by month)",
+                  "value": "Surges on top of the baseline: dengue by month",
                   "fields": []
                 },
                 "description": {
-                  "value": "Reported cases (DOH FOI, restricted). National total = sum of all regions. 2025 covers January–September only.",
+                  "value": "Reported cases (DOH FOI, by region). 2024 nearly doubled 2023 (+92.9%). Peaks fall between July and October — compare the timing and size of each year's surge. 2025 covers January–September; October–December 2025 are not yet reported (blank, not zero). See page 6, Preparedness.",
                   "fields": []
                 }
               },
               "version": 1,
               "jsonSpec": {
                 "type": "vega-lite",
-                "spec": "{\"autosize\":{\"contains\":\"padding\",\"type\":\"fit\"},\"config\":{\"axis\":{\"grid\":false,\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"height\":\"container\",\"layer\":[{\"encoding\":{\"color\":{\"field\":\"totalCases\",\"legend\":{\"orient\":\"top\",\"title\":\"Cases\"},\"scale\":{\"domainMid\":50000,\"scheme\":\"oranges\",\"type\":\"linear\"},\"type\":\"quantitative\"},\"x\":{\"axis\":{\"domain\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":12,\"ticks\":false,\"title\":\"Month\"},\"field\":\"monthName\",\"sort\":[\"Jan\",\"Feb\",\"Mar\",\"Apr\",\"May\",\"Jun\",\"Jul\",\"Aug\",\"Sep\",\"Oct\",\"Nov\",\"Dec\"],\"type\":\"nominal\"},\"y\":{\"axis\":{\"domain\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":12,\"ticks\":false,\"title\":\"Year\"},\"field\":\"yearVal\",\"sort\":\"descending\",\"type\":\"ordinal\"}},\"mark\":{\"tooltip\":true,\"type\":\"rect\"}},{\"encoding\":{\"color\":{\"field\":\"totalCases\",\"scale\":{\"domain\":[1000,90000],\"range\":[\"#5A4635\",\"#ffffff\"]},\"type\":\"quantitative\"},\"text\":{\"field\":\"totalCases\",\"format\":\",.0f\",\"type\":\"quantitative\"},\"x\":{\"field\":\"monthName\",\"sort\":[\"Jan\",\"Feb\",\"Mar\",\"Apr\",\"May\",\"Jun\",\"Jul\",\"Aug\",\"Sep\",\"Oct\",\"Nov\",\"Dec\"],\"type\":\"nominal\"},\"y\":{\"field\":\"yearVal\",\"sort\":\"descending\",\"type\":\"ordinal\"}},\"mark\":{\"align\":\"center\",\"baseline\":\"middle\",\"fontSize\":10,\"type\":\"text\"}}],\"width\":\"container\"}"
+                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"autosize\":{\"contains\":\"padding\",\"type\":\"fit\"},\"config\":{\"axis\":{\"grid\":false,\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"encoding\":{\"color\":{\"field\":\"totalCases\",\"legend\":{\"orient\":\"top\",\"title\":\"Cases\"},\"scale\":{\"domainMid\":50000,\"scheme\":\"oranges\",\"type\":\"quantitative\"},\"type\":\"quantitative\"},\"x\":{\"axis\":{\"domain\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":12,\"ticks\":false,\"title\":\"Month\"},\"field\":\"monthName\",\"sort\":[\"Jan\",\"Feb\",\"Mar\",\"Apr\",\"May\",\"Jun\",\"Jul\",\"Aug\",\"Sep\",\"Oct\",\"Nov\",\"Dec\"],\"type\":\"nominal\"},\"y\":{\"axis\":{\"domain\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":12,\"ticks\":false,\"title\":\"Year\"},\"field\":\"yearVal\",\"sort\":\"descending\",\"type\":\"ordinal\"}},\"height\":\"container\",\"mark\":{\"tooltip\":true,\"type\":\"rect\"},\"width\":\"container\"}"
               },
               "widgetType": "custom-vega-viz",
               "encodings": {
@@ -1447,9 +1396,9 @@
           },
           "position": {
             "x": 0,
-            "y": 14,
+            "y": 19,
             "width": 12,
-            "height": 10
+            "height": 8
           }
         },
         {
@@ -1473,28 +1422,6 @@
                   ],
                   "disaggregated": false
                 }
-              },
-              {
-                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                "query": {
-                  "datasetName": "kpi_need",
-                  "fields": [
-                    {
-                      "name": "comparison_label",
-                      "expression": "MAX(`comparison_label`)"
-                    },
-                    {
-                      "name": "pct_change",
-                      "expression": "MAX(`pct_change`)"
-                    }
-                  ],
-                  "filters": [
-                    {
-                      "expression": "`tile` IN ('registered_deaths')"
-                    }
-                  ],
-                  "disaggregated": false
-                }
               }
             ],
             "spec": {
@@ -1506,17 +1433,8 @@
                   "fields": []
                 },
                 "description": {
-                  "value": "Philippines. {{ field:comparison_label }}: {{ field:pct_change }}",
-                  "fields": [
-                    {
-                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                      "fieldName": "comparison_label"
-                    },
-                    {
-                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                      "fieldName": "pct_change"
-                    }
-                  ]
+                  "value": "2024 · PSA · vs 2023: +1.0%",
+                  "fields": []
                 }
               },
               "version": 2,
@@ -1541,8 +1459,8 @@
           },
           "position": {
             "x": 0,
-            "y": 2,
-            "width": 3,
+            "y": 3,
+            "width": 4,
             "height": 3
           }
         },
@@ -1567,47 +1485,19 @@
                   ],
                   "disaggregated": false
                 }
-              },
-              {
-                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                "query": {
-                  "datasetName": "kpi_need",
-                  "fields": [
-                    {
-                      "name": "comparison_label",
-                      "expression": "MAX(`comparison_label`)"
-                    },
-                    {
-                      "name": "pct_change",
-                      "expression": "MAX(`pct_change`)"
-                    }
-                  ],
-                  "filters": [
-                    {
-                      "expression": "`tile` IN ('dengue_cases')"
-                    }
-                  ],
-                  "disaggregated": false
-                }
               }
             ],
             "spec": {
               "frame": {
                 "showDescription": true,
                 "showTitle": true,
-                "title": "Dengue cases, 2024 (DOH, reported)",
+                "title": {
+                  "value": "Dengue cases, 2024 (DOH, reported)",
+                  "fields": []
+                },
                 "description": {
-                  "fields": [
-                    {
-                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                      "fieldName": "comparison_label"
-                    },
-                    {
-                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                      "fieldName": "pct_change"
-                    }
-                  ],
-                  "value": "Philippines. {{ field:comparison_label }}: {{ field:pct_change }}"
+                  "fields": [],
+                  "value": "2024 · DOH FOI, by region · vs 2023: +92.9% · deaths 1,443"
                 }
               },
               "version": 2,
@@ -1631,9 +1521,9 @@
             }
           },
           "position": {
-            "x": 3,
-            "y": 2,
-            "width": 3,
+            "x": 8,
+            "y": 3,
+            "width": 4,
             "height": 3
           }
         },
@@ -1658,47 +1548,19 @@
                   ],
                   "disaggregated": false
                 }
-              },
-              {
-                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                "query": {
-                  "datasetName": "kpi_need",
-                  "fields": [
-                    {
-                      "name": "comparison_label",
-                      "expression": "MAX(`comparison_label`)"
-                    },
-                    {
-                      "name": "pct_change",
-                      "expression": "MAX(`pct_change`)"
-                    }
-                  ],
-                  "filters": [
-                    {
-                      "expression": "`tile` IN ('tb_notifications')"
-                    }
-                  ],
-                  "disaggregated": false
-                }
               }
             ],
             "spec": {
               "frame": {
                 "showDescription": true,
                 "showTitle": true,
-                "title": "TB notifications, 2025 (FHSIS)",
+                "title": {
+                  "value": "TB notifications, 2025 (FHSIS)",
+                  "fields": []
+                },
                 "description": {
-                  "fields": [
-                    {
-                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                      "fieldName": "comparison_label"
-                    },
-                    {
-                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                      "fieldName": "pct_change"
-                    }
-                  ],
-                  "value": "Philippines. {{ field:comparison_label }}: {{ field:pct_change }}"
+                  "fields": [],
+                  "value": "2025 · FHSIS · vs 2024: −1.8% · new TB cases notified to the programme, all forms"
                 }
               },
               "version": 2,
@@ -1722,51 +1584,187 @@
             }
           },
           "position": {
-            "x": 6,
-            "y": 2,
-            "width": 3,
+            "x": 4,
+            "y": 3,
+            "width": 4,
             "height": 3
           }
         },
         {
           "widget": {
-            "name": "kpi_dengue_deaths",
+            "name": "ihme_metric_rate",
             "queries": [
               {
-                "name": "main_query",
+                "name": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c884e9c5114daf11690e01b319c9_metric_name",
                 "query": {
-                  "datasetName": "kpi_need",
+                  "datasetName": "ds_ihme_burden_rate",
                   "fields": [
                     {
-                      "name": "max(value)",
-                      "expression": "MAX(`value`)"
-                    }
-                  ],
-                  "filters": [
+                      "name": "metric_name",
+                      "expression": "`metric_name`"
+                    },
                     {
-                      "expression": "`tile` IN ('dengue_deaths')"
+                      "name": "metric_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
                     }
                   ],
                   "disaggregated": false
                 }
+              }
+            ],
+            "spec": {
+              "disallowAll": true,
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "deaths"
+                      }
+                    ]
+                  }
+                }
               },
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "IHME metric"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "metric_name",
+                    "queryName": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c884e9c5114daf11690e01b319c9_metric_name"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 6,
+            "width": 2,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "ihme_disease_rate",
+            "queries": [
               {
-                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
+                "name": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c884e9c5114daf11690e01b319c9_disease_name",
                 "query": {
-                  "datasetName": "kpi_need",
+                  "datasetName": "ds_ihme_burden_rate",
                   "fields": [
                     {
-                      "name": "comparison_label",
-                      "expression": "MAX(`comparison_label`)"
+                      "name": "disease_name",
+                      "expression": "`disease_name`"
                     },
                     {
-                      "name": "pct_change",
-                      "expression": "MAX(`pct_change`)"
+                      "name": "disease_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
                     }
                   ],
-                  "filters": [
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "disallowAll": true,
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "Tuberculosis"
+                      }
+                    ]
+                  }
+                }
+              },
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "IHME disease"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "disease_name",
+                    "queryName": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c884e9c5114daf11690e01b319c9_disease_name"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 6,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "transition_text",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"font-size: 18px;\">**Where does healthcare capacity fall short relative to these needs? → Page 2, Gaps and equity.**</span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 27,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "ihme_rate_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_ihme_burden_rate",
+                  "fields": [
                     {
-                      "expression": "`tile` IN ('dengue_deaths')"
+                      "name": "areaName",
+                      "expression": "`area_name`"
+                    },
+                    {
+                      "name": "ratePer100k",
+                      "expression": "`rate_per_100k`"
+                    },
+                    {
+                      "name": "rateLower",
+                      "expression": "`rate_lower_per_100k`"
+                    },
+                    {
+                      "name": "rateUpper",
+                      "expression": "`rate_upper_per_100k`"
+                    },
+                    {
+                      "name": "quintile",
+                      "expression": "`quintile`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              },
+              {
+                "name": "frame_title_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c884e9c5114daf11690e01b319c9",
+                "query": {
+                  "datasetName": "ds_ihme_burden_rate",
+                  "fields": [
+                    {
+                      "name": "reference_year",
+                      "expression": "MAX(`reference_year`)"
                     }
                   ],
                   "disaggregated": false
@@ -1777,31 +1775,150 @@
               "frame": {
                 "showDescription": true,
                 "showTitle": true,
-                "title": "Dengue deaths, 2024 (DOH, reported)",
-                "description": {
+                "title": {
+                  "value": "Highest estimated {{ filter:ihme_disease_rate }} {{ filter:ihme_metric_rate }} per 100,000 residents, {{ field:reference_year }}",
                   "fields": [
                     {
-                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                      "fieldName": "comparison_label"
-                    },
+                      "queryName": "frame_title_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c884e9c5114daf11690e01b319c9",
+                      "fieldName": "reference_year"
+                    }
+                  ]
+                },
+                "description": {
+                  "fields": [],
+                  "value": "Modelled estimates (© IHME) with 95% uncertainty interval. Rate = estimate ÷ 2024 census population. Modelled burden, not the reported notifications in the card above. Provinces containing a highly urbanised city are not shown."
+                }
+              },
+              "jsonSpec": {
+                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"layer\":[{\"encoding\":{\"color\":{\"field\":\"quintile\",\"legend\":{\"orient\":\"top\",\"title\":\"Burden quintile\"},\"scale\":{\"scheme\":\"blues\"},\"type\":\"ordinal\"},\"x\":{\"axis\":{\"format\":\".1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"tickCount\":5,\"title\":\"per 100,000 residents (2024 census)\"},\"field\":\"ratePer100k\",\"scale\":{\"nice\":true,\"type\":\"linear\",\"zero\":true},\"type\":\"quantitative\"},\"y\":{\"axis\":{\"domain\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":11,\"labelLimit\":200,\"ticks\":false,\"title\":null},\"field\":\"areaName\",\"sort\":{\"field\":\"ratePer100k\",\"op\":\"sum\",\"order\":\"descending\"},\"type\":\"nominal\"}},\"mark\":{\"tooltip\":true,\"type\":\"bar\"}},{\"encoding\":{\"x\":{\"field\":\"rateLower\",\"type\":\"quantitative\"},\"x2\":{\"field\":\"rateUpper\"},\"y\":{\"field\":\"areaName\",\"sort\":{\"field\":\"ratePer100k\",\"op\":\"sum\",\"order\":\"descending\"},\"type\":\"nominal\"}},\"mark\":{\"opacity\":0.7,\"stroke\":\"#0f2965\",\"strokeWidth\":2,\"tooltip\":false,\"type\":\"rule\"}},{\"encoding\":{\"text\":{\"field\":\"ratePer100k\",\"format\":\".1f\",\"type\":\"quantitative\"},\"x\":{\"field\":\"ratePer100k\",\"type\":\"quantitative\"},\"y\":{\"field\":\"areaName\",\"sort\":{\"field\":\"ratePer100k\",\"op\":\"sum\",\"order\":\"descending\"},\"type\":\"nominal\"}},\"mark\":{\"align\":\"left\",\"baseline\":\"middle\",\"color\":\"#42525F\",\"dx\":4,\"fontSize\":10,\"type\":\"text\"}}],\"transform\":[{\"filter\":\"datum.ratePer100k !== null\"},{\"sort\":[{\"field\":\"ratePer100k\",\"order\":\"descending\"}]},{\"window\":[{\"as\":\"rank\",\"op\":\"row_number\"}]},{\"filter\":\"datum.rank <= 10\"}]}",
+                "type": "vega-lite"
+              },
+              "version": 1,
+              "widgetType": "custom-vega-viz",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "areaName"
+                  },
+                  {
+                    "fieldName": "ratePer100k"
+                  },
+                  {
+                    "fieldName": "rateLower"
+                  },
+                  {
+                    "fieldName": "rateUpper"
+                  },
+                  {
+                    "fieldName": "quintile"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 7,
+            "width": 5,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_provinces_compared",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_ihme_burden_rate",
+                  "fields": [
                     {
-                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7eadbdd1aca84fc31d3077e8780",
-                      "fieldName": "pct_change"
+                      "name": "measure(provinces_compared)",
+                      "expression": "MEASURE(`provinces_compared`)"
                     }
                   ],
-                  "value": "Philippines. {{ field:comparison_label }}: {{ field:pct_change }}"
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Provinces compared",
+                "description": {
+                  "fields": [],
+                  "value": "provinces compared"
                 }
               },
               "version": 2,
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "max(value)",
+                  "fieldName": "measure(provinces_compared)",
                   "format": {
                     "abbreviation": "none",
                     "decimalPlaces": {
                       "places": 0,
-                      "type": "max"
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 16,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_huc_held_back",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_ihme_burden_rate",
+                  "fields": [
+                    {
+                      "name": "measure(huc_held_back)",
+                      "expression": "MEASURE(`huc_held_back`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": "Held back (contain a HUC)",
+                "description": {
+                  "fields": [],
+                  "value": "held back (contain a HUC)"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(huc_held_back)",
+                  "format": {
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "places": 0,
+                      "type": "exact"
                     },
                     "type": "number-plain"
                   }
@@ -1814,7 +1931,7 @@
           },
           "position": {
             "x": 9,
-            "y": 2,
+            "y": 16,
             "width": 3,
             "height": 3
           }
@@ -1824,8 +1941,834 @@
       "layoutVersion": "GRID_V1"
     },
     {
+      "name": "gaps_equity",
+      "displayName": "2. Gaps and equity",
+      "layout": [
+        {
+          "widget": {
+            "name": "header_text",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Where supply is thinnest — and whether it lines up with poverty and burden\n",
+                "Beds and health workers per 10,000 residents by planning unit (province excluding its highly urbanised cities, each HUC, NCR). Then: do the thinnest units also carry the highest poverty and TB burden, and does that ranking hold when the weights change?\n",
+                "\n",
+                "*Rates use the 2024 census. FHSIS counts reach a unit only where coverage matches. Gap flags = lowest fifth (supply) or highest fifth (poverty, burden): proposals, not standards. 45 provinces have no comparable poverty estimate because it includes their HUC.*"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "unit_level_filter",
+            "queries": [
+              {
+                "name": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7ff3cea12b6a3d2d70e28b84c2b_unit_level",
+                "query": {
+                  "datasetName": "supply_by_unit_long",
+                  "fields": [
+                    {
+                      "name": "unit_level",
+                      "expression": "`unit_level`"
+                    },
+                    {
+                      "name": "unit_level_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "disallowAll": false,
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "province"
+                      }
+                    ]
+                  }
+                }
+              },
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Planning unit level",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "unit_level",
+                    "queryName": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7ff3cea12b6a3d2d70e28b84c2b_unit_level"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "workers_by_poverty_band",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "by_poverty_band",
+                  "fields": [
+                    {
+                      "name": "povertyBand",
+                      "expression": "`poverty_band`"
+                    },
+                    {
+                      "name": "units",
+                      "expression": "SUM(`units`)"
+                    },
+                    {
+                      "name": "doctorRate",
+                      "expression": "SUM(`doctors_per_10k`)"
+                    },
+                    {
+                      "name": "nurseRate",
+                      "expression": "SUM(`nurses_per_10k`)"
+                    },
+                    {
+                      "name": "midwifeRate",
+                      "expression": "SUM(`midwives_per_10k`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Public health workers per 10,000 by poverty band (FHSIS 2025, 67 comparable units)",
+                  "fields": []
+                },
+                "description": {
+                  "fields": [],
+                  "value": "Doctors, nurses and midwives per 10,000 residents, aggregated over the planning units in each poverty band. Units with no value for a cadre are excluded from that cadre only."
+                }
+              },
+              "jsonSpec": {
+                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"grid\":false,\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"transform\":[{\"calculate\":\"datum.povertyBand === 'under 10%' ? '< 10%' : (datum.povertyBand === '10% to under 20%' ? '10–20%' : (datum.povertyBand === '20% to under 30%' ? '20–30%' : '≥ 30%'))\",\"as\":\"bandLabel\"},{\"fold\":[\"doctorRate\",\"nurseRate\",\"midwifeRate\"],\"as\":[\"worker\",\"rate\"]},{\"calculate\":\"datum.worker === 'doctorRate' ? 'Doctors' : (datum.worker === 'nurseRate' ? 'Nurses' : 'Midwives')\",\"as\":\"workerLabel\"}],\"encoding\":{\"x\":{\"field\":\"bandLabel\",\"type\":\"nominal\",\"sort\":[\"< 10%\",\"10–20%\",\"20–30%\",\"≥ 30%\"],\"axis\":{\"title\":\"Poverty band\",\"labelColor\":\"#42525F\",\"labelFontSize\":12,\"labelLimit\":200}},\"xOffset\":{\"field\":\"workerLabel\",\"type\":\"nominal\"},\"y\":{\"field\":\"rate\",\"type\":\"quantitative\",\"axis\":{\"format\":\",.1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"title\":\"Health workers per 10,000 residents\"},\"scale\":{\"type\":\"linear\",\"nice\":true}},\"color\":{\"field\":\"workerLabel\",\"type\":\"nominal\",\"scale\":{\"domain\":[\"Doctors\",\"Nurses\",\"Midwives\"],\"range\":[\"#243E74\",\"#5A76A8\",\"#8696A7\"]},\"legend\":{\"orient\":\"top\",\"title\":null}}},\"mark\":{\"type\":\"bar\",\"tooltip\":true},\"width\":\"container\",\"height\":\"container\"}",
+                "type": "vega-lite"
+              },
+              "version": 1,
+              "widgetType": "custom-vega-viz",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "povertyBand"
+                  },
+                  {
+                    "fieldName": "units"
+                  },
+                  {
+                    "fieldName": "doctorRate"
+                  },
+                  {
+                    "fieldName": "nurseRate"
+                  },
+                  {
+                    "fieldName": "midwifeRate"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 6,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "poverty_vs_beds_scatter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "poverty_vs_beds",
+                  "fields": [
+                    {
+                      "name": "areaName",
+                      "expression": "`area_name`"
+                    },
+                    {
+                      "name": "povertyPct",
+                      "expression": "`poverty_incidence_pct`"
+                    },
+                    {
+                      "name": "bedsPer10k",
+                      "expression": "`beds_per_10k`"
+                    },
+                    {
+                      "name": "population",
+                      "expression": "`population`"
+                    },
+                    {
+                      "name": "unitLevel",
+                      "expression": "`unit_level`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "Poverty incidence vs hospital beds per 10,000"
+                },
+                "description": {
+                  "fields": [],
+                  "value": "Planning units with both a poverty incidence estimate and recorded beds per 10,000. Point size = population (2024 census); colour = planning unit level. Labels shown for NCR and the five lowest-bed provinces; all points on hover. 45 provinces have no comparable poverty estimate because it includes their HUC. HUCs are not shown: no separable poverty estimate."
+                }
+              },
+              "jsonSpec": {
+                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"grid\":false,\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"layer\":[{\"encoding\":{\"color\":{\"field\":\"unitLevel\",\"legend\":{\"orient\":\"top\",\"title\":\"Planning unit level\"},\"scale\":{\"range\":[\"#243E74\",\"#5A76A8\",\"#8696A7\"]},\"type\":\"nominal\"},\"size\":{\"field\":\"population\",\"legend\":{\"format\":\".1s\",\"title\":\"Population\"},\"scale\":{\"range\":[30,500]},\"type\":\"quantitative\"},\"x\":{\"axis\":{\"format\":\".1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"title\":\"Poverty incidence, % of population (PSA)\"},\"field\":\"povertyPct\",\"scale\":{\"nice\":true,\"zero\":false},\"type\":\"quantitative\"},\"y\":{\"axis\":{\"format\":\",.1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"title\":\"Beds per 10,000 residents\"},\"field\":\"bedsPer10k\",\"scale\":{\"nice\":true,\"zero\":false},\"type\":\"quantitative\"}},\"mark\":{\"filled\":true,\"opacity\":0.85,\"stroke\":\"#ffffff\",\"strokeWidth\":1,\"tooltip\":true,\"type\":\"point\"}},{\"encoding\":{\"text\":{\"field\":\"labelText\",\"type\":\"nominal\"},\"x\":{\"field\":\"povertyPct\",\"type\":\"quantitative\"},\"y\":{\"field\":\"bedsPer10k\",\"type\":\"quantitative\"}},\"mark\":{\"color\":\"#42525F\",\"dy\":-9,\"fontSize\":9,\"type\":\"text\"}}],\"transform\":[{\"as\":\"bedRank\",\"sort\":[{\"field\":\"bedsPer10k\",\"order\":\"ascending\"}],\"window\":[{\"as\":\"bedRank\",\"op\":\"row_number\"}]},{\"as\":\"labelText\",\"calculate\":\"(datum.areaName === 'National Capital Region (NCR)' || (datum.unitLevel === 'province' && datum.bedRank <= 5)) ? datum.areaName : ''\"}]}",
+                "type": "vega-lite"
+              },
+              "version": 1,
+              "widgetType": "custom-vega-viz",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "areaName"
+                  },
+                  {
+                    "fieldName": "povertyPct"
+                  },
+                  {
+                    "fieldName": "bedsPer10k"
+                  },
+                  {
+                    "fieldName": "population"
+                  },
+                  {
+                    "fieldName": "unitLevel"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 15,
+            "width": 6,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "priority_tb_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "priority_tb",
+                  "fields": [
+                    {
+                      "name": "rank",
+                      "expression": "`rank`"
+                    },
+                    {
+                      "name": "area_name",
+                      "expression": "`area_name`"
+                    },
+                    {
+                      "name": "unit_level",
+                      "expression": "`unit_level`"
+                    },
+                    {
+                      "name": "burden_rate_per_100k",
+                      "expression": "`burden_rate_per_100k`"
+                    },
+                    {
+                      "name": "gap_profile",
+                      "expression": "`gap_profile`"
+                    },
+                    {
+                      "name": "flags_count",
+                      "expression": "`flags_count`"
+                    },
+                    {
+                      "name": "missing_indicators",
+                      "expression": "`missing_indicators`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "High TB burden with supply or equity gaps (equal weights; units missing an indicator are scored on what they have)"
+                },
+                "description": {
+                  "fields": [],
+                  "value": "TB = all forms, FHSIS cases per 100,000. High burden = top quintile. Scoring uses the indicators a unit has (rescale_missing; 100 units ranked). Flags = lowest fifth (supply) or highest fifth (poverty, burden): proposals for the team, not standards. Rows = units with at least one gap flag."
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "rank",
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "useForSearch": false,
+                    "displayName": "Priority rank (of 100)"
+                  },
+                  {
+                    "fieldName": "area_name",
+                    "headerAlignment": "left",
+                    "useForSearch": true
+                  },
+                  {
+                    "fieldName": "unit_level",
+                    "headerAlignment": "left",
+                    "useForSearch": false
+                  },
+                  {
+                    "fieldName": "burden_rate_per_100k",
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "useForSearch": false,
+                    "displayName": "TB cases per 100k"
+                  },
+                  {
+                    "fieldName": "gap_profile",
+                    "headerAlignment": "left",
+                    "useForSearch": false
+                  },
+                  {
+                    "fieldName": "flags_count",
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "headerAlignment": "right",
+                    "useForSearch": false,
+                    "displayName": "Gap flags (count)"
+                  },
+                  {
+                    "fieldName": "missing_indicators",
+                    "headerAlignment": "left",
+                    "useForSearch": false
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 6,
+            "height": 12
+          }
+        },
+        {
+          "widget": {
+            "name": "rank_stability_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "rank_stability",
+                  "fields": [
+                    {
+                      "name": "area_name",
+                      "expression": "`area_name`"
+                    },
+                    {
+                      "name": "rank_equal",
+                      "expression": "`rank_equal`"
+                    },
+                    {
+                      "name": "rank_supply_heavy",
+                      "expression": "`rank_supply_heavy`"
+                    },
+                    {
+                      "name": "rank_equity_heavy",
+                      "expression": "`rank_equity_heavy`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Does the ranking hold when the weights change? (top 15 under any weight set)",
+                  "fields": []
+                },
+                "description": {
+                  "fields": [],
+                  "value": "TB burden priority rank of each planning unit under three weight sets. Shown if the unit makes the top 15 under at least one set. Complete units only; blank = not ranked under that set. Sarangani and Dinagat Islands rank 1–2 under every weight set."
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "area_name",
+                    "headerAlignment": "left",
+                    "useForSearch": true
+                  },
+                  {
+                    "fieldName": "rank_equal",
+                    "headerAlignment": "right",
+                    "useForSearch": false,
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "displayName": "Rank (equal weights)"
+                  },
+                  {
+                    "fieldName": "rank_supply_heavy",
+                    "headerAlignment": "right",
+                    "useForSearch": false,
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "displayName": "Rank (supply-heavy)"
+                  },
+                  {
+                    "fieldName": "rank_equity_heavy",
+                    "headerAlignment": "right",
+                    "useForSearch": false,
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "displayName": "Rank (equity-heavy)"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 23,
+            "width": 6,
+            "height": 12
+          }
+        },
+        {
+          "widget": {
+            "name": "evidence_gaps_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "evidence_gaps",
+                  "fields": [
+                    {
+                      "name": "indicator_group",
+                      "expression": "`indicator_group`"
+                    },
+                    {
+                      "name": "indicator",
+                      "expression": "`indicator`"
+                    },
+                    {
+                      "name": "units",
+                      "expression": "`units`"
+                    },
+                    {
+                      "name": "pct_missing",
+                      "expression": "`pct_missing`"
+                    },
+                    {
+                      "name": "reasons",
+                      "expression": "`reasons`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Units without a value, per indicator, and why",
+                  "fields": []
+                },
+                "description": {
+                  "fields": [],
+                  "value": "Coverage of each indicator across planning units (burden collapsed to one row per source), and the recorded exclusion reasons for units without a value."
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "indicator_group",
+                    "headerAlignment": "left",
+                    "useForSearch": false
+                  },
+                  {
+                    "fieldName": "indicator",
+                    "headerAlignment": "left",
+                    "useForSearch": true
+                  },
+                  {
+                    "fieldName": "units",
+                    "headerAlignment": "right",
+                    "useForSearch": false,
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 0,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "displayName": "Units"
+                  },
+                  {
+                    "fieldName": "pct_missing",
+                    "headerAlignment": "right",
+                    "useForSearch": false,
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "places": 1,
+                        "type": "exact"
+                      },
+                      "type": "number-plain"
+                    },
+                    "displayName": "Missing %"
+                  },
+                  {
+                    "fieldName": "reasons",
+                    "headerAlignment": "left",
+                    "useForSearch": false
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 36,
+            "width": 12,
+            "height": 12
+          }
+        },
+        {
+          "widget": {
+            "name": "beds_bottom20_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "supply_by_unit_long",
+                  "fields": [
+                    {
+                      "name": "areaName",
+                      "expression": "`area_name`"
+                    },
+                    {
+                      "name": "hospitalLevel",
+                      "expression": "`hospital_level`"
+                    },
+                    {
+                      "name": "rate",
+                      "expression": "SUM(`beds_per_10k_level`)"
+                    },
+                    {
+                      "name": "sortVal",
+                      "expression": "SUM(`beds_per_10k`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`in_bottom20`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7ff3cea12b6a3d2d70e28b84c2b",
+                "query": {
+                  "datasetName": "supply_by_unit_long",
+                  "fields": [
+                    {
+                      "name": "no_hospital_count",
+                      "expression": "MEASURE(`no_hospital_units`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`in_bottom20`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Fewest beds per 10,000 (bottom 20)",
+                  "fields": []
+                },
+                "description": {
+                  "fields": [
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7ff3cea12b6a3d2d70e28b84c2b",
+                      "fieldName": "no_hospital_count"
+                    }
+                  ],
+                  "value": "The 20 planning units with the lowest beds per 10,000 within the selected planning-unit level. +{{ field:no_hospital_count }} units in this level have no hospital recorded. NHFR registry as of 2026-09-29."
+                }
+              },
+              "jsonSpec": {
+                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"encoding\":{\"y\":{\"field\":\"areaName\",\"type\":\"nominal\",\"sort\":{\"field\":\"sortVal\",\"op\":\"max\",\"order\":\"ascending\"},\"axis\":{\"labelLimit\":200,\"title\":null,\"domain\":false,\"ticks\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":11}},\"x\":{\"field\":\"rate\",\"type\":\"quantitative\",\"stack\":\"zero\",\"axis\":{\"format\":\",.1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"tickCount\":5,\"title\":\"Beds per 10,000 residents\"},\"scale\":{\"type\":\"linear\",\"nice\":true}},\"color\":{\"field\":\"hospitalLevel\",\"type\":\"nominal\",\"scale\":{\"domain\":[\"Level 1\",\"Level 2\",\"Level 3\"],\"range\":[\"#C3CEDA\",\"#5A76A8\",\"#243E74\"]},\"legend\":{\"orient\":\"top\",\"title\":\"Hospital level\"}}},\"mark\":{\"type\":\"bar\",\"tooltip\":true},\"height\":\"container\",\"width\":\"container\"}",
+                "type": "vega-lite"
+              },
+              "version": 1,
+              "widgetType": "custom-vega-viz",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "areaName"
+                  },
+                  {
+                    "fieldName": "hospitalLevel"
+                  },
+                  {
+                    "fieldName": "rate"
+                  },
+                  {
+                    "fieldName": "sortVal"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 12
+          }
+        },
+        {
+          "widget": {
+            "name": "beds_top20_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "supply_by_unit_long",
+                  "fields": [
+                    {
+                      "name": "areaName",
+                      "expression": "`area_name`"
+                    },
+                    {
+                      "name": "hospitalLevel",
+                      "expression": "`hospital_level`"
+                    },
+                    {
+                      "name": "rate",
+                      "expression": "SUM(`beds_per_10k_level`)"
+                    },
+                    {
+                      "name": "sortVal",
+                      "expression": "SUM(`beds_per_10k`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`in_top20`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7ff3cea12b6a3d2d70e28b84c2b",
+                "query": {
+                  "datasetName": "supply_by_unit_long",
+                  "fields": [
+                    {
+                      "name": "no_hospital_count",
+                      "expression": "MEASURE(`no_hospital_units`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`in_top20`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Most beds per 10,000 (top 20)",
+                  "fields": []
+                },
+                "description": {
+                  "fields": [
+                    {
+                      "queryName": "frame_description_q_dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7ff3cea12b6a3d2d70e28b84c2b",
+                      "fieldName": "no_hospital_count"
+                    }
+                  ],
+                  "value": "The 20 planning units with the highest beds per 10,000 within the selected planning-unit level. +{{ field:no_hospital_count }} units in this level have no hospital recorded. NHFR registry as of 2026-09-29."
+                }
+              },
+              "jsonSpec": {
+                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"encoding\":{\"y\":{\"field\":\"areaName\",\"type\":\"nominal\",\"sort\":{\"field\":\"sortVal\",\"op\":\"max\",\"order\":\"descending\"},\"axis\":{\"labelLimit\":200,\"title\":null,\"domain\":false,\"ticks\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":11}},\"x\":{\"field\":\"rate\",\"type\":\"quantitative\",\"stack\":\"zero\",\"axis\":{\"format\":\",.1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"tickCount\":5,\"title\":\"Beds per 10,000 residents\"},\"scale\":{\"type\":\"linear\",\"nice\":true}},\"color\":{\"field\":\"hospitalLevel\",\"type\":\"nominal\",\"scale\":{\"domain\":[\"Level 1\",\"Level 2\",\"Level 3\"],\"range\":[\"#C3CEDA\",\"#5A76A8\",\"#243E74\"]},\"legend\":{\"orient\":\"top\",\"title\":\"Hospital level\"}}},\"mark\":{\"type\":\"bar\",\"tooltip\":true},\"height\":\"container\",\"width\":\"container\"}",
+                "type": "vega-lite"
+              },
+              "version": 1,
+              "widgetType": "custom-vega-viz",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "areaName"
+                  },
+                  {
+                    "fieldName": "hospitalLevel"
+                  },
+                  {
+                    "fieldName": "rate"
+                  },
+                  {
+                    "fieldName": "sortVal"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 6,
+            "height": 12
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
       "name": "access_care",
-      "displayName": "2. Access to early care",
+      "displayName": "3. Access to early care",
       "layout": [
         {
           "widget": {
@@ -2226,10 +3169,13 @@
               "frame": {
                 "showDescription": true,
                 "showTitle": true,
-                "title": "Where no hospital is recorded (1,642 cities and municipalities)",
+                "title": {
+                  "value": "Where no hospital is recorded (1,642 cities and municipalities)",
+                  "fields": []
+                },
                 "description": {
-                  "fields": [],
-                  "value": "Fixed point size. Recorded = listed in the NHFR hospital registry as of 2026-09-29; not proof that none exists. The 8 localities without a boundary have no mapped centre and are not shown."
+                  "value": "Fixed point size. Recorded = listed in the NHFR hospital registry as of 2026-09-29; not proof that none exists. \n\nThe 8 localities without a boundary have no mapped centre and are not shown.",
+                  "fields": []
                 }
               },
               "version": 2,
@@ -2495,8 +3441,8 @@
                   "fields": []
                 },
                 "description": {
-                  "fields": [],
-                  "value": "Median 9.5 km to any recorded hospital, 45 km to a Level 3; 8 localities without a boundary have no distance. n = 1,634 localities with a mapped centre."
+                  "value": "Median 9.5 km to any recorded hospital, 45 km to a Level 3; \n\n8 localities without a boundary have no distance. n = 1,634 localities with a mapped centre.",
+                  "fields": []
                 }
               },
               "jsonSpec": {
@@ -2529,791 +3475,6 @@
           "position": {
             "x": 6,
             "y": 17,
-            "width": 6,
-            "height": 12
-          }
-        }
-      ],
-      "pageType": "PAGE_TYPE_CANVAS",
-      "layoutVersion": "GRID_V1"
-    },
-    {
-      "name": "gaps_equity",
-      "displayName": "3. Gaps and equity",
-      "layout": [
-        {
-          "widget": {
-            "name": "header_text",
-            "multilineTextboxSpec": {
-              "lines": [
-                "## How to read this page\n",
-                "Rates per 10,000 use the 2024 census population of each planning unit (province excluding its highly urbanized cities, each HUC, NCR). FHSIS counts reach a unit only where coverage matches. Gap flags = lowest fifth (supply) or highest fifth (poverty, burden): proposals for the team, not standards. 45 provinces have no comparable poverty estimate because it includes their HUC."
-              ]
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 0,
-            "width": 12,
-            "height": 2
-          }
-        },
-        {
-          "widget": {
-            "name": "unit_level_filter",
-            "queries": [
-              {
-                "name": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7ff3cea12b6a3d2d70e28b84c2b_unit_level",
-                "query": {
-                  "datasetName": "supply_by_unit_long",
-                  "fields": [
-                    {
-                      "name": "unit_level",
-                      "expression": "`unit_level`"
-                    },
-                    {
-                      "name": "unit_level_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "disallowAll": false,
-              "selection": {
-                "defaultSelection": {
-                  "values": {
-                    "dataType": "STRING",
-                    "values": [
-                      {
-                        "value": "province"
-                      }
-                    ]
-                  }
-                }
-              },
-              "version": 2,
-              "frame": {
-                "showTitle": true,
-                "title": "Planning unit level"
-              },
-              "widgetType": "filter-single-select",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "unit_level",
-                    "queryName": "dashboards/01f1c7dbb218147a873a4c1d5ad02aa4/datasets/01f1c7ff3cea12b6a3d2d70e28b84c2b_unit_level"
-                  }
-                ]
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 2,
-            "width": 3,
-            "height": 1
-          }
-        },
-        {
-          "widget": {
-            "name": "workers_by_poverty_band",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "by_poverty_band",
-                  "fields": [
-                    {
-                      "name": "povertyBand",
-                      "expression": "`poverty_band`"
-                    },
-                    {
-                      "name": "units",
-                      "expression": "SUM(`units`)"
-                    },
-                    {
-                      "name": "doctorRate",
-                      "expression": "SUM(`doctors_per_10k`)"
-                    },
-                    {
-                      "name": "nurseRate",
-                      "expression": "SUM(`nurses_per_10k`)"
-                    },
-                    {
-                      "name": "midwifeRate",
-                      "expression": "SUM(`midwives_per_10k`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "frame": {
-                "showDescription": true,
-                "showTitle": true,
-                "title": {
-                  "value": "Public health workers per 10,000 by poverty band (FHSIS 2025, 67 comparable units)",
-                  "fields": []
-                },
-                "description": {
-                  "fields": [],
-                  "value": "Doctors, nurses and midwives per 10,000 residents, aggregated over the planning units in each poverty band. Units with no value for a cadre are excluded from that cadre only."
-                }
-              },
-              "jsonSpec": {
-                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"grid\":false,\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"transform\":[{\"calculate\":\"datum.povertyBand === 'under 10%' ? '< 10%' : (datum.povertyBand === '10% to under 20%' ? '10–20%' : (datum.povertyBand === '20% to under 30%' ? '20–30%' : '≥ 30%'))\",\"as\":\"bandLabel\"},{\"fold\":[\"doctorRate\",\"nurseRate\",\"midwifeRate\"],\"as\":[\"worker\",\"rate\"]},{\"calculate\":\"datum.worker === 'doctorRate' ? 'Doctors' : (datum.worker === 'nurseRate' ? 'Nurses' : 'Midwives')\",\"as\":\"workerLabel\"}],\"encoding\":{\"x\":{\"field\":\"bandLabel\",\"type\":\"nominal\",\"sort\":[\"< 10%\",\"10–20%\",\"20–30%\",\"≥ 30%\"],\"axis\":{\"title\":\"Poverty band\",\"labelColor\":\"#42525F\",\"labelFontSize\":12,\"labelLimit\":200}},\"xOffset\":{\"field\":\"workerLabel\",\"type\":\"nominal\"},\"y\":{\"field\":\"rate\",\"type\":\"quantitative\",\"axis\":{\"format\":\",.1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"title\":\"Health workers per 10,000 residents\"},\"scale\":{\"type\":\"linear\",\"nice\":true}},\"color\":{\"field\":\"workerLabel\",\"type\":\"nominal\",\"scale\":{\"domain\":[\"Doctors\",\"Nurses\",\"Midwives\"],\"range\":[\"#243E74\",\"#5A76A8\",\"#8696A7\"]},\"legend\":{\"orient\":\"top\",\"title\":null}}},\"mark\":{\"type\":\"bar\",\"tooltip\":true},\"width\":\"container\",\"height\":\"container\"}",
-                "type": "vega-lite"
-              },
-              "version": 1,
-              "widgetType": "custom-vega-viz",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "povertyBand"
-                  },
-                  {
-                    "fieldName": "units"
-                  },
-                  {
-                    "fieldName": "doctorRate"
-                  },
-                  {
-                    "fieldName": "nurseRate"
-                  },
-                  {
-                    "fieldName": "midwifeRate"
-                  }
-                ]
-              },
-              "data": {
-                "queryName": "main_query"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 16,
-            "width": 6,
-            "height": 8
-          }
-        },
-        {
-          "widget": {
-            "name": "poverty_vs_beds_scatter",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "poverty_vs_beds",
-                  "fields": [
-                    {
-                      "name": "areaName",
-                      "expression": "`area_name`"
-                    },
-                    {
-                      "name": "unitLevel",
-                      "expression": "`unit_level`"
-                    },
-                    {
-                      "name": "povertyPct",
-                      "expression": "`poverty_incidence_pct`"
-                    },
-                    {
-                      "name": "bedsPer10k",
-                      "expression": "`beds_per_10k`"
-                    },
-                    {
-                      "name": "population",
-                      "expression": "`population`"
-                    }
-                  ],
-                  "disaggregated": true
-                }
-              }
-            ],
-            "spec": {
-              "frame": {
-                "showDescription": true,
-                "showTitle": true,
-                "title": {
-                  "value": "Poverty incidence vs hospital beds per 10,000",
-                  "fields": []
-                },
-                "description": {
-                  "fields": [],
-                  "value": "Planning units with both a poverty incidence estimate and recorded beds per 10,000. Point size = population (2024 census); colour = planning unit level. Labels shown for NCR, other non-province units and the five lowest-bed provinces; all points on hover. 45 provinces have no comparable poverty estimate because it includes their HUC."
-                }
-              },
-              "jsonSpec": {
-                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"grid\":false,\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"transform\":[{\"window\":[{\"op\":\"row_number\",\"as\":\"bedRank\"}],\"sort\":[{\"field\":\"bedsPer10k\",\"order\":\"ascending\"}]},{\"calculate\":\"datum.unitLevel !== 'province' || datum.bedRank <= 5 ? datum.areaName : ''\",\"as\":\"labelText\"}],\"layer\":[{\"mark\":{\"type\":\"point\",\"filled\":true,\"opacity\":0.85,\"tooltip\":true,\"stroke\":\"#ffffff\",\"strokeWidth\":1},\"encoding\":{\"x\":{\"field\":\"povertyPct\",\"type\":\"quantitative\",\"axis\":{\"format\":\".1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"title\":\"Poverty incidence (%)\"},\"scale\":{\"zero\":false,\"nice\":true}},\"y\":{\"field\":\"bedsPer10k\",\"type\":\"quantitative\",\"axis\":{\"format\":\",.1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"title\":\"Beds per 10,000 residents\"},\"scale\":{\"zero\":false,\"nice\":true}},\"size\":{\"field\":\"population\",\"type\":\"quantitative\",\"legend\":{\"title\":\"Population\",\"format\":\".1s\"},\"scale\":{\"range\":[30,500]}},\"color\":{\"field\":\"unitLevel\",\"type\":\"nominal\",\"scale\":{\"range\":[\"#243E74\",\"#5A76A8\",\"#8696A7\"]},\"legend\":{\"title\":\"Planning unit level\",\"orient\":\"top\"}}}},{\"mark\":{\"type\":\"text\",\"dy\":-9,\"fontSize\":9,\"color\":\"#42525F\"},\"encoding\":{\"x\":{\"field\":\"povertyPct\",\"type\":\"quantitative\"},\"y\":{\"field\":\"bedsPer10k\",\"type\":\"quantitative\"},\"text\":{\"field\":\"labelText\",\"type\":\"nominal\"}}}],\"width\":\"container\",\"height\":\"container\"}",
-                "type": "vega-lite"
-              },
-              "version": 1,
-              "widgetType": "custom-vega-viz",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "areaName"
-                  },
-                  {
-                    "fieldName": "unitLevel"
-                  },
-                  {
-                    "fieldName": "povertyPct"
-                  },
-                  {
-                    "fieldName": "bedsPer10k"
-                  },
-                  {
-                    "fieldName": "population"
-                  }
-                ]
-              },
-              "data": {
-                "queryName": "main_query"
-              }
-            }
-          },
-          "position": {
-            "x": 6,
-            "y": 16,
-            "width": 6,
-            "height": 8
-          }
-        },
-        {
-          "widget": {
-            "name": "priority_tb_table",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "priority_tb",
-                  "fields": [
-                    {
-                      "name": "rank",
-                      "expression": "`rank`"
-                    },
-                    {
-                      "name": "area_name",
-                      "expression": "`area_name`"
-                    },
-                    {
-                      "name": "unit_level",
-                      "expression": "`unit_level`"
-                    },
-                    {
-                      "name": "burden_rate_per_100k",
-                      "expression": "`burden_rate_per_100k`"
-                    },
-                    {
-                      "name": "gap_profile",
-                      "expression": "`gap_profile`"
-                    },
-                    {
-                      "name": "flags_count",
-                      "expression": "`flags_count`"
-                    },
-                    {
-                      "name": "indicators_available",
-                      "expression": "`indicators_available`"
-                    },
-                    {
-                      "name": "missing_indicators",
-                      "expression": "`missing_indicators`"
-                    }
-                  ],
-                  "disaggregated": true
-                }
-              }
-            ],
-            "spec": {
-              "frame": {
-                "showDescription": true,
-                "showTitle": true,
-                "title": {
-                  "value": "High TB burden with supply or equity gaps (equal weights; units missing an indicator are scored on what they have)",
-                  "fields": []
-                },
-                "description": {
-                  "fields": [],
-                  "value": "TB = all forms, FHSIS cases per 100,000. High burden = top quintile. Scoring uses the indicators a unit has (rescale_missing; 100 units ranked). Flags = lowest fifth (supply) or highest fifth (poverty, burden): proposals for the team, not standards."
-                }
-              },
-              "version": 2,
-              "widgetType": "table",
-              "encodings": {
-                "columns": [
-                  {
-                    "fieldName": "rank",
-                    "headerAlignment": "right",
-                    "useForSearch": false,
-                    "contentAlignment": "right",
-                    "format": {
-                      "abbreviation": "none",
-                      "decimalPlaces": {
-                        "places": 0,
-                        "type": "exact"
-                      },
-                      "type": "number-plain"
-                    },
-                    "displayName": "Rank"
-                  },
-                  {
-                    "fieldName": "area_name",
-                    "headerAlignment": "left",
-                    "useForSearch": true
-                  },
-                  {
-                    "fieldName": "unit_level",
-                    "headerAlignment": "left",
-                    "useForSearch": false
-                  },
-                  {
-                    "fieldName": "burden_rate_per_100k",
-                    "headerAlignment": "right",
-                    "useForSearch": false,
-                    "contentAlignment": "right",
-                    "format": {
-                      "abbreviation": "none",
-                      "decimalPlaces": {
-                        "places": 0,
-                        "type": "exact"
-                      },
-                      "type": "number-plain"
-                    },
-                    "displayName": "TB cases per 100k"
-                  },
-                  {
-                    "fieldName": "gap_profile",
-                    "headerAlignment": "left",
-                    "useForSearch": false
-                  },
-                  {
-                    "fieldName": "flags_count",
-                    "headerAlignment": "right",
-                    "useForSearch": false,
-                    "contentAlignment": "right",
-                    "format": {
-                      "abbreviation": "none",
-                      "decimalPlaces": {
-                        "places": 0,
-                        "type": "exact"
-                      },
-                      "type": "number-plain"
-                    },
-                    "displayName": "Flags"
-                  },
-                  {
-                    "fieldName": "indicators_available",
-                    "headerAlignment": "right",
-                    "useForSearch": false,
-                    "contentAlignment": "right",
-                    "format": {
-                      "abbreviation": "none",
-                      "decimalPlaces": {
-                        "places": 0,
-                        "type": "exact"
-                      },
-                      "type": "number-plain"
-                    },
-                    "displayName": "Indicators available"
-                  },
-                  {
-                    "fieldName": "missing_indicators",
-                    "headerAlignment": "left",
-                    "useForSearch": false
-                  }
-                ]
-              },
-              "data": {
-                "queryName": "main_query"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 25,
-            "width": 6,
-            "height": 12
-          }
-        },
-        {
-          "widget": {
-            "name": "rank_stability_table",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "rank_stability",
-                  "fields": [
-                    {
-                      "name": "area_name",
-                      "expression": "`area_name`"
-                    },
-                    {
-                      "name": "rank_equal",
-                      "expression": "`rank_equal`"
-                    },
-                    {
-                      "name": "rank_supply_heavy",
-                      "expression": "`rank_supply_heavy`"
-                    },
-                    {
-                      "name": "rank_equity_heavy",
-                      "expression": "`rank_equity_heavy`"
-                    }
-                  ],
-                  "disaggregated": true
-                }
-              }
-            ],
-            "spec": {
-              "frame": {
-                "showDescription": true,
-                "showTitle": true,
-                "title": "Does the ranking hold when the weights change? (top 15 under any weight set)",
-                "description": {
-                  "fields": [],
-                  "value": "TB burden priority rank of each planning unit under three weight sets. Shown if the unit makes the top 15 under at least one set. Complete units only; blank = not ranked under that set."
-                }
-              },
-              "version": 2,
-              "widgetType": "table",
-              "encodings": {
-                "columns": [
-                  {
-                    "fieldName": "area_name",
-                    "headerAlignment": "left",
-                    "useForSearch": true
-                  },
-                  {
-                    "fieldName": "rank_equal",
-                    "headerAlignment": "right",
-                    "useForSearch": false,
-                    "contentAlignment": "right",
-                    "format": {
-                      "abbreviation": "none",
-                      "decimalPlaces": {
-                        "places": 0,
-                        "type": "exact"
-                      },
-                      "type": "number-plain"
-                    },
-                    "displayName": "Rank (equal weights)"
-                  },
-                  {
-                    "fieldName": "rank_supply_heavy",
-                    "headerAlignment": "right",
-                    "useForSearch": false,
-                    "contentAlignment": "right",
-                    "format": {
-                      "abbreviation": "none",
-                      "decimalPlaces": {
-                        "places": 0,
-                        "type": "exact"
-                      },
-                      "type": "number-plain"
-                    },
-                    "displayName": "Rank (supply-heavy)"
-                  },
-                  {
-                    "fieldName": "rank_equity_heavy",
-                    "headerAlignment": "right",
-                    "useForSearch": false,
-                    "contentAlignment": "right",
-                    "format": {
-                      "abbreviation": "none",
-                      "decimalPlaces": {
-                        "places": 0,
-                        "type": "exact"
-                      },
-                      "type": "number-plain"
-                    },
-                    "displayName": "Rank (equity-heavy)"
-                  }
-                ]
-              },
-              "data": {
-                "queryName": "main_query"
-              }
-            }
-          },
-          "position": {
-            "x": 6,
-            "y": 25,
-            "width": 6,
-            "height": 12
-          }
-        },
-        {
-          "widget": {
-            "name": "evidence_gaps_table",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "evidence_gaps",
-                  "fields": [
-                    {
-                      "name": "indicator_group",
-                      "expression": "`indicator_group`"
-                    },
-                    {
-                      "name": "indicator",
-                      "expression": "`indicator`"
-                    },
-                    {
-                      "name": "units",
-                      "expression": "`units`"
-                    },
-                    {
-                      "name": "pct_missing",
-                      "expression": "`pct_missing`"
-                    },
-                    {
-                      "name": "reasons",
-                      "expression": "`reasons`"
-                    }
-                  ],
-                  "disaggregated": true
-                }
-              }
-            ],
-            "spec": {
-              "frame": {
-                "showDescription": true,
-                "showTitle": true,
-                "title": {
-                  "value": "Units without a value, per indicator, and why",
-                  "fields": []
-                },
-                "description": {
-                  "fields": [],
-                  "value": "Coverage of each indicator across planning units (burden collapsed to one row per source), and the recorded exclusion reasons for units without a value."
-                }
-              },
-              "version": 2,
-              "widgetType": "table",
-              "encodings": {
-                "columns": [
-                  {
-                    "fieldName": "indicator_group",
-                    "headerAlignment": "left",
-                    "useForSearch": false
-                  },
-                  {
-                    "fieldName": "indicator",
-                    "headerAlignment": "left",
-                    "useForSearch": true
-                  },
-                  {
-                    "fieldName": "units",
-                    "headerAlignment": "right",
-                    "useForSearch": false,
-                    "contentAlignment": "right",
-                    "format": {
-                      "abbreviation": "none",
-                      "decimalPlaces": {
-                        "places": 0,
-                        "type": "exact"
-                      },
-                      "type": "number-plain"
-                    },
-                    "displayName": "Units"
-                  },
-                  {
-                    "fieldName": "pct_missing",
-                    "headerAlignment": "right",
-                    "useForSearch": false,
-                    "contentAlignment": "right",
-                    "format": {
-                      "abbreviation": "none",
-                      "decimalPlaces": {
-                        "places": 1,
-                        "type": "exact"
-                      },
-                      "type": "number-plain"
-                    },
-                    "displayName": "Missing %"
-                  },
-                  {
-                    "fieldName": "reasons",
-                    "headerAlignment": "left",
-                    "useForSearch": false
-                  }
-                ]
-              },
-              "data": {
-                "queryName": "main_query"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 38,
-            "width": 12,
-            "height": 12
-          }
-        },
-        {
-          "widget": {
-            "name": "beds_bottom20_chart",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "supply_by_unit_long",
-                  "fields": [
-                    {
-                      "name": "areaName",
-                      "expression": "`area_name`"
-                    },
-                    {
-                      "name": "hospitalLevel",
-                      "expression": "`hospital_level`"
-                    },
-                    {
-                      "name": "rate",
-                      "expression": "SUM(`beds_per_10k_level`)"
-                    },
-                    {
-                      "name": "sortVal",
-                      "expression": "SUM(`beds_per_10k`)"
-                    }
-                  ],
-                  "filters": [
-                    {
-                      "expression": "`in_bottom20`"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "frame": {
-                "showDescription": true,
-                "showTitle": true,
-                "title": "Fewest beds per 10,000 (bottom 20)",
-                "description": {
-                  "fields": [],
-                  "value": "The 20 planning units with the lowest beds per 10,000 within the selected planning-unit level. NHFR registry as of 2026-09-29."
-                }
-              },
-              "jsonSpec": {
-                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"encoding\":{\"y\":{\"field\":\"areaName\",\"type\":\"nominal\",\"sort\":{\"field\":\"sortVal\",\"op\":\"max\",\"order\":\"ascending\"},\"axis\":{\"labelLimit\":200,\"title\":null,\"domain\":false,\"ticks\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":11}},\"x\":{\"field\":\"rate\",\"type\":\"quantitative\",\"stack\":\"zero\",\"axis\":{\"format\":\",.1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"tickCount\":5,\"title\":\"Beds per 10,000 residents\"},\"scale\":{\"type\":\"linear\",\"nice\":true}},\"color\":{\"field\":\"hospitalLevel\",\"type\":\"nominal\",\"scale\":{\"domain\":[\"Level 1\",\"Level 2\",\"Level 3\"],\"range\":[\"#C3CEDA\",\"#5A76A8\",\"#243E74\"]},\"legend\":{\"orient\":\"top\",\"title\":\"Hospital level\"}}},\"mark\":{\"type\":\"bar\",\"tooltip\":true},\"height\":\"container\",\"width\":\"container\"}",
-                "type": "vega-lite"
-              },
-              "version": 1,
-              "widgetType": "custom-vega-viz",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "areaName"
-                  },
-                  {
-                    "fieldName": "hospitalLevel"
-                  },
-                  {
-                    "fieldName": "rate"
-                  },
-                  {
-                    "fieldName": "sortVal"
-                  }
-                ]
-              },
-              "data": {
-                "queryName": "main_query"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 3,
-            "width": 6,
-            "height": 12
-          }
-        },
-        {
-          "widget": {
-            "name": "beds_top20_chart",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "supply_by_unit_long",
-                  "fields": [
-                    {
-                      "name": "areaName",
-                      "expression": "`area_name`"
-                    },
-                    {
-                      "name": "hospitalLevel",
-                      "expression": "`hospital_level`"
-                    },
-                    {
-                      "name": "rate",
-                      "expression": "SUM(`beds_per_10k_level`)"
-                    },
-                    {
-                      "name": "sortVal",
-                      "expression": "SUM(`beds_per_10k`)"
-                    }
-                  ],
-                  "filters": [
-                    {
-                      "expression": "`in_top20`"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "frame": {
-                "showDescription": true,
-                "showTitle": true,
-                "title": "Most beds per 10,000 (top 20)",
-                "description": {
-                  "fields": [],
-                  "value": "The 20 planning units with the highest beds per 10,000 within the selected planning-unit level. NHFR registry as of 2026-09-29."
-                }
-              },
-              "jsonSpec": {
-                "spec": "{\"$schema\":\"https://vega.github.io/schema/vega-lite/v6.json\",\"config\":{\"axis\":{\"labelLimit\":200},\"view\":{\"stroke\":\"transparent\"}},\"data\":{\"name\":\"databricks_query\"},\"encoding\":{\"y\":{\"field\":\"areaName\",\"type\":\"nominal\",\"sort\":{\"field\":\"sortVal\",\"op\":\"max\",\"order\":\"descending\"},\"axis\":{\"labelLimit\":200,\"title\":null,\"domain\":false,\"ticks\":false,\"labelColor\":\"#42525F\",\"labelFontSize\":11}},\"x\":{\"field\":\"rate\",\"type\":\"quantitative\",\"stack\":\"zero\",\"axis\":{\"format\":\",.1f\",\"grid\":true,\"gridColor\":\"#eaeaea\",\"tickCount\":5,\"title\":\"Beds per 10,000 residents\"},\"scale\":{\"type\":\"linear\",\"nice\":true}},\"color\":{\"field\":\"hospitalLevel\",\"type\":\"nominal\",\"scale\":{\"domain\":[\"Level 1\",\"Level 2\",\"Level 3\"],\"range\":[\"#C3CEDA\",\"#5A76A8\",\"#243E74\"]},\"legend\":{\"orient\":\"top\",\"title\":\"Hospital level\"}}},\"mark\":{\"type\":\"bar\",\"tooltip\":true},\"height\":\"container\",\"width\":\"container\"}",
-                "type": "vega-lite"
-              },
-              "version": 1,
-              "widgetType": "custom-vega-viz",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "areaName"
-                  },
-                  {
-                    "fieldName": "hospitalLevel"
-                  },
-                  {
-                    "fieldName": "rate"
-                  },
-                  {
-                    "fieldName": "sortVal"
-                  }
-                ]
-              },
-              "data": {
-                "queryName": "main_query"
-              }
-            }
-          },
-          "position": {
-            "x": 6,
-            "y": 3,
             "width": 6,
             "height": 12
           }
