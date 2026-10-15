@@ -42,7 +42,9 @@
 #   --bronze_handoff_path /Volumes/.../_runs/<run-id>/bronze_handoff.json
 #   --fail_on_error true --profile false
 # Optional: --job_run_id <job-run-id> --code_version <git-sha>
-# Optional: --dq_utils_path /Workspace/.../src/05_quality/dq_utils.py
+# Optional: --dq_utils_path /Workspace/.../src/05_quality/dq_utils.py (or its folder).
+#   Not needed normally: dq_utils.py is found automatically, and a wrong path
+#   falls back to that search instead of failing.
 # No hardcoded batch path. Job tasks use command-line arguments only; widgets are
 # read only when the file is opened interactively as a notebook (same names as
 # the arguments, created on first run). Requires dq_utils.py and the existing
@@ -111,7 +113,7 @@ def _add_dq_utils_to_path():
 DOMAIN = "admin_boundaries"
 SOURCE_KEY = "hdx_phl_admin"
 SCRIPT_NAME = "admin_boundaries_bronze_qc.py"
-LOADER_VERSION = "2026-10-15.2"
+LOADER_VERSION = "2026-10-15.3"
 BRONZE_TABLE = "public_health.bronze.admin_boundaries_bronze"
 CHECKS = {
     "HB00": ("QC ran without error", "EXECUTION", "FAIL"),
@@ -526,12 +528,18 @@ def main(argv=None):
                 "As a Job task, pass --bronze_handoff_path instead."
             )
     args = parse_args(argv)
-    if args.dq_utils_path:
-        helper = Path(args.dq_utils_path).resolve()
-        if helper.name != "dq_utils.py" or not helper.is_file():
-            raise FileNotFoundError("--dq_utils_path must point to an existing dq_utils.py file")
-        sys.path.insert(0, str(helper.parent))
+    # --dq_utils_path is optional. A file or its folder is accepted; a wrong or stale path
+    # (e.g. another person's /Workspace/Users/... folder, or an old widget value) falls back
+    # to the automatic search instead of stopping the run.
+    helper = Path(args.dq_utils_path).expanduser() if args.dq_utils_path else None
+    if helper is not None and helper.is_dir():
+        helper = helper / "dq_utils.py"
+    if helper is not None and helper.name == "dq_utils.py" and helper.is_file():
+        sys.path.insert(0, str(helper.resolve().parent))
     else:
+        if helper is not None:
+            print(f"note: --dq_utils_path {args.dq_utils_path} has no dq_utils.py; "
+                  "searching this repo's quality folder instead")
         _add_dq_utils_to_path()
     from dq_utils import DQRun
 
