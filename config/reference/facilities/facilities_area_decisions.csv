@@ -1,0 +1,15 @@
+source_group,match_type,match_value,parent_label_norm,year_from,decision,psgc_code,area_key,reviewed_by,reviewed_on,note
+hfsrb,area_label,GOV GEN,DAVAO ORIENTAL,,accept,1102506000,,Jemma,2026-10-09,address names Governor Generoso; geography_check ok
+hfsrb,area_label,MONTALBAN,RIZAL,,accept,0405808000,,Jemma,2026-10-09,address names Rodriguez (Montalban is its former name); geography_check ok
+hfsrb,area_label,SEMIRARA,ANTIQUE,,accept,0600605000,,Jemma,2026-10-09,Brgy. Semirara is in Caluya; geography_check ok
+hfsrb,area_label,QUIRINO,METRO MANILA,,accept,1381300000,,Jemma,2026-10-09,"address: Quirino 2-B, Quezon City; geography_check ok"
+hfsrb,area_label,LIBERTAD,SOUTH COTABATO,,accept,1206313000,,Jemma,2026-10-09,"address: Libertad, Surallah; geography_check ok"
+hfsrb,area_label,PIGCAWAYAN,NORTH COTABATO,,accept,1204711000,,Jemma,2026-10-09,spelling of Pigkawayan; geography_check ok
+hfsrb,area_label,SAN REMEGIO,CEBU,,accept,0702243000,,Jemma,2026-10-09,spelling of San Remigio; geography_check ok
+hfsrb,area_label,SENATOR NINO AQUINO,SULTAN KUDARAT,,accept,1206512000,,Jemma,2026-10-09,spelling of Sen. Ninoy Aquino; geography_check ok
+hfsrb,area_label,SILVINO LUBOS,NORTHERN SAMAR,,accept,0804822000,,Jemma,2026-10-09,spelling of Silvino Lobos; geography_check ok
+hfsrb,area_label,PANAMAO,SULU,,accept,1906607000,,Jemma,2026-10-09,PSGC name is Old Panamao; geography_check ok
+fhsis,area_label,SAN JUAN CITY,1300000000,2022,accept,1380300000,,Jemma,2026-10-09,"2022 row is Makati: 33 barangays, population matches Makati 2021 and 2023; geography_check ok"
+bor,area_label,BALIUAG,BULACAN,,accept,0301403000,,Jemma,2026-10-14,"spelling of Baliwag (City of Baliwag), 50 records; geography_check ok"
+bor,area_label,OZAMIS CITY,MISAMIS OCCIDENTAL,,set,1004210000,,Jemma,2026-10-14,"spelling of City of Ozamiz (one letter), 39 records; geography_check ok"
+hfsrb,area_label,SAN JOSE,ORIENTAL MINDORO,,reject,,,Jemma,2026-10-14,address names no province; San Jose exists in several provinces; left unplaced

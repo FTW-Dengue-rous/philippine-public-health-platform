@@ -1,0 +1,29 @@
+_source_key,match_role,area_label_norm,parent_label_norm,psgc_code,area_key,named_key_level,named_key_parent_psgc,child_region_codes,is_composite_area,component_psgc_codes,reason,note
+psmo_oncologists,region,NCR,,1300000000,,,,13,false,,region_label,
+psmo_oncologists,region,CAR,,1400000000,,,,14,false,,region_label,
+psmo_oncologists,region,REGION 1,,0100000000,,,,01,false,,region_label,
+psmo_oncologists,region,REGION 2,,0200000000,,,,02,false,,region_label,
+psmo_oncologists,region,REGION 3,,0300000000,,,,03,false,,region_label,
+psmo_oncologists,region,REGION 4 A,,0400000000,,,,04,false,,region_label,
+psmo_oncologists,region,MIMAROPA,,1700000000,,,,17,false,,region_label,
+psmo_oncologists,region,REGION 5,,0500000000,,,,05,false,,region_label,
+psmo_oncologists,region,REGION 6,,0600000000,,,,06;18,false,,region_label,
+psmo_oncologists,region,REGION 7,,0700000000,,,,07;18,false,,region_label,
+psmo_oncologists,region,REGION 8,,0800000000,,,,08,false,,region_label,
+psmo_oncologists,region,REGION 9,,0900000000,,,,09,false,,region_label,
+psmo_oncologists,region,REGION 10,,1000000000,,,,10;16,false,,region_label,PSMO lists Agusan del Sur under Region 10
+psmo_oncologists,region,REGION 11,,1100000000,,,,11,false,,region_label,
+psmo_oncologists,region,REGION 12,,1200000000,,,,12;19,false,,region_label,
+psmo_oncologists,region,REGION 13,,1600000000,,,,16,false,,region_label,Region 13 = Caraga
+psmo_oncologists,region,BANGSAMORO REGION,,1900000000,,,,19,false,,region_label,
+psmo_oncologists,area,METRO MANILA,NCR,,ncr:unassigned,region_area,1300000000,,false,,no_psgc_code,Listed beside the four NCR districts; may overlap them (D3). Never added to district counts
+psmo_oncologists,area,1ST DISTRICT CITY OF MANILA,NCR,1380600000,,,,,false,,name_variant,NCR 1st district is the City of Manila
+psmo_oncologists,area,2ND DISTRICT MANDALUYONG MARIKINA PASIG QUEZON CITY SAN JUAN,NCR,,ncr-district:2,ncr_district,1300000000,,true,1380500000;1380700000;1381200000;1381300000;1381400000,composite_area,
+psmo_oncologists,area,3RD DISTRICT CALOOCAN MALABON NAVOTAS VALENZUELA,NCR,,ncr-district:3,ncr_district,1300000000,,true,1380100000;1380400000;1380900000;1381600000,composite_area,
+psmo_oncologists,area,4TH DISTRICT LAS PINAS MAKATI MUNTINLUPA PARANAQUE PASAY PATEROS TAGUIG,NCR,,ncr-district:4,ncr_district,1300000000,,true,1380200000;1380300000;1380800000;1381000000;1381100000;1381701000;1381500000,composite_area,
+psmo_oncologists,area,CAGAYAN VALLEY,REGION 2,0200000000,,,,,false,,region_as_area,A region name used as an area of practice; stays at region level
+psmo_oncologists,area,NEGROS ORIENTAL DUMAGUETE CITY,REGION 7,,composite:negros-oriental+dumaguete,composite_area,1800000000,,true,1804600000;1804610000,composite_area,Count is never copied to or split between the components
+psmo_oncologists,area,ZAMBOANGA DEL SUR PAGADIAN CITY,REGION 9,,composite:zamboanga-del-sur+pagadian,composite_area,0900000000,,true,0907300000;0907322000,composite_area,Count is never copied to or split between the components
+psmo_oncologists,area,AGUSAN DEL SUR SAN FRANCISCO,REGION 10,,composite:agusan-del-sur+san-francisco,composite_area,1600000000,,true,1600300000;1600308000,composite_area,Count is never copied to or split between the components
+psmo_oncologists,area,MISAMIS OCCIDENTAL OZAMIZ,REGION 10,,composite:misamis-occidental+ozamiz,composite_area,1000000000,,true,1004200000;1004210000,composite_area,Count is never copied to or split between the components
+psmo_oncologists,area,COTABATO CITY KIDAPAWAN NORTH COTABATO,REGION 12,,composite:cotabato-city+kidapawan,composite_area,,,true,1908703000;1204704000,composite_area,"Components in two regions (BARMM, XII); no single parent"
