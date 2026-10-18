@@ -11,7 +11,7 @@ Last updated: 2026-10-18
 | Data engineer | Virna Pomendia | Bronze loaders, QC scripts |
 | Data engineer | Shiena Arico | Geography/PSGC reference data, geospatial |
 | Data engineer | Via Cabuyao | Sources, data acquisition |
-| Data engineer | Cristina Villota | Dashboard, documentation |
+| Data engineer | Cristina Villota | documentation |
 | Data engineer | Margarette Legaspi | Gold marts, socioeconomic domain |
 
 *(Source: `databricks.yml` permissions and team conversation. Email addresses are in the bundle config.)*
@@ -29,7 +29,7 @@ The person responsible for a domain's Bronze implementation also owns its Silver
 | PSGC ingestion | Shiena Arico | Ingestion pipeline only (distinct from geography) |
 | Socioeconomic | Virna Pomendia | Bronze, silver, documentation |
 | Workforce | Virna Pomendia | Bronze, silver, documentation |
-| Dashboard | Cristina Villota | Dashboard, documentation |
+| Bronze | Cristina Villota | Dashboard, documentation |
 | CI/CD and DevOps | Jemma Santiago | Pipeline, deployment, CI/CD |
 
 ## Timeline
