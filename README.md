@@ -77,7 +77,7 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 | Domain | Bronze | Silver | Gold | Dashboard |
 |---|:---:|:---:|:---:|:---:|
 | Geography (PSGC, admin boundaries) | Yes | Yes | Yes | — |
-| Facilities (NHFR, HFSRB, PSA, FHSIS) | Yes | Yes | Yes | ✅ Draft |
+| Facilities (NHFR, HFSRB, PSA, FHSIS) | Yes | Yes | Yes | Draft |
 | Diseases (dengue, TB, cancer) | Yes | Yes | Yes | — |
 | Workforce (FHSIS, PSA, PSMO) | Yes | Yes | Yes | — |
 | Socioeconomic (poverty, expenditure) | Yes | Yes | Yes | — |
