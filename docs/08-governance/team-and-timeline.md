@@ -1,7 +1,7 @@
 # Team and timeline
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 ## Team
 
@@ -40,7 +40,7 @@ The person responsible for a domain's Bronze implementation also owns its Silver
 | Bronze | Sep–Oct 2026 | Config-driven loaders for all domains, bronze QC |
 | Silver | Oct 2026 | SQL silver builds (v1.7), lineage contract v1.3 |
 | Gold | Oct 2026 | Analytical marts, `mart_area_service_profile` |
-| Dashboard | Oct 2026 | Lakeview dashboard (S1, S2 draft; S3 empty) |
+| Dashboard | Oct 2026 | Lakeview dashboard, v2 model, eight populated pages |
 | Documentation | Oct 2026 | Full documentation audit and rewrite |
 
 ## Handover readiness

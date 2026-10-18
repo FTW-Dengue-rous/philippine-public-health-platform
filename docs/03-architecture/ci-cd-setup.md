@@ -1,9 +1,9 @@
 # CI/CD setup
 
 Owner: Jemma Santiago
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
-CI/CD is implemented with GitHub Actions and Databricks Asset Bundles. The full reference is in [CI/CD and testing](../07-operations/ci-cd-and-testing.md).
+CI/CD is implemented with GitHub Actions and Databricks Asset Bundles. This file is the architecture-level summary. The full operations reference (local checks, testing, deployment steps, troubleshooting) is in [CI/CD and testing](../07-operations/ci-cd-and-testing.md).
 
 ## Summary
 

@@ -1,7 +1,7 @@
 # Gold table catalog
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 The gold layer (data model v2) lives in schema `public_health.test_gold2`. The pipeline job runs all v2 scripts in `src/04_gold/test_v2/`. When promoted to production, the schema name changes to `public_health.gold`.
 
@@ -90,8 +90,7 @@ See [data-marts.md](data-marts.md) for the question-to-mart mapping and [data-di
 
 | Table | Purpose | Status |
 |---|---|---|
-| `mart_capacity_gap` | BQ1 main mart: need, supply, access, workforce, equity per area | Designed, not built. Needs province+HUC+NCR analysis unit. |
-| `mart_surge_stress_test` | BQ2 main mart: replayed cases, bed demand, spare beds, shortfall | Needs input. Blocked on admission share and LOS parameters. |
-| `priority_weight_params` | P2 weighting sets | Gated. Team decision. |
+| `mart_capacity_gap` | BQ1 main mart: need, supply, access, workforce, equity per area | Not built (verified 2026-10-18). `mart_area_service_profile` v2 (109 rows) partially covers it: supply, workforce, poverty. Disease burden integration remaining. |
+| `mart_surge_stress_test` | BQ2 main mart (previous scope): replayed cases, bed demand, spare beds, shortfall | Previous scope. Not built; if re-scoped, blocked on admission share and LOS parameters. |
 
 See [business questions](../../01-context/problem-and-business-context.md#analytical-questions) for the full framework.

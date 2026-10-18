@@ -1,15 +1,15 @@
 # Lineage map
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
-Source-to-table lineage per domain. For the shared lineage contract (column-level rules, identifiers, build tracking), see [lineage-qc-contract_v1.3.md](../lineage-qc-contract_v1.3.md).
+Source-to-table lineage per domain. Each source feeds specific business questions (BQ1 and sub-questions; BQ2 is previous scope). For the shared lineage contract (column-level rules, identifiers, build tracking), see [lineage-qc-contract_v1.3.md](../lineage-qc-contract_v1.3.md). For the full question-to-source traceability, see [business context](../01-context/problem-and-business-context.md#business-question-traceability).
 
 ## Geography
 
 ```
 PSA PSGC API  →  src/01_ingestion/psgc_ingestion  →  landing/psgc/  →  geography_bronze.py  →  public_health.bronze.geography_bronze  →  geography_silver.py  →  public_health.silver.geography_silver (43,762 rows)
-                                                                                                                                        →  psgc_population_silver.py  →  public_health.silver.geography_population_silver
+                                                                                                                                        →  psgc_population_silver.py  →  public_health.silver.population_silver
 
 HDX GeoJSON   →  src/01_ingestion/admin_boundaries_ingestion  →  landing/admin_boundaries/  →  admin_boundaries_bronze.py  →  public_health.bronze.admin_boundaries_bronze  →  admin_boundaries_silver.py  →  public_health.silver.admin_boundaries_silver
 ```

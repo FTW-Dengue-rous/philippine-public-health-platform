@@ -1,7 +1,7 @@
 # Quality control framework
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Quality is enforced at three layers: bronze, silver, and gold. Each layer has QC scripts in `src/05_quality/`.
 
@@ -14,6 +14,8 @@ Quality is enforced at three layers: bronze, silver, and gold. Each layer has QC
 | INFO | Records information in `qc_results`. Pipeline continues. |
 
 A documented warning is not a blocking quality gate. Only ERROR stops downstream execution.
+
+**Stored values:** The `qc_results` table stores `status` as PASS, WARN, or FAIL, and `severity` as WARN or FAIL. A check configured with ERROR severity in the YAML is stored as `severity = 'FAIL'` in `qc_results`. Both refer to the same blocking check: ERROR is the configuration name, FAIL is the stored value. Query `qc_results` with `severity = 'FAIL'` to find blocking failures, not `severity = 'ERROR'`.
 
 ## Quality tables
 

@@ -1,9 +1,9 @@
 # Data sources
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
-Each source is configured in a YAML file under `config/`. The bronze loader reads the config, loads the file(s) with all columns as STRING, and adds lineage columns. See [bronze pipeline](../04-pipeline/bronze/README.md) for loader details.
+Each source is configured in a YAML file under `config/`. The bronze loader reads the config, loads the file(s) with all columns as STRING, and adds lineage columns. See [bronze pipeline](../04-pipeline/bronze/README.md) for loader details. Each source feeds specific business questions in the BQ1 framework (BQ2 is previous scope); see [business context](../01-context/problem-and-business-context.md) for the traceability table.
 
 Landing root: `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing`
 

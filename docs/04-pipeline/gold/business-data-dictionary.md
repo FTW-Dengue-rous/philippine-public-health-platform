@@ -1,7 +1,7 @@
 # Business data dictionary
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Plain-language definitions of every column in the dashboard mart, for non-technical readers. For technical column types and silver table definitions, see the [data dictionary](data-dictionary.md). For metric formulas, see [metric definitions](metric-definitions.md).
 

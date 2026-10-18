@@ -1,7 +1,7 @@
 # Population Silver Layer Documentation
 
 Owner: Margarette Legaspi
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 ## Overview
 
@@ -11,7 +11,7 @@ The population silver layer normalizes population data from `geography_bronze.po
 
 | Property | Value |
 |---|---|
-| Table | `public_health.silver.geography_population_silver` |
+| Table | `public_health.silver.population_silver` |
 | Script | `psgc_population_silver.py` |
 | Grain | `psgc_code x population_year` |
 | Key | `(psgc_code, population_year)` |

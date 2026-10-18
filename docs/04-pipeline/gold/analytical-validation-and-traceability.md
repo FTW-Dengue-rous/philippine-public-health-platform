@@ -1,7 +1,7 @@
 # Analytical validation and traceability
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Each business question traces from the dashboard query back through gold marts, silver tables, bronze tables, and source files. This page documents the full chain.
 
@@ -28,7 +28,7 @@ Each step is recorded:
 
 | Question | Gold table | Silver sources | Bronze sources | Source files |
 |---|---|---|---|---|
-| S1 | `mart_area_service_profile` (S1_hospital_supply) | `facilities_registry_silver`, `geography_population_silver` | `facilities_doh_nhfr_hospitals_bronze`, `facilities_doh_hfsrb_hospitals_bronze`, `geography_bronze` | NHFR CSV, HFSRB XLSX, PSGC API |
+| S1 | `mart_area_service_profile` (S1_hospital_supply) | `facilities_registry_silver`, `population_silver` | `facilities_doh_nhfr_hospitals_bronze`, `facilities_doh_hfsrb_hospitals_bronze`, `geography_bronze` | NHFR CSV, HFSRB XLSX, PSGC API |
 | S2 | `mart_area_service_profile` (S2_hospital_occupancy) | `facilities_bed_occupancy_silver` | `facilities_doh_foi_bed_occupancy_bronze` | FOI bed occupancy XLSX |
 | S3 | `mart_area_service_profile` (S3_primary_care_supply) | `facilities_metric_silver` | `facilities_doh_fhsis_demographic_bronze` | FHSIS XLSX |
 
@@ -46,10 +46,10 @@ Each step is recorded:
 
 | Question | Blocker |
 |---|---|
-| D1-D5 | Needs dengue admission share and length-of-stay parameters from clinical literature or DOH. |
+| D1-D5 | Previous scope. If re-scoped, needs dengue admission share and length-of-stay parameters from clinical literature or DOH. |
 | P1-P2 | Gated: needs N, S, A, W, E validated on the same analysis unit (province + HUC + NCR) first. |
 | BQ1 (mart_capacity_gap) | Needs the province/HUC/NCR analysis unit rule implemented in `mart_base_planning_unit`. |
-| BQ2 (mart_surge_stress_test) | Needs D2 parameters (admission share, LOS). |
+| BQ2 (mart_surge_stress_test) | Previous scope. If re-scoped, needs D2 parameters (admission share, LOS). |
 
 ## How to trace a row
 
@@ -89,13 +89,13 @@ LIMIT 10;
 | Bronze | Row count, null keys, header check, numeric columns, control totals | `src/05_quality/bronze/*` scripts, `dq_utils.DQRun` | Verified on Databricks runs (2026-10-09 to 2026-10-13) |
 | Silver | Null keys, duplicate keys, lineage completeness, row count reconciliation, geographic match | `src/05_quality/silver/*` scripts | Verified for facilities and geography domains. Other domains: silver builds run, QC scripts exist. |
 | Cross-domain | Geography joins across domains, source coverage | `src/05_quality/silver/silver_cross_domain_qc.py` | Script exists, runs as last silver task before gold. |
-| Gold | Mart row counts, key columns, metric ranges | `src/05_quality/gold/gold_qc.py` | Script exists. `mart_area_service_profile` validated (~2,784 rows). Other marts: not verified. |
+| Gold | Mart row counts, key columns, metric ranges | `src/05_quality/gold/gold_qc.py` | Script exists. `mart_area_service_profile` v1 validated (2,701 rows). Other marts: not verified. |
 
 ## Unverified claims
 
 The following are documented but not independently verified:
-* `facilities_osm_point_silver` -- table existence not confirmed on Databricks (see [known issues](../../08-governance/known-issues-and-backlog.md)).
-* Gold v2 fact tables (`fact_disease_metric`, `fact_workforce_capacity`, `fact_area_indicator`) -- scripts exist and run in the job, but row counts and content have not been independently verified by the documentation team.
-* Silver QC for diseases, workforce, and socioeconomic domains -- scripts exist and run, but results have not been reviewed in detail.
-* Dashboard S3 page -- page exists but has no widgets.
+* Dashboard -- all eight pages (v2 model) are populated with widgets; datasets query `test_gold2` views (verified 2026-10-18). Widget-level values have not been independently spot-checked.
+* `facilities_osm_point_silver` -- resolved: built 2026-10-15, 16,030 rows (verified 2026-10-18). See [known issues](../../08-governance/known-issues-and-backlog.md).
+* Gold v2 fact tables (`fact_disease_metric`, `fact_workforce_capacity`, `fact_area_indicator`) -- row counts verified 2026-10-18 (see [findings report](findings-report.md)); content verification is pending.
+* Silver QC for diseases, workforce, and socioeconomic domains -- scripts exist and run; socioeconomic results verified in `quality.qc_results` (all four tables PASS; poverty 6 WARN, child mortality 3 WARN). Diseases and workforce results have not been reviewed in detail.
 * Handover -- a formal handover walkthrough has not been conducted (see [team and timeline](../../08-governance/team-and-timeline.md#handover-readiness)).

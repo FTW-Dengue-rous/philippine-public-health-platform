@@ -1,7 +1,7 @@
 # Metric definitions
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Authoritative formulas for all metrics in the gold marts and dashboard. Other documents link here.
 
@@ -28,7 +28,7 @@ Authoritative formulas for all metrics in the gold marts and dashboard. Other do
 
 * **Formula**: `authorized_beds / population × 10000`.
 * **Numerator**: `authorized_beds` (sum of ABC in the area).
-* **Denominator**: Population from `geography_population_silver` (2024 preferred).
+* **Denominator**: Population from `population_silver` (2024 preferred).
 * **Scaling**: Per 10,000 population.
 * **Interpretation**: Higher means more bed capacity relative to population. WHO benchmark: typically 10–30 beds per 10,000 population.
 * **Limitation**: Population year may not match facility snapshot year. Use the closest available.

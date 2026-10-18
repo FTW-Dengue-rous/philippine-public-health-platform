@@ -1,7 +1,7 @@
 # Bronze quality checks
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Bronze QC runs inside `run_bronze.py` after each source loads. It is implemented in `src/05_quality/bronze/` using `dq_utils.DQRun`. A QC failure with ERROR severity raises an exception that fails the task and stops downstream execution.
 
@@ -29,11 +29,11 @@ Checks are configured per source in the YAML `qc:` section. Not all checks apply
 
 ## Results storage
 
-QC results are stored in `public_health.quality.qc_results` with columns: `validation_id`, `source_key`, `check_name`, `expected_value`, `actual_value`, `severity`, `result`, `recorded_at`.
+QC results are stored in `public_health.quality.qc_results`. Key columns: `validation_id`, `source_key`, `table_name`, `layer`, `check_id`, `check_name`, `check_type`, `status` (PASS/WARN/FAIL), `severity` (WARN/FAIL), `fail_count`, `total_count`, `fail_pct`, `threshold`, `observed`, `expected`, `executed_at`, `detail`.
 
 ## Verified results
 
-Bronze QC ran successfully for all domains during the 2026-10 builds. No ERROR failures were recorded for the latest runs. See [quality results](../quality/quality-results.md) for verified outcomes.
+Bronze QC ran for all domains during the 2026-10 builds. Most checks show status PASS. A small number of early runs recorded FAIL for the "QC ran without error" check (the QC script itself errored); these were corrected. See [quality results](../quality/quality-results.md) for verified outcomes.
 
 Notable control total verifications:
 

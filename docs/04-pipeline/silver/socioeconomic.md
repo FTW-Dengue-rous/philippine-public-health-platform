@@ -1,7 +1,7 @@
 ﻿# Socioeconomic Silver — Implementation and Evidence
 
 Owner: Virna Pomendia
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 ## 1. Scope
 
@@ -14,7 +14,7 @@ Transform the validated Socioeconomic Bronze datasets into four separate Silver 
 | `socioeconomic_health_expenditure_per_capita_silver` | Year | 8 |
 | `socioeconomic_child_mortality_silver` | Characteristic group × characteristic × survey year | 60 |
 
-Expected row counts are reference values, not execution results from this branch.
+Expected row counts were reference values during drafting; the 2026-10-15 pipeline build produced exactly these counts for all four tables (verified in `quality.build_log` on 2026-10-18).
 
 PSGC Silver belongs to the Geography domain.
 
@@ -68,29 +68,38 @@ PSGC Silver belongs to the Geography domain.
 ## 5. Current Status
 
 - [x] Bronze ingestion previously completed
-- [x] Bronze QC previously completed
+- [x] Bronze QC previously completed (all socioeconomic bronze tables PASS in `quality.qc_results`)
 - [x] Created Silver working branch
 - [x] Reviewed Poverty Silver SQL reference
 - [x] Confirmed current Bronze configuration and QC conventions
 - [x] Created Socioeconomic Silver documentation
-- [ ] Resolve reviewed Poverty area mapping
-- [ ] Implement guarded Poverty Silver publishing
-- [ ] Integrate Silver QC and lineage accounting
-- [ ] Execute and validate in Databricks
-- [ ] Implement remaining three Silver transformations
-- [ ] Prepare PR targeting `dev`
+- [x] Resolve reviewed Poverty area mapping (poverty silver published, 322 rows)
+- [x] Implement guarded Poverty Silver publishing
+- [x] Integrate Silver QC and lineage accounting (all four silver tables have results in `quality.qc_results`; builds recorded in `quality.build_log`)
+- [x] Execute and validate in Databricks (2026-10-15 pipeline build)
+- [x] Implement remaining three Silver transformations (128 / 8 / 60 rows)
+- [ ] Prepare PR targeting `dev` (not verifiable from build records; builds logged without a code version)
 
 ## 6. Test Evidence
 
-No Silver execution has been performed on this branch yet.
+All four Socioeconomic Silver tables are published and verified (2026-10-15 build; verified 2026-10-18 from `quality.build_log` and `quality.qc_results`):
 
-The provided Poverty SQL reference reports a previous local Spark test of 322 rows and zero failed validation gates. This result must be independently reproduced before claiming the implementation passes.
+| Silver table | Rows | Build status | QC results |
+|---|---|---|---|
+| `socioeconomic_poverty_silver` | 322 | succeeded | 75 PASS, 6 WARN |
+| `socioeconomic_health_expenditure_share_silver` | 128 | succeeded | 63 PASS |
+| `socioeconomic_health_expenditure_per_capita_silver` | 8 | succeeded | 54 PASS |
+| `socioeconomic_child_mortality_silver` | 60 | succeeded | 55 PASS, 3 WARN |
+
+The dated entries below (2026-10-08 and earlier) are historical working-log evidence from before publication. Their "publication NOT performed" and "blocked" statements were true at that time and are superseded by the table above.
 
 ## 7. Open Dependencies
 
-1. Reviewed Poverty area mapping and alignment with Geography.
-2. Confirmation of the shared build-input and row-disposition contract, including target table schemas.
-3. Databricks execution and Silver QC results.
+1. Resolved: poverty silver published (322 rows, 2026-10-15).
+2. Resolved: builds recorded in `quality.build_log`; QC results in `quality.qc_results`.
+3. Resolved: Databricks execution and Silver QC completed 2026-10-15.
+
+Still open: PR status against `dev` is not recorded in the build data.
 
 ## 8. Change Log
 

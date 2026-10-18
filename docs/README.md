@@ -1,9 +1,21 @@
 # Documentation index
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 This directory contains the full documentation for the Philippine Public Health Platform. Start here to find what you need.
+
+## The guiding question
+
+The platform addresses one main question:
+
+> **BQ1**: Which areas show the largest gaps in health-service availability relative to population and selected indicators of disease burden, and how do these gaps differ by socioeconomic conditions?
+
+A previous-scope question framed the dengue surge stress test (outside the active scope):
+
+> **BQ2**: If a selected historical dengue outbreak recurred against the latest available hospital capacity, which regions or provinces would face the greatest estimated bed shortfalls under different assumptions?
+
+BQ1 breaks down into 20+ analytical questions across five pillars: Need, Supply, Access, Workforce, and Equity, plus a Priority synthesis, supporting analyses, and conditional explorations. See [business context](01-context/problem-and-business-context.md) for the full question framework, traceability table, and implementation status.
 
 ## Suggested reading paths
 
@@ -64,7 +76,7 @@ This directory contains the full documentation for the Philippine Public Health 
 | [architecture-overview.md](03-architecture/architecture-overview.md) | System architecture, tech stack, data flow diagram |
 | [project-conventions.md](03-architecture/project-conventions.md) | Naming, coding, and structural conventions |
 | [decisions.md](03-architecture/decisions.md) | Architecture decision records |
-| [ci-cd-setup.md](03-architecture/ci-cd-setup.md) | CI/CD pipeline summary (links to operations) |
+| [ci-cd-setup.md](03-architecture/ci-cd-setup.md) | CI/CD pipeline summary (links to operations detail) |
 
 ### 04-pipeline/
 

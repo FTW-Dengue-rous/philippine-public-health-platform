@@ -1,7 +1,7 @@
 # Glossary
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Terms used across the platform. Domain-specific field definitions are in the [data dictionary](../04-pipeline/gold/data-dictionary.md). Metric formulas are in [metric definitions](../04-pipeline/gold/metric-definitions.md).
 

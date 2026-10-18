@@ -1,18 +1,19 @@
 # Conceptual model
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 The gold layer organizes data into a star-schema style model with dimensions and facts, then builds marts on top for specific business questions.
 
 ## Plain-language overview
 
-The model answers two main questions:
+The model answers one main question:
 
-1. **BQ1**: Where are the gaps in health-service availability relative to disease burden and socioeconomic conditions?
-2. **BQ2**: If a historical dengue outbreak recurred, which areas would face bed shortfalls?
+1. **BQ1**: Which areas show the largest gaps in health-service availability relative to population and selected indicators of disease burden, and how do these gaps differ by socioeconomic conditions?
 
-To answer these, the platform brings together five types of data:
+A previous-scope question (BQ2: if a historical dengue outbreak recurred, which areas would face bed shortfalls?) is outside the active scope.
+
+To answer it, the platform brings together five types of data:
 
 * **Who needs care** (Need) -- disease cases, deaths, and prevalence by area and time.
 * **What supply exists** (Supply) -- hospitals, beds, primary care facilities, and their occupancy.
@@ -63,7 +64,7 @@ All facts also join to `dim_data_source` on `source_key` for lineage.
 
 ## How marts combine facts
 
-The main BQ1 mart (`mart_capacity_gap`, designed but not built) would join:
+The main BQ1 mart (`mart_capacity_gap`, not built) would join:
 
 ```
 mart_capacity_gap
@@ -75,16 +76,19 @@ mart_capacity_gap
   rolled up to the same analysis unit (province / HUC / NCR)
 ```
 
-The currently built `mart_area_service_profile` combines only supply facts:
+The currently built v2 `mart_area_service_profile` (109 rows, 62 columns) combines supply, workforce, and equity in a single wide table per planning unit:
 
 ```
-mart_area_service_profile
-  = fact_facility_capacity  (hospitals, beds)
+mart_area_service_profile (v2)
+  = fact_facility_capacity  (hospitals, beds, levels)
   + facilities_metric_silver (BHS, RHU, health centres)
-  + facilities_bed_occupancy_silver (BOR)
-  + geography_population_silver (population denominator)
-  rolled up to province or city/municipality, split by ownership and level
+  + fact_workforce_capacity (doctors, nurses, midwives, BHW)
+  + fact_area_indicator     (poverty incidence, band)
+  + population_silver        (population denominator)
+  rolled up to planning unit (province / HUC / NCR)
 ```
+
+Disease burden (N1-N4) is in `mart_area_burden_indicator` (2,071 rows) but is not yet joined to this mart. The legacy v1 `mart_area_service_profile` in `public_health.gold` (2,701 rows) uses a different grain: `supply_section x area_level x area x year x ownership x facility_level`.
 
 ## Design choices
 

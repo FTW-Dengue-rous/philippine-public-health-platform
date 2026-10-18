@@ -1,76 +1,85 @@
 # Dashboard guide
 
 Owner: Cristina Villota
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 The dashboard is a Databricks Lakeview dashboard: **Philippine Public Health Platform**.
+
+The current dashboard (v2 model, updated 2026-10-16) reads gold v2 tables and views in `public_health.test_gold2`. It is organised by theme rather than by question: eight pages, all populated. It covers the supply-side questions (S1, S2; S3 partially through registry-based presence) plus highlights of need, workforce, equity, access, priority, and case studies (N1-N4, W1, E1, E2 partial, A1, P1, P2, D1). Questions without visuals are query-only (see below). See [business context](../01-context/problem-and-business-context.md) for the full question framework.
 
 Dashboard file: `dashboard/Philippine Public Health Platform.lvdash.json`
 
 ## Pages
 
-### Page 1: Title
+All eight pages are populated. There is no separate S3 page: the old empty S3 draft page was replaced by this theme-based design.
 
-Title page with platform name and description.
+### Overview
 
-### S1 — Hospital Availability by Level & Ownership
+National KPIs (population, registered deaths, beds per 10,000, municipalities with no hospital, government doctors and nurses per 10,000, poverty incidence), top priority provinces, and a beds map. Covers highlights of S1, W1, E1, P1.
 
-* **Question**: How does hospital availability (counts and authorized beds relative to population) vary by hospital level and ownership across planning areas?
-* **Source**: `public_health.gold.mart_area_service_profile` where `supply_section = 'S1_hospital_supply'`.
-* **Visuals**: Hospital counts, authorized beds, beds per 10,000 population by area, ownership, and facility level.
-* **Filters**: Area level (City/Mun or Province), ownership (Government/Private), facility level.
-* **Metrics**: See [metric definitions](../04-pipeline/gold/metric-definitions.md) — S1 section.
-* **Data freshness**: Current snapshot (no year dimension; reflects the latest registry build).
-* **Limitations**: Population may be null for some NCR areas. Beds per 10,000 pop is null when population is null.
+### Need
 
-### S2 — Hospital Bed Occupancy
+Leading causes of registered deaths (2023 vs 2024), modelled disease burden by province, dengue cases and deaths by month. Covers N1, N2 (modelled), N3.
 
-* **Question**: How does bed occupancy differ across areas and between government and private hospitals?
-* **Source**: `public_health.gold.mart_area_service_profile` where `supply_section = 'S2_hospital_occupancy'`.
-* **Visuals**: Average BOR, percentage of hospitals with BOR over 100%, weighted BOR by ownership.
-* **Filters**: Province, ownership (Government/Private).
-* **Year**: 2025 (latest).
-* **Filter**: `baseline_eligible = true` (facilities with comparable reports).
-* **Metrics**: See [metric definitions](../04-pipeline/gold/metric-definitions.md) — S2 section.
-* **Limitations**: 96 rows have null `psgc_code` (NCR districts, historical Maguindanao). BOR > 150 excluded as data error.
+### Gaps and equity
 
-### S3 — BHS, RHU & Health Centre Availability
+Beds per 10,000 by hospital level and ownership per planning unit, health workers per 10,000 by poverty band, poverty vs beds, tuberculosis priority areas, ranking stability, and evidence gaps. Covers S1, E1, E2 (partial), P1, P2, SUP6 (partial).
 
-* **Question**: How does reported BHS, RHU, and health-centre availability relative to population vary across provinces and cities?
-* **Source**: `public_health.gold.mart_area_service_profile` where `supply_section = 'S3_primary_care_supply'`.
-* **Status**: Draft. Page exists but has no widgets yet.
-* **Metrics**: See [metric definitions](../04-pipeline/gold/metric-definitions.md) — S3 section.
-* **Coverage**: 2018–2025, province and city levels.
-* **Source**: FHSIS (`facilities_metric_silver` where `_source_key = 'doh_fhsis_demographic'`).
+### Access
+
+Localities with no recorded hospital and residents affected, localities with no licensed primary care, service presence, distance to nearest recorded hospital, and PhilHealth claims per 100,000. Covers A1, S3 (registry-based presence only).
+
+### PhilHealth Claims
+
+Claims paid by province, with a claims package filter.
+
+### Case studies
+
+Tuberculosis analysis by wealth fifth (workforce, TPT, treatment success), top 20 municipalities by notifications, and kidney care (dialysis claims vs stations). Covers N4, CASE.
+
+### Preparedness
+
+Dengue by region and month, dengue peak vs recorded beds, and hospital occupancy by province. Covers N3, S2, D1.
+
+### About data
+
+Data sources, pipeline status per table, and evidence readiness. Covers SUP6.
 
 ## Dashboard datasets
 
-The dashboard has 19 datasets querying `mart_area_service_profile` and silver tables directly. Key datasets:
+The dashboard has 41 datasets querying `test_gold2` views and marts (not v1 `gold` tables). Key sources:
 
-| Dataset | Section | Query target |
-|---|---|---|
-| `hospital_detail` | S1 | `facilities_registry_silver` + geography |
-| `s1_top20_provinces` | S1 | Registry aggregated to province |
-| `s1_beds_per_capita` | S1 | Registry + population |
-| `s2_bor_detail` | S2 | `facilities_bed_occupancy_silver` (2025, baseline eligible) |
-| `s2_province_summary` | S2 | BOR aggregated to province |
-| `s2_top20_prov_bor` | S2 | Top 20 provinces by BOR |
-| `s3_explore` | S3 | `facilities_metric_silver` (FHSIS) |
-| `s3_totals` | S3 | National totals, latest year |
+* `v_facility_capacity_totals`, `fact_facility_capacity`, `mart_area_service_profile` -- supply (S1, S2)
+* `v_disease_metric_totals`, `fact_disease_metric` -- need (N1, N2, N3, N4)
+* `v_workforce_preferred`, `fact_workforce_capacity` -- workforce (W1)
+* `v_area_indicator_latest`, `fact_area_indicator` -- socioeconomic indicators (E1, E2)
+* `mart_locality_service_presence`, `fact_area_access` -- access (A1, A2, S3 presence)
+* `mart_area_priority`, `mart_tb_case_study`, `mart_kidney_case_study`, `mart_dengue_peak_capacity`, `mart_evidence_readiness` -- priority, case studies, preparedness, readiness
+* `dim_geography`, `dim_date`, `dim_data_source` -- reference joins
+
+## Query-only data
+
+Not shown on any dashboard page; query the gold v2 tables instead:
+
+* FHSIS BHS/RHU/health-centre counts (S3) -- `facilities_metric_silver` and v2 gold
+* Workforce employer split, LGU vs DOH (W2) -- `fact_workforce_capacity`
+* Level 3 hospital presence by area (A2) -- `fact_area_access`
+* Income-class analysis (E2) -- `fact_area_indicator` and `dim_geography`
+* Supporting analyses SUP1-SUP5 -- gold v2 fact tables
 
 ## How to use
 
 1. Open the dashboard in the Databricks UI.
-2. Select a page (S1, S2, or S3).
+2. Select one of the eight pages.
 3. Use filters to narrow by area, ownership, or level.
 4. Hover over visuals for details.
 5. For definitions, see [metric definitions](../04-pipeline/gold/metric-definitions.md).
 
 ## Data freshness
 
-The dashboard reflects the latest gold mart build. To confirm it is current:
+The dashboard reflects the latest gold v2 build in `test_gold2`. To confirm it is current:
 1. Check the latest pipeline job run succeeded.
-2. Run: `SELECT max(finished_at) FROM public_health.quality.build_log WHERE target_table LIKE '%gold%'`
+2. Run: `SELECT max(finished_at) FROM public_health.quality.build_log WHERE target_table LIKE '%test_gold2%'`
 3. Verify the dashboard page shows data.
 
 ## Interpretation cautions
@@ -78,4 +87,4 @@ The dashboard reflects the latest gold mart build. To confirm it is current:
 * **Zero vs missing**: A zero count means the source reported zero. An empty cell means no data was reported. See [assumptions](../01-context/assumptions-and-limitations.md).
 * **Recorded is not absence**: A facility not listed does not prove it does not exist.
 * **Population year**: Population is from 2024 (or closest available). Facility data may be from a different snapshot date.
-* **Restricted data**: S2 bed occupancy uses FOI-restricted data. Do not export or share S2 data outside the project.
+* **Restricted data**: The Preparedness page's bed-occupancy charts use FOI-restricted data. Do not export or share them outside the project.

@@ -1,7 +1,7 @@
 # Reproducibility
 
 Owner: Jemma Santiago
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 ## What it means
 
@@ -56,13 +56,23 @@ VERSION AS OF TIMESTAMP '<ingested_at>';
 | Table | Rows | Build date |
 |---|---|---|
 | `geography_silver` | 43,762 | 2026-10-09 |
-| `facilities_id_map_silver` | 5,254 | 2026-10-10 |
-| `facilities_registry_silver` | 3,954 | 2026-10-10 |
-| `facilities_metric_silver` | 2,988 | 2026-10-12 |
-| `facilities_bed_occupancy_silver` | 1,977 | 2026-10-12 |
-| `mart_area_service_profile` | ~2,784 | 2026-10-13 |
+| `population_silver` | 127,945 | 2026-10-09 |
+| `facilities_id_map_silver` | 5,257 | 2026-10-15 |
+| `facilities_registry_silver` | 3,957 | 2026-10-15 |
+| `facilities_metric_silver` | 2,988 | 2026-10-15 |
+| `facilities_bed_occupancy_silver` | 9,145 | 2026-10-15 |
+| `facilities_osm_point_silver` | 16,030 | 2026-10-15 |
+| `diseases_metric_silver` | 131,887 | 2026-10-15 |
+| `socioeconomic_poverty_silver` | 322 | 2026-10-15 |
+| `workforce_headcount_silver` | 28,071 | 2026-10-15 |
+| `test_gold2.mart_area_service_profile` | 109 | 2026-10-15 |
+| `test_gold2.fact_disease_metric` | 593,171 | 2026-10-15 |
+| `test_gold2.fact_facility_capacity` | 30,365 | 2026-10-15 |
+| `test_gold2.fact_workforce_capacity` | 28,071 | 2026-10-15 |
+| `test_gold2.fact_area_indicator` | 8,928 | 2026-10-15 |
+| `gold.mart_area_service_profile` (v1) | 2,701 | 2026-10-13 |
 
-These counts are from the latest verified Databricks runs. They should match on rebuild with the same inputs. If they differ, check for changed source files or YAML config.
+These counts are from the latest successful Databricks builds, verified by COUNT(*) queries on 2026-10-18. They should match on rebuild with the same inputs. If they differ, check for changed source files or YAML config.
 
 ## Without restricted data
 

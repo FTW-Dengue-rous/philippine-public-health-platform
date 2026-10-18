@@ -1,7 +1,7 @@
 # Facilities silver
 
 Owner: Cristina Villota, Via Cabuyao
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 The facilities domain has five silver tables built from 15 bronze sources. All builds are v1.7 SQL scripts.
 
@@ -11,7 +11,7 @@ The facilities domain has five silver tables built from 15 bronze sources. All b
 
 * **Grain**: One source facility identifier.
 * **Key**: `(_source_key, source_record_id)`.
-* **Rows**: 5,254 (build 2026-10-10).
+* **Rows**: 5,257 (build 2026-10-15).
 * **Script**: `facilities_silver_01_registry.sql`.
 * **`source_record_id`**: `nhfr:<nhfr_id>` for NHFR, `name:<category>|<norm_name>|<psgc>` for HFSRB.
 * **Purpose**: Maps source identifiers to stable `facility_key` values. One facility can have multiple source records (one per source).
@@ -20,7 +20,7 @@ The facilities domain has five silver tables built from 15 bronze sources. All b
 
 * **Grain**: One facility establishment.
 * **Key**: `facility_key` (unique, enforced by validation gate).
-* **Rows**: 3,954 (build 2026-10-10).
+* **Rows**: 3,957 (build 2026-10-15).
 * **Script**: `facilities_silver_01_registry.sql`.
 * **Sources**: NHFR hospitals (spine) + 4 HFSRB licensed lists (hospitals, infirmaries, primary care, dialysis clinics).
 * **Matching**: NHFR code (numeric, with place/name agreement) then normalized name + municipality.
@@ -41,11 +41,13 @@ The facilities domain has five silver tables built from 15 bronze sources. All b
 
 * **Grain**: Hospital × year.
 * **Key**: `(facility_key, reporting_year)`.
-* **Rows**: 1,977 (build 2026-10-12).
+* **Rows**: 9,145 (build 2026-10-15). Includes all years 2018-2025.
 * **Script**: `facilities_silver_03_bed_occupancy.sql`.
 * **Source**: DOH FOI bed occupancy (restricted).
-* **Exclusions**: 815 private-only-year, 107 BOR > 150, 34 level missing, 17 BOR null, 1 exact duplicate.
-* **Filter**: `baseline_eligible = true` for comparable reports.
+* **Key column**: `year` (int), not `reporting_year`.
+* **By year**: 2018: 1,098 (928 eligible), 2019: 1,093 (911), 2020: 1,101 (1,025), 2021: 1,127 (1,054), 2022: 1,128 (1,023), 2023: 1,179 (1,063), 2024: 1,210 (1,079), 2025: 1,209 (1,067).
+* **Filter**: `baseline_eligible = true` for comparable reports. Total eligible: 8,150 of 9,145.
+* **Exclusions**: BOR > 150 (implausible), private-only-year, level missing, BOR null, exact duplicates.
 * **2025**: 418 government (299 eligible, weighted BOR 97.9) + 744 private (704 eligible, weighted BOR 55.4).
 * **Warnings**: 110 BOR > 150 (excluded), 281 BOR > 100 (over capacity), 1 city unresolved.
 
@@ -53,7 +55,7 @@ The facilities domain has five silver tables built from 15 bronze sources. All b
 
 * **Grain**: OSM healthsite point.
 * **Key**: `osm_id`.
-* **Status**: UNVERIFIED. Table not found on Databricks (2026-10-14). Documented per user instruction.
+* **Rows**: 16,030 (build 2026-10-15).
 * **Script**: `facilities_silver_04_osm_point.sql` + `facilities_silver_04a_osm_locate.py`.
 * **Source**: HDX healthsites (OSM extract).
 * **Limitation**: OSM is community-maintained. Absence from OSM does not mean a facility does not exist.

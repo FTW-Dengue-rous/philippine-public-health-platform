@@ -1,7 +1,7 @@
 # Socioeconomic Bronze Layer Documentation
 
 Owner: Virna Pomendia
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 **Project:** Philippine Public Health Platform
 **Code reference:** `origin/dev` @ `976b766`

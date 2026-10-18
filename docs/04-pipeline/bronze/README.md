@@ -1,9 +1,9 @@
 # Bronze layer
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
-The bronze layer preserves raw source data with no transformations. Every data column is STRING. The loader adds lineage columns.
+The bronze layer preserves raw source data with no transformations. Every data column is STRING. The loader adds lineage columns. These raw sources are the origin of all data that flows through silver and gold to answer the platform's business questions (BQ1 and sub-questions; BQ2 is previous scope). See [business context](../../01-context/problem-and-business-context.md) for the question-to-source traceability.
 
 ## How it works
 

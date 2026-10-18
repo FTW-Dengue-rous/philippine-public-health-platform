@@ -1,7 +1,7 @@
 # Idempotency comparison
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 The platform is designed for idempotent rebuilds: running the same silver or gold build with the same inputs should produce the same output.
 

@@ -1,7 +1,7 @@
 # Silver quality checks
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Silver quality checks are implemented in `src/05_quality/silver/` and inline in silver SQL scripts. Each silver build script runs validation gates before writing the target table. If validation fails, the build is logged as failed and the target table is left unchanged.
 
@@ -35,14 +35,24 @@ QC results are stored in `public_health.quality.qc_results`. Build metadata is i
 
 ## Verified results
 
-Facilities silver builds (v1.7 SQL) all passed validation gates on 2026-10-10 to 2026-10-12:
+All domain silver builds succeeded on 2026-10-15 (full pipeline run):
 
-* `facilities_id_map_silver`: 5,254 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
-* `facilities_registry_silver`: 3,954 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
+* `facilities_id_map_silver`: 5,257 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
+* `facilities_registry_silver`: 3,957 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
 * `facilities_metric_silver`: 2,988 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
-* `facilities_bed_occupancy_silver`: 1,977 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
+* `facilities_bed_occupancy_silver`: 9,145 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
+* `facilities_osm_point_silver`: 16,030 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
+* `diseases_metric_silver`: 131,887 rows. PASS.
+* `diseases_deaths_age_silver`: 90,480 rows. PASS.
+* `diseases_tb_programme_silver`: 73,216 rows. PASS.
+* `socioeconomic_poverty_silver`: 322 rows. PASS.
+* `socioeconomic_health_expenditure_share_silver`: 128 rows. PASS.
+* `workforce_headcount_silver`: 28,071 rows. PASS.
+* `workforce_specialist_silver`: 52 rows. PASS.
 
-Warnings (non-blocking):
+*(Source: build_log status = succeeded for all 2026-10-15 builds. Row counts from COUNT(*) queries, 2026-10-18.)*
+
+Warnings (non-blocking, facilities bed occupancy):
 * BOR > 150 (implausible, excluded): 110 rows.
 * BOR > 100 (over capacity): 281 rows.
 * City unresolved (geography): 1 row.

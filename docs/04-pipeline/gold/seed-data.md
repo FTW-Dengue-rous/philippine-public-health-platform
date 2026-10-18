@@ -1,7 +1,7 @@
 # Seed data
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Seed tables are reviewed reference data that the gold layer depends on but that are not derived from silver tables. They encode team decisions and reviewed mappings.
 

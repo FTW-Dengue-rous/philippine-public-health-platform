@@ -1,9 +1,9 @@
 # Silver layer
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
-The silver layer applies cleaning, typing, geographic matching, and lineage tracking. Each domain has numbered SQL scripts in `src/03_silver/`.
+The silver layer applies cleaning, typing, geographic matching, and lineage tracking. Each domain has numbered SQL scripts in `src/03_silver/`. Silver tables are the direct inputs to gold fact tables and marts that answer the platform's business questions (BQ1 and sub-questions; BQ2 is previous scope). See [business context](../../01-context/problem-and-business-context.md) for the question-to-source traceability.
 
 ## Build pattern
 
@@ -21,13 +21,15 @@ Every silver build script follows the same pattern:
 
 | Table | Grain | Key | Rows (latest build) | Script |
 |---|---|---|---|---|
-| `facilities_id_map_silver` | One source facility identifier | `(_source_key, source_record_id)` | 5,254 | `facilities_silver_01_registry.sql` |
-| `facilities_registry_silver` | One facility establishment | `facility_key` | 3,954 | `facilities_silver_01_registry.sql` |
-| `facilities_metric_silver` | Area × year × ownership × source | `(area_key, year, ownership, _source_key)` | 2,988 | `facilities_silver_02_metric.sql` |
-| `facilities_bed_occupancy_silver` | Hospital × year | `(facility_key, reporting_year)` | 1,977 | `facilities_silver_03_bed_occupancy.sql` |
-| `facilities_osm_point_silver` | OSM healthsite point | `osm_id` | UNVERIFIED | `facilities_silver_04_osm_point.sql` |
+| `facilities_id_map_silver` | One source facility identifier | `(_source_key, source_record_id)` | 5,257 | `facilities_silver_01_registry.sql` |
+| `facilities_registry_silver` | One facility establishment | `facility_key` | 3,957 | `facilities_silver_01_registry.sql` |
+| `facilities_metric_silver` | Area x year x ownership x source | `(area_key, year, ownership, _source_key)` | 2,988 | `facilities_silver_02_metric.sql` |
+| `facilities_bed_occupancy_silver` | Hospital x year | `(facility_key, year)` | 9,145 | `facilities_silver_03_bed_occupancy.sql` |
+| `facilities_osm_point_silver` | OSM healthsite point | `osm_id` | 16,030 | `facilities_silver_04_osm_point.sql` |
 
-**Build dates**: id_map/registry 2026-10-10, metric 2026-10-12, bed_occupancy 2026-10-12. See [evidence](../../06-evidence/README.md).
+**Build date**: 2026-10-15 (full pipeline run). See [evidence](../../06-evidence/README.md).
+
+The bed occupancy table now includes all years 2018-2025 (9,145 rows, 8,150 baseline eligible). The earlier 2026-10-12 build had 1,977 rows because it filtered to 2025 baseline-eligible only. Use `baseline_eligible = true` for comparable-report analysis. The actual year column is named `year` (int), not `reporting_year`.
 
 ### Facility matching
 

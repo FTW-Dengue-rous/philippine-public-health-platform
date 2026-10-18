@@ -1,7 +1,7 @@
 # Architecture decisions
 
 Owner: Jemma Santiago
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Key decisions and their rationale.
 
@@ -52,3 +52,9 @@ Key decisions and their rationale.
 **Decision**: Use serverless Spark for Python tasks and serverless SQL warehouse for SQL tasks. Two environments: `default` (no geometry library) and `geo` (shapely for point-in-polygon).
 
 **Rationale**: Serverless avoids cluster management. The `geo` environment pins shapely<2.1 because shapely 2.1 requires numpy 2, which breaks pandas in other tasks.
+
+## AD9: BQ1 as sole main business question
+
+**Decision**: BQ1 (capacity gap analysis) is the platform's only main business question. BQ2 (dengue surge stress test) is previous scope.
+
+**Rationale**: The platform was originally designed for two main questions. The team narrowed the final scope to BQ1 to focus on the capacity gap analysis deliverable. BQ2 datasets and marts are preserved in the documentation and pipeline code because they may support future re-scoping. D1 (dengue wave selection) remains queryable via `mart_dengue_peak_capacity`, which also serves N3 within BQ1. The scope change does not make BQ1 fully answered: disease burden integration into the capacity gap mart is still pending.

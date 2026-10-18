@@ -1,7 +1,7 @@
 # Quality check catalog
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Complete list of quality checks across bronze, silver, and gold layers.
 

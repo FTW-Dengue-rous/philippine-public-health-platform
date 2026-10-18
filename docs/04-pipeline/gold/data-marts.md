@@ -1,20 +1,32 @@
 # Data marts
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
-Gold marts built from silver tables for dashboard consumption and analysis. See [business questions](../../01-context/problem-and-business-context.md#analytical-questions) for the full question-to-mart mapping.
+Gold marts built from silver tables for dashboard consumption and analysis. Each mart answers specific business questions from the BQ1 framework (BQ2 is previous scope). See [business context](../../01-context/problem-and-business-context.md) for the full question framework and traceability table.
 
 ## Built marts
 
-### `mart_area_service_profile`
+### `mart_area_service_profile` (v1; superseded as dashboard source by v2)
 
 * **Purpose**: Answers supply-side questions S1 (hospital availability), S2 (bed occupancy), S3 (primary care availability).
 * **Grain**: `supply_section x area_level x area_key x year x ownership x facility_level`.
-* **Rows**: ~2,784.
+* **Rows**: 2,701 (built 2026-10-13).
 * **Script**: `gold_53_mart_area_service_profile.sql`.
+* **Schema**: `public_health.gold`.
 * **Questions**: S1, S2, S3.
 * **Caveats**: See [metric definitions](metric-definitions.md) for formulas and [gold usage rules](gold-usage-rules.md) for interpretation.
+
+### `mart_area_service_profile` (v2, active model)
+
+* **Purpose**: Wide planning-unit mart covering supply, workforce, poverty, and access per province/HUC/NCR.
+* **Grain**: One row per planning unit.
+* **Rows**: 109 (built 2026-10-15).
+* **Columns**: 62.
+* **Script**: `gold_v2_53_mart_area_service_profile.sql`.
+* **Schema**: `public_health.test_gold2`.
+* **Questions**: S1, S2, S3, W1, E1, A1-A2 (partial BQ1).
+* **See [data dictionary](data-dictionary.md) for column definitions.
 
 ### `mart_area_evidence`
 
@@ -59,36 +71,34 @@ Gold marts built from silver tables for dashboard consumption and analysis. See 
 * **Purpose**: One row per analysis area with need, supply, access, workforce and equity indicators side by side.
 * **Questions**: BQ1, A1, A2, E1, E2, P1, P2.
 * **Inputs**: All domain silver tables.
-* **Status**: Designed, not built. Needs one analysis unit for province-level facts (province + HUC + NCR rule).
-* **Build order**: After `mart_base_planning_unit` and all domain fact tables are materialised.
+* **Status**: Not built (verified absent from `test_gold2` on 2026-10-18). The v2 `mart_area_service_profile` (109 rows, 62 columns) partially covers BQ1: supply, primary care, workforce, and poverty per planning unit. Full integration with disease burden (`mart_area_burden_indicator`) is the remaining gap.
+* **Build order**: After `mart_base_planning_unit` and all domain fact tables are materialised (done).
 
-### `mart_surge_stress_test` (BQ2 main mart)
+### `mart_surge_stress_test` (BQ2 main mart, previous scope)
 
 * **Purpose**: One row per area and scenario: replayed cases, added bed demand, spare beds, shortfall, exceed flag.
-* **Questions**: BQ2, D1-D5.
+* **Questions**: BQ2, D1-D5 (previous scope).
 * **Inputs**: `diseases_metric_silver`, `facilities_metric_silver`, `facilities_bed_occupancy_silver`, `scenario_params`.
 * **Status**: Needs input. Blocked until admission share and length-of-stay parameters are sourced.
 
-### Gold fact tables
+## Built in v2 (test_gold2)
 
-The business question framework references six gold fact tables. Silver data exists for all; gold materialisation is pending.
+### Fact tables (built 2026-10-15)
 
-| Fact table | Questions | Silver source |
-|---|---|---|
-| `fact_disease_metric` | N1, N2, N3, N4, SUP1, SUP2, CASE | `diseases_metric_silver`, `diseases_directory_silver` |
-| `fact_facility_capacity` | S1, A1, A2, D3, SUP3 | `facilities_registry_silver`, `facilities_metric_silver` |
-| `fact_bed_occupancy` | S2, D3 | `facilities_bed_occupancy_silver` |
-| `fact_workforce` | W1, W2, CASE, SUP4 | `workforce_headcounts_silver` |
-| `fact_population` | N4, W1, A1, CASE | `geography_population_silver` |
-| `fact_socioeconomic` | E1, E2, SUP5 | `socioeconomic_poverty_silver`, `socioeconomic_health_expenditure_share_silver` |
+| Fact table | Rows | Questions | Silver source |
+|---|---|---|---|
+| `fact_disease_metric` | 593,171 | N1, N2, N3, N4, SUP1, SUP2, CASE | `diseases_metric_silver`, `diseases_directory_silver` |
+| `fact_facility_capacity` | 30,365 | S1, A1, A2, D3, SUP3 | `facilities_registry_silver`, `facilities_metric_silver` |
+| `fact_workforce_capacity` | 28,071 | W1, W2, CASE, SUP4 | `workforce_headcount_silver` |
+| `fact_area_indicator` | 8,928 | E1, E2, SUP5 | `socioeconomic_poverty_silver`, `facilities_metric_silver` |
+| `fact_area_access` | 1,642 | A1, A2, CON1 | `facilities_registry_silver`, `geography_silver` |
 
 ### Dimensions
 
 | Dimension | Key columns |
 |---|---|
-| `dim_geography` | `psgc_code`, `area_name`, `geographic_level`, `region_name`, `province_name` |
-| `dim_period` | `year`, `month`, `week` |
-| `dim_disease` | `disease`, `cause`, `cause_group`, `value_type`, `age_group` |
-| `dim_source` | `_source_key`, `_source_file` |
+| `dim_geography` | `area_key`, `area_code`, `area_name`, `geographic_level` |
 | `dim_facility` | `facility_key`, `facility_level`, `ownership` |
-| `dim_profession` | `profession`, `employer_type` |
+| `dim_disease` | `disease_key`, `disease`, `cause` |
+| `dim_date` | `date_key`, `date` |
+| `dim_data_source` | `source_key` |

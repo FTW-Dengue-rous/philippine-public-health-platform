@@ -1,11 +1,13 @@
 # Data dictionary
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 Field definitions for the key silver and gold tables. For metric formulas, see [metric definitions](metric-definitions.md).
 
-## `mart_area_service_profile`
+## `mart_area_service_profile` (v1, public_health.gold)
+
+The v1 mart was the dashboard source until the dashboard moved to v2 `test_gold2` tables. It has 2,701 rows and uses the grain `supply_section x area_level x area_key x year x ownership x facility_level`.
 
 | Column | Type | Description |
 |---|---|---|
@@ -19,7 +21,7 @@ Field definitions for the key silver and gold tables. For metric formulas, see [
 | `year` | INT | Reference year (null for S1 current snapshot) |
 | `ownership` | STRING | `Government`, `Private`, or `Total` (normalized via INITCAP) |
 | `facility_level` | STRING | Hospital level from registry |
-| `population` | BIGINT | Population from geography_population_silver or facilities_metric_silver |
+| `population` | BIGINT | Population from population_silver or facilities_metric_silver |
 | `hospital_count` | INT | Count of hospitals in the area |
 | `authorized_beds` | INT | Sum of Authorized Bed Capacity |
 | `analysis_beds` | INT | Beds used for analysis |
@@ -38,6 +40,75 @@ Field definitions for the key silver and gold tables. For metric formulas, see [
 | `bhs_per_10000_pop` | DOUBLE | `bhs_count / population × 10000` (S3 only) |
 | `rhu_per_10000_pop` | DOUBLE | `rhu_count / population × 10000` (S3 only) |
 | `primary_care_per_10000_pop` | DOUBLE | `health_centers_total / population × 10000` (S3 only) |
+
+## `mart_area_service_profile` (v2, public_health.test_gold2)
+
+The v2 mart is the active data model. It has 109 rows, 62 columns, and uses the grain one row per planning unit (province / HUC / NCR district). Verified schema (DESCRIBE TABLE, 2026-10-18):
+
+| Column | Type | Description |
+|---|---|---|
+| `planning_unit_key` | BIGINT | Surrogate key for the planning unit (PK) |
+| `area_code` | STRING | Area code from dim_geography |
+| `area_name` | STRING | Planning unit name |
+| `region_key` | BIGINT | Foreign key to dim_geography (region) |
+| `unit_level` | STRING | Province, HUC, or NCR |
+| `income_class` | STRING | Income classification |
+| `population` | DECIMAL(30,4) | Population denominator |
+| `population_year` | INT | Year of population estimate |
+| `population_source` | BIGINT | Source key for population |
+| `hospitals` | BIGINT | Count of hospitals in the planning unit |
+| `beds` | BIGINT | Total authorized beds |
+| `beds_per_10k` | DECIMAL(33,2) | Beds per 10,000 population |
+| `beds_level1` | BIGINT | Level 1 hospital beds |
+| `beds_level2` | BIGINT | Level 2 hospital beds |
+| `beds_level3` | BIGINT | Level 3 hospital beds |
+| `government_beds` | BIGINT | Government hospital beds |
+| `government_bed_share` | DOUBLE | Government beds / total beds |
+| `level3_hospitals` | BIGINT | Count of Level 3 hospitals |
+| `highest_hospital_level` | STRING | Highest hospital level in the unit |
+| `localities` | BIGINT | Count of cities/municipalities |
+| `localities_without_hospital` | BIGINT | Localities with no hospital |
+| `population_without_hospital` | DECIMAL(30,4) | Population with no hospital access |
+| `licensed_primary_care_facilities_recorded` | BIGINT | Licensed primary care facilities count |
+| `localities_without_licensed_primary_care_recorded` | BIGINT | Localities without licensed primary care |
+| `population_without_licensed_primary_care_recorded` | DECIMAL(30,4) | Population without licensed primary care |
+| `reported_bhs` | BIGINT | Reported BHS count |
+| `reported_health_centers` | BIGINT | Reported health centres count |
+| `fhsis_reported_population` | DECIMAL(30,4) | FHSIS reported population |
+| `reported_bhs_per_10k` | DECIMAL(33,2) | BHS per 10,000 population |
+| `reported_health_centers_per_10k` | DECIMAL(33,2) | Health centres per 10,000 population |
+| `fhsis_count_year` | INT | FHSIS count year |
+| `fhsis_mapping_outcome` | STRING | FHSIS mapping result |
+| `doctors` | BIGINT | Doctor headcount |
+| `nurses` | BIGINT | Nurse headcount |
+| `midwives` | BIGINT | Midwife headcount |
+| `bhw` | BIGINT | BHW headcount |
+| `doctors_per_10k` | DECIMAL(33,2) | Doctors per 10,000 population |
+| `nurses_per_10k` | DECIMAL(33,2) | Nurses per 10,000 population |
+| `midwives_per_10k` | DECIMAL(33,2) | Midwives per 10,000 population |
+| `bhw_per_10k` | DECIMAL(33,2) | BHW per 10,000 population |
+| `doh_deployed_share` | DOUBLE | Share of DOH-deployed workforce |
+| `workforce_year` | INT | Workforce data year |
+| `poverty_incidence_pct` | DECIMAL(20,4) | Poverty incidence (%) |
+| `poverty_year` | INT | Poverty data year |
+| `poverty_band` | STRING | Poverty band category |
+| `beds_per_10k_quintile` | INT | Quintile rank for beds per 10k |
+| `reported_bhs_per_10k_quintile` | INT | Quintile rank for BHS per 10k |
+| `reported_health_centers_per_10k_quintile` | INT | Quintile rank for health centres per 10k |
+| `doctors_per_10k_quintile` | INT | Quintile rank for doctors per 10k |
+| `nurses_per_10k_quintile` | INT | Quintile rank for nurses per 10k |
+| `midwives_per_10k_quintile` | INT | Quintile rank for midwives per 10k |
+| `bhw_per_10k_quintile` | INT | Quintile rank for BHW per 10k |
+| `poverty_incidence_pct_quintile` | INT | Quintile rank for poverty incidence |
+| `hospitals_without_bed_count` | BIGINT | Hospitals with null bed count |
+| `registry_as_of_date` | DATE | Registry snapshot date |
+| `bhw_year` | INT | BHW data year |
+| `fhsis_exclusion_reason` | STRING | Reason FHSIS data excluded (if any) |
+| `workforce_mapping_outcome` | STRING | Workforce mapping result |
+| `workforce_exclusion_reason` | STRING | Reason workforce excluded (if any) |
+| `bhw_exclusion_reason` | STRING | Reason BHW excluded (if any) |
+| `poverty_exclusion_reason` | STRING | Reason poverty excluded (if any) |
+| `localities_without_population` | BIGINT | Localities with null population |
 
 ## `facilities_registry_silver`
 
@@ -62,7 +133,7 @@ Field definitions for the key silver and gold tables. For metric formulas, see [
 | Column | Type | Description |
 |---|---|---|
 | `facility_key` | STRING | Facility identifier (foreign key to registry) |
-| `year` / `reporting_year` | INT | Reporting year (verify column name — see known issues KI6) |
+| `year` | INT | Reporting year. The actual column name in the table is `year` (verified 2026-10-18). Some earlier documentation references `reporting_year`; that column does not exist. |
 | `ownership` | STRING | `government` or `private` (lowercase in this table) |
 | `hospital_level` / `service_level` | STRING | Hospital level |
 | `bor_pct` | DOUBLE | Bed Occupancy Rate (implementing / authorized × 100) |
@@ -94,23 +165,38 @@ Field definitions for the key silver and gold tables. For metric formulas, see [
 
 ## `geography_silver`
 
+Verified schema (DESCRIBE TABLE, 2026-10-18):
+
 | Column | Type | Description |
 |---|---|---|
 | `psgc_code` | STRING | PSGC code (primary key) |
-| `area_name` | STRING | Area name |
-| `geographic_level` | STRING | `Region`, `Prov`, `City`, `Mun`, `Bgy` |
+| `correspondence_code` | STRING | Correspondence code from PSA |
+| `area_name` | STRING | Area name (with n repaired) |
+| `area_name_raw` | STRING | Original area_name before n repair |
+| `geographic_level` | STRING | `Reg`, `Prov`, `City`, `Mun`, `SubMun`, `Bgy` |
 | `region_code` | STRING | Region code |
 | `province_code` | STRING | Province code (null for NCR) |
-| `populations_json` | STRING | JSON of population by year |
+| `municipality_code` | STRING | Municipality/city code |
+| `barangay_code` | STRING | Barangay code |
+| `city_class` | STRING | City classification (HUC, ICC, CC) |
+| `income_classification` | STRING | Income classification |
+| `urban_rural` | STRING | Urban/rural classification |
+| `island_region` | STRING | Island-region grouping |
+| `record_status` | STRING | Status from PSA source |
 | `source_version` | STRING | PSGC version (Q2 2024) |
+| `content_checksum` | STRING | Source content checksum |
+| `batch_id` | STRING | Ingestion batch ID |
+| `silver_processed_at` | TIMESTAMP | Silver processing timestamp |
 
-## `geography_population_silver`
+## `population_silver`
 
 | Column | Type | Description |
 |---|---|---|
 | `psgc_code` | STRING | PSGC code |
 | `population_year` | INT | Population year (2015, 2020, 2024) |
 | `population` | BIGINT | Population count |
+
+Note: The actual table name is `population_silver` (verified 2026-10-18), not `geography_population_silver` as referenced in some earlier documentation.
 
 ## Bronze table definitions
 
@@ -122,17 +208,6 @@ For bronze table column definitions, see the [bronze pipeline docs](../bronze/RE
 > **Legacy section below.** The geography and admin boundary column definitions are still accurate. The facility table names (e.g. `facilities_primary_care`, `active_facilities`) are from a previous version and have been superseded by the config-driven naming convention (`<domain>_<source>_<content>_bronze`). See the [bronze pipeline docs](../bronze/README.md) and YAML source configs for current table names.
 
 ## Bronze Layer
-
-
-
-### Bronze: Diseases domain
-
-
----
-
-### Bronze: Geography domain
-
----
 
 ### `public_health.bronze.geography_bronze`
 

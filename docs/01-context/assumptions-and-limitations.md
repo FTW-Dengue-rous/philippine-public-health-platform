@@ -1,9 +1,11 @@
 # Assumptions and limitations
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 ## Geography
+
+These limitations affect all questions that use geographic matching (BQ1, N1-N4, S1-S2, A1-A2, W1-W2, E1-E2, P1).
 
 * **PSGC Q2 2024 is the reference geography.** All area names and codes are matched to this snapshot. PSGC codes change over time; older source data may use codes or names that no longer match. Unmatched names are logged in `facilities_area_exceptions` and `socioeconomic_silver_05_poverty_geography_check.sql`.
 * **NCR has no provinces.** Silver tables handle this by falling back to the region name. Queries that assume every area has a province will return null for NCR districts.

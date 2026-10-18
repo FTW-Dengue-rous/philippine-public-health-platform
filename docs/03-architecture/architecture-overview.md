@@ -1,7 +1,7 @@
 # Architecture overview
 
 Owner: Jemma Santiago
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 ## Tech stack
 
@@ -27,7 +27,7 @@ public_health (catalog)
 
 Created by `src/00_setup/schema_setup.sql`. Quality tables created by `src/00_setup/quality_setup.sql`.
 
-The gold layer uses data model v2, which builds into schema `public_health.test_gold2` (to be promoted to `public_health.gold`). The job deploys v2 scripts from `src/04_gold/test_v2/`. See [gold layer](../04-pipeline/gold/README.md) for the full data model.
+The gold layer uses data model v2, which builds into schema `public_health.test_gold2` (to be promoted to `public_health.gold`). The job deploys v2 scripts from `src/04_gold/test_v2/`. All 25 v2 tables were built successfully on 2026-10-15. See [gold layer](../04-pipeline/gold/README.md) for the full data model and [evidence](../06-evidence/README.md) for verified row counts.
 
 ## Data flow
 
