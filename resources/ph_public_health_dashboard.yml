@@ -10,6 +10,6 @@ resources:
   dashboards:
     ph_public_health_dashboard:
       display_name: "Philippine Public Health Platform"
-      file_path: "../dashboard/Philippine Public Health Platform_gold_v2.lvdash.json"
+      file_path: "../dashboard/Philippine Public Health Platform.lvdash.json"
       warehouse_id: ${var.warehouse_id}
       embed_credentials: false # viewers query with their own permissions
