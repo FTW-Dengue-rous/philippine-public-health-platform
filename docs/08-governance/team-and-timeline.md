@@ -29,7 +29,7 @@ The person responsible for a domain's Bronze implementation also owns its Silver
 | PSGC ingestion | Shiena Arico | Ingestion pipeline only (distinct from geography) |
 | Socioeconomic | Virna Pomendia | Bronze, silver, documentation |
 | Workforce | Virna Pomendia | Bronze, silver, documentation |
-| Bronze | Cristina Villota | Dashboard, documentation |
+| Bronze | Cristina Villota |, documentation |
 | CI/CD and DevOps | Jemma Santiago | Pipeline, deployment, CI/CD |
 
 ## Timeline
