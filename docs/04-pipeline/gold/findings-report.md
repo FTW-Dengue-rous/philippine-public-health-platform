@@ -7,7 +7,7 @@ Findings from the built gold tables, organized by the platform's business questi
 
 See [business context](../../01-context/problem-and-business-context.md) for the full question framework and traceability table. See [metric definitions](metric-definitions.md) for formulas and [assumptions and limitations](../../01-context/assumptions-and-limitations.md) for interpretation rules.
 
-Numbers marked **v1** come from `public_health.gold.mart_area_service_profile` (2,701 rows, built 2026-10-13). Numbers marked **v2** come from `public_health.test_gold2` tables (built 2026-10-15). Numbers marked **silver** come from direct silver table queries. All counts verified by COUNT(*) and aggregate queries on 2026-10-18.
+Numbers marked **v1** come from `public_health.gold.mart_area_service_profile` (2,784 rows, built 2026-10-13; count re-verified 2026-10-18). Numbers marked **v2** come from `public_health.test_gold2` tables (built 2026-10-18). Numbers marked **silver** come from direct silver table queries. All counts verified by COUNT(*) and aggregate queries on 2026-10-18.
 
 ---
 
@@ -83,7 +83,7 @@ Disease burden per area is available in `mart_area_burden_indicator` (2,071 rows
 
 > How do hospital counts and authorized beds relative to population vary across areas, and how is supply distributed by hospital level and ownership?
 
-* **Gold table**: `mart_area_service_profile` v1 (2,701 rows) and v2 (109 rows; the dashboard now reads v2 tables).
+* **Gold table**: `mart_area_service_profile` v1 (2,784 rows) and v2 (109 rows; the dashboard now reads v2 tables).
 * **Answer grain**: Area x hospital level x ownership (snapshot: NHFR 2026-09-29, HFSRB 2026-06-30, population 2024).
 * **Silver inputs**: `facilities_registry_silver`, `facilities_metric_silver`, `population_silver`.
 * **Answerable?**: Yes, with caveat.
@@ -348,4 +348,4 @@ The platform is a data engineering capstone. It does not make health policy reco
 
 All findings are computed from silver and gold tables using SQL. No statistical modeling is applied. No causal claims are made. All comparisons are descriptive. See [assumptions and limitations](../../01-context/assumptions-and-limitations.md) for the full list of interpretation rules.
 
-Evidence: build logs in `public_health.quality.build_log` (114 builds, 106 succeeded, 2026-10-13 to 2026-10-15). Row counts and aggregate values verified by COUNT(*), AVG, SUM, and MIN/MAX queries on 2026-10-18 against `public_health.test_gold2`, `public_health.gold`, and `public_health.silver` schemas.
+Evidence: build logs in `public_health.quality.build_log` (85 succeeded builds: 2026-10-09, 2026-10-12, 2026-10-18) and the [2026-10-18 run record](../../06-evidence/2026-10-18-new-workspace-run.md). Row counts and aggregate values verified by COUNT(*), AVG, SUM, and MIN/MAX queries on 2026-10-18 against `public_health.test_gold2`, `public_health.gold`, and `public_health.silver` schemas.

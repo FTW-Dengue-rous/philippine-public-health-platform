@@ -14,7 +14,7 @@ The pipeline runs as a single Databricks job (`ph_public_health_pipeline`). Task
 5. **Silver QC** — checks silver tables.
 6. **Cross-domain silver QC** — checks spanning domains.
 7. **Gold** — SQL builds analytical marts.
-8. **Gold QC** — validates mart output.
+8. **Gold QC** — placeholder. `src/05_quality/gold/gold_qc.py` contains no checks yet; a green `gold_qc` task does not validate gold output ([known issues](../08-governance/known-issues-and-backlog.md) KI11).
 
 ## How to run
 
@@ -27,6 +27,10 @@ databricks bundle deploy -t dev
 # Run the pipeline job
 databricks jobs run-now --job-name ph-public-health-pipeline
 ```
+
+**Do not run the two pipeline jobs at the same time.** The manually created pipeline job and the bundle-deployed job execute the same scripts and write the same tables. Concurrent `CREATE OR REPLACE TABLE` statements race and fail with `TABLE_OR_VIEW_ALREADY_EXISTS` (observed twice on 2026-10-18; see the [run record](../06-evidence/2026-10-18-new-workspace-run.md)). Confirm the other job is idle before starting a run.
+
+**The manually created job does not build the OSM silver table.** It has no `silver_facilities_04a_osm_locate` / `silver_facilities_04_osm_point` tasks, but its `gold_43_ref_osm_healthsite_point` task reads `facilities_osm_point_silver`. Build that table first (run the bundle job or the facilities 04 scripts) or the gold run fails at `gold_43` (KI13).
 
 Set the `admin_boundaries_run_dir` parameter to a completed ingestion run folder:
 
@@ -79,7 +83,7 @@ Prints per-file LOAD/skip and the reason. Writes nothing. No QC.
 | Silver | `socioeconomic_poverty_silver` | 322 |
 | Silver | `workforce_headcount_silver` | 28,071 |
 | Gold v2 | `mart_area_service_profile` | 109 |
-| Gold v1 | `gold.mart_area_service_profile` | 2,701 |
+| Gold v1 | `gold.mart_area_service_profile` | 2,784 |
 
 ## Verification
 
@@ -99,6 +103,7 @@ After a run, verify:
 | Silver task fails: "missing ingestion_metadata row" | Bronze was not loaded or metadata is stale | Run bronze first. Check `public_health.bronze.ingestion_metadata` for the source. |
 | Silver task fails: validation gate | Null keys, duplicate keys, or lineage incomplete | Check the error message for which gate failed. Inspect the candidate table. |
 | Gold task fails | Silver tables not built or stale | Run silver first. Check that `mart_area_service_profile` inputs exist. |
+| Gold task fails: `TABLE_OR_VIEW_ALREADY_EXISTS` on a `__inputs` table | Another run is executing the same scripts concurrently | Wait for the other pipeline job to finish, then repair the failed run (rerun failed tasks) from the run page in the Jobs UI or with `databricks jobs repair-run <run-id> --rerun-all-failed-tasks`. Verified 2026-10-18: two repairs took run 513012844601841 to SUCCESS without rebuilding silver. |
 | Admin boundaries task fails: "not a /Volumes path" | `admin_boundaries_run_dir` parameter is blank | Set it to a completed `_runs/<RUN_ID>` folder. See [How to identify the correct run](#option-a-full-pipeline-recommended) above. |
 | numpy/shapely import error | Wrong environment | The `geo` environment is only for facilities 04a. Other tasks use `default`. |
 
@@ -106,6 +111,7 @@ After a run, verify:
 
 * **Rerun the full pipeline**: Safe. Bronze is incremental (unchanged files skip). Silver and gold use `CREATE OR REPLACE`.
 * **Rerun a single silver script**: Safe. Each script is self-contained and records its own build.
+* **Repair a partially failed run**: Verified 2026-10-18. Rerunning only the failed and downstream tasks took run 513012844601841 from FAILED to SUCCESS without rebuilding bronze or silver.
 * **Force reload bronze**: Use `--force true` or `--force_keys <key>` after a YAML or loader change. Makes silver stale until rebuilt.
 * **Roll back silver**: Delta time travel: `SELECT * FROM public_health.silver.<table> VERSION AS OF <n>`. Previous versions are retained.
 

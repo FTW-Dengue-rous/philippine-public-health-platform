@@ -18,7 +18,7 @@ Bronze preserves the original landing files and their lineage, but normalizes th
 
 ## 2. Source and Input Data
 
-Configuration: [`config/sources_workforce.yaml`](../../config/sources_workforce.yaml). Configured landing root: `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing` (workspace-specific; not inherently portable).
+Configuration: [`config/sources_workforce.yaml`](../../../config/sources_workforce.yaml). Configured landing root: `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing` (workspace-specific; not inherently portable).
 
 | Source / key | Input and coverage | Bronze Delta destination | Configured expected rows* |
 |---|---|---|---:|
@@ -42,7 +42,7 @@ Source business fields are stored as `STRING`, including numerical-looking count
 
 ## 4. Code Walkthrough
 
-Main scripts: [`src/02_bronze/workforce_bronze.py`](../../src/02_bronze/workforce_bronze.py) (loader version `2026-10-06.2`), [`src/05_quality/bronze/workforce_bronze_qc.py`](../../src/05_quality/bronze/workforce_bronze_qc.py), and the Workforce YAML.
+Main scripts: [`src/02_bronze/workforce_bronze.py`](../../../src/02_bronze/workforce_bronze.py) (loader version `2026-10-06.2`), [`src/05_quality/bronze/workforce_bronze_qc.py`](../../../src/05_quality/bronze/workforce_bronze_qc.py), and the Workforce YAML.
 
 1. **Read configuration.** Discover the YAML or use `--config_path`; merge defaults and select all enabled sources or named `--source_keys`.
 2. **Resolve file layouts.** Each configured file/sheet may override format, encoding, header mode, column names, sheet and first data row. FHSIS YAML anchors describe changing profession columns across years.

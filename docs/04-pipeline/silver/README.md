@@ -27,7 +27,7 @@ Every silver build script follows the same pattern:
 | `facilities_bed_occupancy_silver` | Hospital x year | `(facility_key, year)` | 9,145 | `facilities_silver_03_bed_occupancy.sql` |
 | `facilities_osm_point_silver` | OSM healthsite point | `osm_id` | 16,030 | `facilities_silver_04_osm_point.sql` |
 
-**Build date**: 2026-10-15 (full pipeline run). See [evidence](../../06-evidence/README.md).
+**Build date**: 2026-10-18 (orchestrated pipeline runs). See [evidence](../../06-evidence/README.md).
 
 The bed occupancy table now includes all years 2018-2025 (9,145 rows, 8,150 baseline eligible). The earlier 2026-10-12 build had 1,977 rows because it filtered to 2025 baseline-eligible only. Use `baseline_eligible = true` for comparable-report analysis. The actual year column is named `year` (int), not `reporting_year`.
 

@@ -22,7 +22,7 @@ See [business questions](problem-and-business-context.md#analytical-questions) f
 * Predictive modeling or forecasting.
 * External deployment beyond the team's Databricks workspace.
 
-## Built in gold v2 (test_gold2, 2026-10-15)
+## Built in gold v2 (test_gold2, 2026-10-18)
 
 * 5 dimensions (`dim_geography`, `dim_facility`, `dim_disease`, `dim_date`, `dim_data_source`).
 * 4 fact tables (`fact_facility_capacity`, `fact_disease_metric`, `fact_workforce_capacity`, `fact_area_indicator`).

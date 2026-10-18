@@ -89,13 +89,13 @@ LIMIT 10;
 | Bronze | Row count, null keys, header check, numeric columns, control totals | `src/05_quality/bronze/*` scripts, `dq_utils.DQRun` | Verified on Databricks runs (2026-10-09 to 2026-10-13) |
 | Silver | Null keys, duplicate keys, lineage completeness, row count reconciliation, geographic match | `src/05_quality/silver/*` scripts | Verified for facilities and geography domains. Other domains: silver builds run, QC scripts exist. |
 | Cross-domain | Geography joins across domains, source coverage | `src/05_quality/silver/silver_cross_domain_qc.py` | Script exists, runs as last silver task before gold. |
-| Gold | Mart row counts, key columns, metric ranges | `src/05_quality/gold/gold_qc.py` | Script exists. `mart_area_service_profile` v1 validated (2,701 rows). Other marts: not verified. |
+| Gold | Mart row counts, key columns, metric ranges | `src/05_quality/gold/gold_qc.py` | Placeholder script: no checks implemented, nothing logged (KI11). Gold objects' row counts verified by COUNT(*) in the [2026-10-18 run record](../../06-evidence/2026-10-18-new-workspace-run.md). |
 
 ## Unverified claims
 
 The following are documented but not independently verified:
 * Dashboard -- all eight pages (v2 model) are populated with widgets; datasets query `test_gold2` views (verified 2026-10-18). Widget-level values have not been independently spot-checked.
-* `facilities_osm_point_silver` -- resolved: built 2026-10-15, 16,030 rows (verified 2026-10-18). See [known issues](../../08-governance/known-issues-and-backlog.md).
+* `facilities_osm_point_silver` -- resolved: built 2026-10-18, 16,030 rows (bundle-job run; verified via table Delta history). See [known issues](../../08-governance/known-issues-and-backlog.md).
 * Gold v2 fact tables (`fact_disease_metric`, `fact_workforce_capacity`, `fact_area_indicator`) -- row counts verified 2026-10-18 (see [findings report](findings-report.md)); content verification is pending.
 * Silver QC for diseases, workforce, and socioeconomic domains -- scripts exist and run; socioeconomic results verified in `quality.qc_results` (all four tables PASS; poverty 6 WARN, child mortality 3 WARN). Diseases and workforce results have not been reviewed in detail.
 * Handover -- a formal handover walkthrough has not been conducted (see [team and timeline](../../08-governance/team-and-timeline.md#handover-readiness)).

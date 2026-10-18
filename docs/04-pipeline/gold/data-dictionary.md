@@ -7,7 +7,7 @@ Column definitions for the silver and gold tables. For metric formulas, see [met
 
 ## `mart_area_service_profile` (v1, public_health.gold)
 
-This v1 mart was the dashboard source until the dashboard moved to the v2 `test_gold2` tables. It has 2,701 rows. Each row is one supply section, area, year, ownership type, and hospital level.
+This v1 mart was the dashboard source until the dashboard moved to the v2 `test_gold2` tables. It has 2,784 rows (count verified 2026-10-18). Each row is one supply section, area, year, ownership type, and hospital level.
 
 | Column | Type | Description |
 |---|---|---|

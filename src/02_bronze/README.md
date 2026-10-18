@@ -1,7 +1,7 @@
 # Bronze ingestion
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 This page explains how source files move into `public_health.bronze` for the diseases, facilities, workforce and socioeconomic domains.
 
@@ -14,7 +14,7 @@ It covers:
 - Bronze QC
 - the Bronze table inventory
 
-Teammates own the geography (PSGC and HDX boundaries) and population Bronze pipelines, so this page does not cover them. See [silver-geography-population.md](silver-geography-population.md).
+Teammates own the geography (PSGC and HDX boundaries) and population Bronze pipelines, so this page does not cover them. See [geography](../../docs/04-pipeline/silver/geography.md) and [population](../../docs/04-pipeline/silver/population.md).
 
 ## Status
 
@@ -26,7 +26,7 @@ Teammates own the geography (PSGC and HDX boundaries) and population Bronze pipe
 | Facilities Bronze, 15 tables, 32 files | Earlier loader ran on Databricks for 30 files. 2 files were still pending on 2026-10-06 |
 | Workforce Bronze, 3 tables, 10 files | Earlier loader ran on Databricks for 9 files. 1 file was still pending on 2026-10-06 |
 | Socioeconomic Bronze, 5 tables, 5 files | Tested on local Spark on 2026-10-05. No Databricks run was recorded as of 2026-10-06 |
-| Diseases Bronze, later state | Team record says Bronze was complete on 2026-10-05. Bronze QC ran on Databricks for 16 sources on 2026-10-07. See [validation.md](validation.md) |
+| Diseases Bronze, later state | Team record says Bronze was complete on 2026-10-05. Bronze QC ran on Databricks for 16 sources on 2026-10-07. The team validation record (`validation.md`) is not in the repository; the recorded QC evidence is in [evidence](../../docs/06-evidence/README.md) |
 | Facilities Bronze, later state | Team record says the config-driven rerun finished for all 15 sources on 2026-10-07 |
 | Workforce Bronze, later state | Team record says Workforce Bronze was complete on 2026-10-05 |
 | All domains, later state | Team record from 2026-10-07 says all Bronze files were believed loaded. This page does not confirm that per table. Owners should replace these notes with dated run results after confirmation |
@@ -198,7 +198,7 @@ The table names below omit the `public_health.bronze.` prefix.
 
 - **Use `sharing` to record data-handling intent.** Allowed values are `open`, `public` and `restricted`. This field does not enforce access control by itself. Restricted sources include FOI files, the patient-level hospital extract, the bed occupancy file and IHME GBD. Do not copy record-level values from restricted tables into documentation or GitHub.
 
-- **Bronze table design is frozen as of 2026-10-08.** Bronze rows do not store a load id or checksum. Silver gets both from `ingestion_metadata` using `batch_id` and `content_checksum`. See [lineage-qc-contract.md](lineage-qc-contract.md).
+- **Bronze table design is frozen as of 2026-10-08.** Bronze rows do not store a load id or checksum. Silver gets both from `ingestion_metadata` using `batch_id` and `content_checksum`. See the [lineage and quality contract](../../docs/lineage-qc-contract_v1.3.md).
 
 ## Incremental loading
 
@@ -300,7 +300,7 @@ A YAML entry can disable a check with `skip_checks`. For example, disable `B08` 
 
 - Gold does not read Bronze directly.
 - Silver reads Bronze, keeps the required lineage and passes that lineage forward.
-- See [silver-diseases.md](silver-diseases.md), [silver-facilities.md](silver-facilities.md), [silver-workforce.md](silver-workforce.md), [silver-socioeconomic.md](silver-socioeconomic.md) and [gold-model.md](gold-model.md).
+- See [diseases](../../docs/04-pipeline/silver/diseases.md), [facilities](../../docs/04-pipeline/silver/facilities.md), [workforce](../../docs/04-pipeline/silver/workforce.md), [socioeconomic](../../docs/04-pipeline/silver/socioeconomic.md) and the [gold model](../../docs/04-pipeline/gold/README.md).
 - Gold must not read landing files again.
 - Gold must not recast the original source text.
 - Gold must not recreate load ids. Silver and `ingestion_metadata` provide them.

@@ -11,7 +11,7 @@ The facilities domain has five silver tables built from 15 bronze sources. All b
 
 * **Grain**: One source facility identifier.
 * **Key**: `(_source_key, source_record_id)`.
-* **Rows**: 5,257 (build 2026-10-15).
+* **Rows**: 5,257 (build 2026-10-18).
 * **Script**: `facilities_silver_01_registry.sql`.
 * **`source_record_id`**: `nhfr:<nhfr_id>` for NHFR, `name:<category>|<norm_name>|<psgc>` for HFSRB.
 * **Purpose**: Maps source identifiers to stable `facility_key` values. One facility can have multiple source records (one per source).
@@ -20,7 +20,7 @@ The facilities domain has five silver tables built from 15 bronze sources. All b
 
 * **Grain**: One facility establishment.
 * **Key**: `facility_key` (unique, enforced by validation gate).
-* **Rows**: 3,957 (build 2026-10-15).
+* **Rows**: 3,957 (build 2026-10-18).
 * **Script**: `facilities_silver_01_registry.sql`.
 * **Sources**: NHFR hospitals (spine) + 4 HFSRB licensed lists (hospitals, infirmaries, primary care, dialysis clinics).
 * **Matching**: NHFR code (numeric, with place/name agreement) then normalized name + municipality.
@@ -41,7 +41,7 @@ The facilities domain has five silver tables built from 15 bronze sources. All b
 
 * **Grain**: Hospital × year.
 * **Key**: `(facility_key, reporting_year)`.
-* **Rows**: 9,145 (build 2026-10-15). Includes all years 2018-2025.
+* **Rows**: 9,145 (build 2026-10-18). Includes all years 2018-2025.
 * **Script**: `facilities_silver_03_bed_occupancy.sql`.
 * **Source**: DOH FOI bed occupancy (restricted).
 * **Key column**: `year` (int), not `reporting_year`.
@@ -55,7 +55,7 @@ The facilities domain has five silver tables built from 15 bronze sources. All b
 
 * **Grain**: OSM healthsite point.
 * **Key**: `osm_id`.
-* **Rows**: 16,030 (build 2026-10-15).
+* **Rows**: 16,030 (build 2026-10-18).
 * **Script**: `facilities_silver_04_osm_point.sql` + `facilities_silver_04a_osm_locate.py`.
 * **Source**: HDX healthsites (OSM extract).
 * **Limitation**: OSM is community-maintained. Absence from OSM does not mean a facility does not exist.

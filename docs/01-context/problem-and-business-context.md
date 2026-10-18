@@ -130,21 +130,21 @@ BQ1 (capacity gap analysis) is the platform's only main business question. The s
 
 | Mart / fact table | Answers | Build status |
 |---|---|---|
-| `mart_area_service_profile` (v1) | S1, S2, S3 | **Built** (2,701 rows, `public_health.gold`, 2026-10-13). Superseded as dashboard source by v2: the dashboard now reads `test_gold2` tables. |
-| `mart_area_service_profile` (v2) | S1, S2, S3, W1, E1, A1, A2 (partial BQ1) | **Built** (109 rows, `public_health.test_gold2`, 2026-10-15). Active model. |
+| `mart_area_service_profile` (v1) | S1, S2, S3 | **Built** (2,784 rows, `public_health.gold`, 2026-10-13; count verified 2026-10-18). Superseded as dashboard source by v2: the dashboard now reads `test_gold2` tables. |
+| `mart_area_service_profile` (v2) | S1, S2, S3, W1, E1, A1, A2 (partial BQ1) | **Built** (109 rows, `public_health.test_gold2`, 2026-10-18). Active model. |
 | `mart_capacity_gap` | BQ1, A1, A2, E1, E2, P1, P2 | **Not built.** `mart_area_service_profile` v2 partially covers BQ1 (supply, workforce, poverty, access). Disease burden not yet joined. |
-| `fact_disease_metric` | N1, N2, N3, N4, SUP1, SUP2, CASE | **Built** (593,171 rows, `test_gold2`, 2026-10-15) |
-| `fact_facility_capacity` | S1, A1, A2, D3, SUP3 | **Built** (30,365 rows, `test_gold2`, 2026-10-15) |
-| `fact_workforce_capacity` | W1, W2, CASE, SUP4 | **Built** (28,071 rows, `test_gold2`, 2026-10-15) |
-| `fact_area_indicator` | E1, E2, SUP5 | **Built** (8,928 rows, `test_gold2`, 2026-10-15) |
-| `fact_area_access` | A1, A2, CON1 | **Built** (1,642 rows, `test_gold2`, 2026-10-15) |
-| `mart_area_burden_indicator` | N1-N4 | **Built** (2,071 rows, `test_gold2`, 2026-10-15) |
-| `mart_area_priority` | P1 | **Built** (12,426 rows, `test_gold2`, 2026-10-15). Supply-only ranking. |
-| `mart_locality_service_presence` | A1, A2 | **Built** (`test_gold2`, 2026-10-15) |
-| `mart_evidence_readiness` | SUP6 | **Built** (`test_gold2`, 2026-10-15) |
-| `mart_tb_case_study` | CASE | **Built** (1,642 rows, `test_gold2`, 2026-10-15) |
-| `mart_kidney_case_study` | N2 | **Built** (81 rows, `test_gold2`, 2026-10-15) |
-| `mart_dengue_peak_capacity` | N3, D1 | **Built** (981 rows, `test_gold2`, 2026-10-15) |
+| `fact_disease_metric` | N1, N2, N3, N4, SUP1, SUP2, CASE | **Built** (593,171 rows, `test_gold2`, 2026-10-18) |
+| `fact_facility_capacity` | S1, A1, A2, D3, SUP3 | **Built** (30,365 rows, `test_gold2`, 2026-10-18) |
+| `fact_workforce_capacity` | W1, W2, CASE, SUP4 | **Built** (28,071 rows, `test_gold2`, 2026-10-18) |
+| `fact_area_indicator` | E1, E2, SUP5 | **Built** (8,928 rows, `test_gold2`, 2026-10-18) |
+| `fact_area_access` | A1, A2, CON1 | **Built** (1,642 rows, `test_gold2`, 2026-10-18) |
+| `mart_area_burden_indicator` | N1-N4 | **Built** (2,071 rows, `test_gold2`, 2026-10-18) |
+| `mart_area_priority` | P1 | **Built** (12,426 rows, `test_gold2`, 2026-10-18). Supply-only ranking. |
+| `mart_locality_service_presence` | A1, A2 | **Built** (`test_gold2`, 2026-10-18) |
+| `mart_evidence_readiness` | SUP6 | **Built** (`test_gold2`, 2026-10-18) |
+| `mart_tb_case_study` | CASE | **Built** (1,642 rows, `test_gold2`, 2026-10-18) |
+| `mart_kidney_case_study` | N2 | **Built** (81 rows, `test_gold2`, 2026-10-18) |
+| `mart_dengue_peak_capacity` | N3, D1 | **Built** (981 rows, `test_gold2`, 2026-10-18) |
 | `mart_surge_stress_test` | BQ2, D1-D5 (previous scope) | **Designed, not built.** Work paused. |
 
 ### Dimensions (v2 model)
@@ -166,7 +166,7 @@ Note: The v2 model does not have a separate `dim_profession`. Workforce professi
 * Every silver and gold row is traceable to its source file through lineage columns and the build log.
 * Quality checks stop the pipeline when data is bad, so the dashboard never serves unchecked data.
 * **S1, S2, S3** are answered on the dashboard (v2 model pages: Overview, Gaps and equity, Preparedness) from `mart_area_service_profile` v2 and related views, with documented metrics and known limitations. FHSIS primary-care counts (S3) are query-only.
-* **N1-N4, W1-W2, E1-E2, SUP1-SUP6** are queryable from gold v2 fact tables (`test_gold2`), built 2026-10-15. `mart_capacity_gap` is not built; `mart_area_service_profile` v2 partially covers BQ1 (supply, workforce, poverty, access per planning unit), and disease burden integration is the remaining gap.
+* **N1-N4, W1-W2, E1-E2, SUP1-SUP6** are queryable from gold v2 fact tables (`test_gold2`), built 2026-10-18. `mart_capacity_gap` is not built; `mart_area_service_profile` v2 partially covers BQ1 (supply, workforce, poverty, access per planning unit), and disease burden integration is the remaining gap.
 * **BQ2 (D1-D5)** is previous scope and not an active deliverable. D1 (wave selection) remains queryable via `mart_dengue_peak_capacity`, which also serves N3.
 * **P1** is partially built (`mart_area_priority`, supply-only). Full P1 needs N, A, W, E validated on the same analysis unit.
 * **P2** is gated (needs `priority_weight_params`).

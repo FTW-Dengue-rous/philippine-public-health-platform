@@ -1,7 +1,7 @@
 # Silver: facilities
 
 Owner: Cristina Villota, Via Cabuyao
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 This page covers the facilities silver tables: facility identity and registry, published counts by area and year, anonymous bed occupancy records, OSM facility points, and the reference inputs they depend on. It follows `facilities-silver-plan.md` v2.1 (2026-10-12) and the headers of the SQL and Python files.
 
@@ -43,7 +43,7 @@ This page covers the facilities silver tables: facility identity and registry, p
 | `geography_silver` | PSGC codes, names, levels, city class | Only source of codes and names. One snapshot (`content_checksum`) |
 | `admin_boundaries_silver` | HDX COD-AB city / municipality polygons, centroids, areas | Team table, also used by `dim_geography`. Only polygons are taken from it, never codes |
 
-Bronze loading is described in [bronze.md](bronze.md).
+Bronze loading is described in [bronze facilities](../../../docs/04-pipeline/bronze/facilities.md).
 
 ## Tables
 
@@ -137,7 +137,7 @@ Boundaries (`00a`)
 
 ## Run order
 
-1. `geography_silver`, then `admin_boundaries_silver` (see [silver-geography-population.md](silver-geography-population.md)).
+1. `geography_silver`, then `admin_boundaries_silver` (see [geography silver](../../../docs/04-pipeline/silver/geography.md)).
 2. `facilities_silver_00a_area_boundary.sql` (every run).
 3. Only when geography, the boundaries or a facilities bronze source changed: `build_facilities_area_exceptions.py`. Review the report and diff, record decisions in `facilities_area_decisions.csv`, upload the CSV.
 4. `facilities_silver_00_reference.sql` (every run).
@@ -170,7 +170,7 @@ Boundaries (`00a`)
 | OSM points not located, placed by `addr:city` only, on a shared border, `addr_city_conflict` | WARN | completeness |
 | Freshness of the published table against bronze and geography (designed, plan 5.6) | FAIL | timeliness |
 
-Shared rules are in [lineage-qc-contract.md](lineage-qc-contract.md).
+Shared rules are in the [lineage and quality contract](../../../docs/lineage-qc-contract_v1.3.md).
 
 ### Silver QC: `facilities_silver_qc.py`
 
@@ -272,4 +272,4 @@ Gold must not redo or override:
 - OSM points are never a facility count. Show "© OpenStreetMap contributors".
 - Distances. Use `dim_geography` centroids, the same HDX polygons facilities use. Do not compute centroids again.
 
-See [gold-model.md](gold-model.md) and [decisions.md](decisions.md).
+See the [gold model docs](../../../docs/04-pipeline/gold/README.md) and [decisions](../../../docs/03-architecture/decisions.md).

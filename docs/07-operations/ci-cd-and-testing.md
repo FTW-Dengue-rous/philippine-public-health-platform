@@ -90,4 +90,4 @@ The pipeline job itself is the integration test. A successful run with expected 
 * No automated end-to-end test in CI (would require Databricks compute).
 * No data quality assertions in CI (they run in the pipeline job).
 * No dashboard rendering test.
-* The `facilities_osm_point_silver` table is verified to exist (16,030 rows, built 2026-10-15).
+* The `facilities_osm_point_silver` table is verified to exist (16,030 rows, built 2026-10-18).

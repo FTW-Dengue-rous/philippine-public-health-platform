@@ -98,6 +98,7 @@ BQ1 breaks down into 20+ analytical questions across five pillars: Need, Supply,
 | File | Content |
 |---|---|
 | [README.md](06-evidence/README.md) | Execution evidence and run records |
+| [2026-10-18-new-workspace-run.md](06-evidence/2026-10-18-new-workspace-run.md) | Full pipeline run in the current workspace: run IDs, timestamps, outcomes, QC |
 | [idempotency/comparison.md](06-evidence/idempotency/comparison.md) | Idempotent rebuild comparison |
 
 ### 07-operations/

@@ -14,7 +14,7 @@ Transform the validated Socioeconomic Bronze datasets into four separate Silver 
 | `socioeconomic_health_expenditure_per_capita_silver` | Year | 8 |
 | `socioeconomic_child_mortality_silver` | Characteristic group × characteristic × survey year | 60 |
 
-Expected row counts were reference values during drafting; the 2026-10-15 pipeline build produced exactly these counts for all four tables (verified in `quality.build_log` on 2026-10-18).
+Expected row counts were reference values during drafting; the 2026-10-18 pipeline builds produced exactly these counts for all four tables (verified in `quality.build_log` on 2026-10-18).
 
 PSGC Silver belongs to the Geography domain.
 
@@ -76,13 +76,13 @@ PSGC Silver belongs to the Geography domain.
 - [x] Resolve reviewed Poverty area mapping (poverty silver published, 322 rows)
 - [x] Implement guarded Poverty Silver publishing
 - [x] Integrate Silver QC and lineage accounting (all four silver tables have results in `quality.qc_results`; builds recorded in `quality.build_log`)
-- [x] Execute and validate in Databricks (2026-10-15 pipeline build)
+- [x] Execute and validate in Databricks (2026-10-18 pipeline build)
 - [x] Implement remaining three Silver transformations (128 / 8 / 60 rows)
 - [ ] Prepare PR targeting `dev` (not verifiable from build records; builds logged without a code version)
 
 ## 6. Test Evidence
 
-All four Socioeconomic Silver tables are published and verified (2026-10-15 build; verified 2026-10-18 from `quality.build_log` and `quality.qc_results`):
+All four Socioeconomic Silver tables are published and verified (2026-10-18 builds; verified 2026-10-18 from `quality.build_log` and `quality.qc_results`):
 
 | Silver table | Rows | Build status | QC results |
 |---|---|---|---|
@@ -95,9 +95,9 @@ The dated entries below (2026-10-08 and earlier) are historical working-log evid
 
 ## 7. Open Dependencies
 
-1. Resolved: poverty silver published (322 rows, 2026-10-15).
+1. Resolved: poverty silver published (322 rows, 2026-10-18).
 2. Resolved: builds recorded in `quality.build_log`; QC results in `quality.qc_results`.
-3. Resolved: Databricks execution and Silver QC completed 2026-10-15.
+3. Resolved: Databricks execution and Silver QC completed 2026-10-18.
 
 Still open: PR status against `dev` is not recorded in the build data.
 

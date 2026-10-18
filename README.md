@@ -1,7 +1,7 @@
 # Philippine Public Health Platform
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 A data platform on Databricks that brings Philippine public health data — facilities, diseases, workforce, socioeconomic indicators, and geography — into a unified, quality-checked warehouse. It answers supply-side questions about hospital availability, bed occupancy, and primary care capacity across the country's planning areas.
 
@@ -29,10 +29,13 @@ See [Setup guide](docs/07-operations/setup-guide.md) for prerequisites, permissi
 
 The platform ingests publicly available and FOI-released data from DOH, PSA, UP NOAH, HDX, IHME, and other sources, processes it through a medallion architecture (bronze → silver → gold), and serves analytical marts and a dashboard for public health planning.
 
-**Two main business questions:**
+**The main business question:**
 
 * **BQ1** — Which areas show the largest gaps in health-service availability relative to population and selected indicators of disease burden, and how do these gaps differ by socioeconomic conditions? (capacity gap analysis)
-* **BQ2** — If a selected historical dengue outbreak recurred against the latest available hospital capacity, which regions or provinces would face the greatest estimated bed shortfalls under different assumptions? (surge stress test, needs input)
+
+A previous-scope question, outside the active scope (blocked on admission-share and length-of-stay parameters):
+
+* **BQ2** — If a selected historical dengue outbreak recurred against the latest available hospital capacity, which regions or provinces would face the greatest estimated bed shortfalls under different assumptions? (dengue surge stress test; previous scope)
 
 BQ1 breaks down into pillars: Need (N1-N4), Supply (S1-S3), Access (A1-A2), Workforce (W1-W2), Equity (E1-E2), Priority (P1-P2), plus supporting (SUP1-SUP6) and conditional (CON1-CON3) analyses.
 
@@ -59,13 +62,13 @@ Bronze  ── public_health.bronze    (raw, all-string, config-driven loaders)
 Silver  ── public_health.silver   (cleaned, typed, matched, lineage-tracked)
     │         + silver QC + cross-domain QC
     ▼
-Gold    ── public_health.gold     (analytical marts for dashboard)
+Gold    ── public_health.test_gold2 (v2 analytical model, active) + public_health.gold (v1, legacy)
     │
     ▼
 Dashboard (Lakeview) + Unity Catalog serving
 ```
 
-Catalog: `public_health` · Schemas: `bronze`, `silver`, `gold`, `quality`
+Catalog: `public_health` · Schemas: `bronze`, `silver`, `gold` (v1, legacy), `test_gold2` (v2, active), `quality`
 
 Full architecture: [Architecture overview](docs/03-architecture/architecture-overview.md)
 
@@ -73,13 +76,13 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 
 | Domain | Bronze | Silver | Gold | Dashboard |
 |---|:---:|:---:|:---:|:---:|
-| Geography (PSGC, admin boundaries) | ✅ Implemented | ✅ Implemented | ✅ Implemented | — |
-| Facilities (NHFR, HFSRB, PSA, FHSIS) | ✅ Implemented | ✅ Implemented | ✅ Implemented | ✅ Draft |
-| Diseases (dengue, TB, cancer) | ✅ Implemented | ✅ Implemented | ✅ Implemented | — |
-| Workforce (FHSIS, PSA, PSMO) | ✅ Implemented | ✅ Implemented | ✅ Implemented | — |
-| Socioeconomic (poverty, expenditure) | ✅ Implemented | ✅ Implemented | ✅ Implemented | — |
+| Geography (PSGC, admin boundaries) | Yes | Yes | Yes | — |
+| Facilities (NHFR, HFSRB, PSA, FHSIS) | Yes | Yes | Yes | ✅ Draft |
+| Diseases (dengue, TB, cancer) | Yes | Yes | Yes | — |
+| Workforce (FHSIS, PSA, PSMO) | Yes | Yes | Yes | — |
+| Socioeconomic (poverty, expenditure) | Yes | Yes | Yes | — |
 
-✅ = implemented and verified on Databricks. See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
+Yes = implemented and verified on Databricks. The full pipeline (bronze, silver, gold v2) was verified end to end on 2026-10-18 in the current workspace; see the [run record](docs/06-evidence/2026-10-18-new-workspace-run.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
 
 ## Key limitations
 
@@ -87,7 +90,7 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 * **Reference year matters**: Sources span different years (2018–2025). Never compare partial years with full years without adjustment. See [Assumptions and limitations](docs/01-context/assumptions-and-limitations.md).
 * **Geographic comparability**: PSGC codes change over time. The platform uses PSA PSGC Q2 2024 as the reference geography. Area names that do not match are logged as exceptions. See [Data gaps](docs/02-data/data-gaps.md).
 * **Recorded ≠ absent**: A facility not listed in a registry does not prove it does not exist. See [Assumptions and limitations](docs/01-context/assumptions-and-limitations.md).
-* **OSM point silver (facilities)**: The `facilities_osm_point_silver` table is documented but not verified to exist on Databricks. See [Known issues](docs/08-governance/known-issues-and-backlog.md).
+* **OSM coverage is community-maintained**: `facilities_osm_point_silver` exists (16,030 rows, built 2026-10-18), but absence from OSM does not prove a facility does not exist. See [Known issues](docs/08-governance/known-issues-and-backlog.md).
 
 ## Documentation
 
@@ -99,6 +102,7 @@ Full documentation lives in [`docs/`](docs/README.md). Key entry points:
 * **Using the dashboard?** -> [Dashboard guide](docs/05-dashboard/dashboard-guide.md) -> [Metric definitions](docs/04-pipeline/gold/metric-definitions.md)
 * **Lineage and quality contract** -> [lineage-qc-contract_v1.3.md](docs/lineage-qc-contract_v1.3.md)
 * **Handover** -> [Handover checklist](handover-checklist.md)
+* **Verified execution** -> [Evidence: 2026-10-18 full pipeline run](docs/06-evidence/2026-10-18-new-workspace-run.md)
 
 ## Repository layout
 

@@ -35,7 +35,7 @@ QC results are stored in `public_health.quality.qc_results`. Build metadata is i
 
 ## Verified results
 
-All domain silver builds succeeded on 2026-10-15 (full pipeline run):
+All domain silver builds succeeded on 2026-10-18 (orchestrated pipeline runs; zero FAIL QC rows recorded):
 
 * `facilities_id_map_silver`: 5,257 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
 * `facilities_registry_silver`: 3,957 rows, 0 null keys, 0 duplicates, lineage complete. PASS.
@@ -50,7 +50,7 @@ All domain silver builds succeeded on 2026-10-15 (full pipeline run):
 * `workforce_headcount_silver`: 28,071 rows. PASS.
 * `workforce_specialist_silver`: 52 rows. PASS.
 
-*(Source: build_log status = succeeded for all 2026-10-15 builds. Row counts from COUNT(*) queries, 2026-10-18.)*
+*(Source: build_log status = succeeded for all 2026-10-18 builds. Row counts from COUNT(*) queries, 2026-10-18.)*
 
 Warnings (non-blocking, facilities bed occupancy):
 * BOR > 150 (implausible, excluded): 110 rows.

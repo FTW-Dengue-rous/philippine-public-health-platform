@@ -47,6 +47,6 @@ Key columns include: `planning_unit_key`, `area_code`, `area_name`, `unit_level`
 
 This mart effectively answers BQ1 supply, access, workforce, and equity questions per planning unit. Disease burden (N1-N4) is in `mart_area_burden_indicator` (2,071 rows).
 
-The legacy v1 `mart_area_service_profile` in `public_health.gold` (2,701 rows, built 2026-10-13) uses a different grain: `supply_section x area_level x area_key x year x ownership x facility_level`. The dashboard currently reads from the v1 table. Moving the dashboard to v2 requires updating dataset queries.
+The legacy v1 `mart_area_service_profile` in `public_health.gold` (2,784 rows, built 2026-10-13; count verified 2026-10-18) uses a different grain: `supply_section x area_level x area_key x year x ownership x facility_level`. The dashboard reads the v2 `test_gold2` tables (verified 2026-10-18: the dashboard JSON references `test_gold2` 63 times and the v1 table 0 times).
 
 See [data dictionary](data-dictionary.md) for column definitions, [metric definitions](metric-definitions.md) for formulas, [data-marts.md](data-marts.md) for the question-to-mart mapping, and [sample queries](sample-queries.md) for usage examples.

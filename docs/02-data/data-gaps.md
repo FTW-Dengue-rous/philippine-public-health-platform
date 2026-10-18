@@ -28,7 +28,7 @@ These gaps affect BQ1 and its supporting questions. Each row is one gap. They ar
 | G16 | Poverty estimates are biennial (2021/2023/2025). | E1 | Do not interpolate poverty between survey years. | Known limitation |
 | G17 | Week definitions differ across dengue sources (UP NOAH folds week 53 into 52; HDX uses ISO weeks). | N3 | Label the week convention per source. | Known limitation |
 | G18 | Admin boundaries require a manual ingestion step and a job parameter per run. | All geographic joins | Set `admin_boundaries_run_dir` per run. | Open |
-| G19 | `facilities_osm_point_silver` was previously unverified — resolved: built 2026-10-15, 16,030 rows. | S1 | No action; verification done. | Resolved |
+| G19 | `facilities_osm_point_silver` was previously unverified — resolved: built 2026-10-18, 16,030 rows (bundle-job run; verified via table Delta history). | S1 | No action; verification done. | Resolved |
 | G20 | PSA hospitals/beds national annual series only goes to 2015. | S1 | Use PSA region annual (2020–2024) for trends. | Open |
 
 ## Scope limitation

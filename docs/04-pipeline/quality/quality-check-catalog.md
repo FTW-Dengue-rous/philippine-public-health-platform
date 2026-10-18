@@ -48,7 +48,7 @@ Implemented in `src/05_quality/silver/silver_cross_domain_qc.py`.
 
 ## Gold checks
 
-Implemented in `src/05_quality/gold/gold_qc.py`.
+**Not implemented.** `src/05_quality/gold/gold_qc.py` is a placeholder (a single comment line); the checks below are design intent, not implemented behavior ([known issues](../../08-governance/known-issues-and-backlog.md) KI11). No gold QC results have ever been recorded.
 
 | Check | Rule | Severity |
 |---|---|---|

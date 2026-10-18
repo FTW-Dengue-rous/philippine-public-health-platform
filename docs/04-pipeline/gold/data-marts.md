@@ -11,7 +11,7 @@ Gold marts built from silver tables for dashboard consumption and analysis. Each
 
 * **Purpose**: Answers supply-side questions S1 (hospital availability), S2 (bed occupancy), S3 (primary care availability).
 * **Grain**: `supply_section x area_level x area_key x year x ownership x facility_level`.
-* **Rows**: 2,701 (built 2026-10-13).
+* **Rows**: 2,784 (built 2026-10-13; count verified 2026-10-18).
 * **Script**: `gold_53_mart_area_service_profile.sql`.
 * **Schema**: `public_health.gold`.
 * **Questions**: S1, S2, S3.
@@ -21,7 +21,7 @@ Gold marts built from silver tables for dashboard consumption and analysis. Each
 
 * **Purpose**: Wide planning-unit mart covering supply, workforce, poverty, and access per province/HUC/NCR.
 * **Grain**: One row per planning unit.
-* **Rows**: 109 (built 2026-10-15).
+* **Rows**: 109 (built 2026-10-18).
 * **Columns**: 62.
 * **Script**: `gold_v2_53_mart_area_service_profile.sql`.
 * **Schema**: `public_health.test_gold2`.
@@ -83,7 +83,7 @@ Gold marts built from silver tables for dashboard consumption and analysis. Each
 
 ## Built in v2 (test_gold2)
 
-### Fact tables (built 2026-10-15)
+### Fact tables (built 2026-10-18)
 
 | Fact table | Rows | Questions | Silver source |
 |---|---|---|---|

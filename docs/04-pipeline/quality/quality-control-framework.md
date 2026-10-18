@@ -65,7 +65,7 @@ Silver QC scripts live in `src/05_quality/silver/`. They check:
 
 ## Gold QC
 
-Gold QC lives in `src/05_quality/gold/gold_qc.py`. It validates mart output:
+Gold QC is designed to live in `src/05_quality/gold/gold_qc.py` and validate mart output. **Not implemented yet**: the script is currently a placeholder ([known issues](../../08-governance/known-issues-and-backlog.md) KI11), so the checks below are design intent only:
 
 * Mart row counts are non-zero
 * Key columns are non-null

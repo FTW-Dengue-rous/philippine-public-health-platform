@@ -88,7 +88,7 @@ mart_area_service_profile (v2)
   rolled up to planning unit (province / HUC / NCR)
 ```
 
-Disease burden (N1-N4) is in `mart_area_burden_indicator` (2,071 rows) but is not yet joined to this mart. The legacy v1 `mart_area_service_profile` in `public_health.gold` (2,701 rows) uses a different grain: `supply_section x area_level x area x year x ownership x facility_level`.
+Disease burden (N1-N4) is in `mart_area_burden_indicator` (2,071 rows) but is not yet joined to this mart. The legacy v1 `mart_area_service_profile` in `public_health.gold` (2,784 rows) uses a different grain: `supply_section x area_level x area x year x ownership x facility_level`.
 
 ## Design choices
 

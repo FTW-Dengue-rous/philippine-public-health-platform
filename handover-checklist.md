@@ -1,9 +1,11 @@
 # Handover checklist and final deliverables
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-15
+Last updated: 2026-10-18
 
 This document consolidates the final documentation deliverables: a change summary, rubric coverage table, validation results, unresolved gaps, and a handover checklist for the receiving team.
+
+Update 2026-10-18: the pipeline has since been executed end to end in the current workspace (see the [2026-10-18 run record](docs/06-evidence/2026-10-18-new-workspace-run.md)). Sections 1-3 below describe the 2026-10-15 documentation session and have been updated where verification results changed.
 
 ---
 
@@ -56,8 +58,8 @@ This document consolidates the final documentation deliverables: a change summar
 
 | Gap | What is missing | Impact | Where documented |
 |---|---|---|---|
-| `facilities_osm_point_silver` | Table existence not confirmed on Databricks | OSM point analysis (CON1) cannot run | [known issues](docs/08-governance/known-issues-and-backlog.md), [data-gaps](docs/02-data/data-gaps.md) G10 |
-| Gold v2 fact table verification | Row counts and content not independently verified | Findings from N1-N4, W1-W2, E1-E2 are unverified | [analytical-validation](docs/04-pipeline/gold/analytical-validation-and-traceability.md#unverified-claims) |
+| `facilities_osm_point_silver` | Resolved 2026-10-18: built by the bundle-job run (16,030 rows; Delta history and QC verified) | None | [2026-10-18 run record](docs/06-evidence/2026-10-18-new-workspace-run.md) |
+| Gold QC checks | `gold_qc.py` is a placeholder; no automated gold checks exist (row counts are verified, content checks are not) | Gold data quality is not automatically validated | [known issues](docs/08-governance/known-issues-and-backlog.md) KI11 |
 | `mart_capacity_gap` (BQ1) | Not built; needs province/HUC/NCR analysis unit | BQ1 main question not answered | [data-marts](docs/04-pipeline/gold/data-marts.md), [backlog](docs/08-governance/known-issues-and-backlog.md) |
 | `mart_surge_stress_test` (BQ2) | Not built; needs admission share and LOS parameters | BQ2 main question not answered | [data-marts](docs/04-pipeline/gold/data-marts.md), [backlog](docs/08-governance/known-issues-and-backlog.md) |
 | Dashboard S3 page | No widgets | S3 not visible on dashboard | [dashboard-guide](docs/05-dashboard/dashboard-guide.md), [backlog](docs/08-governance/known-issues-and-backlog.md) |
@@ -88,9 +90,10 @@ This document consolidates the final documentation deliverables: a change summar
 - [ ] Run `databricks bundle deploy -t dev`.
 - [ ] Set the `admin_boundaries_run_dir` job parameter to the latest ingestion run folder.
 - [ ] Run the pipeline job: `databricks jobs run-now --job-name ph-public-health-pipeline`.
+- [ ] Before running, confirm the other pipeline job (bundle-deployed) is idle; concurrent runs race on shared tables (KI12).
 - [ ] Verify all tasks succeeded (green in Jobs UI).
 - [ ] Check row counts match [runbook expected outputs](docs/07-operations/runbook.md#expected-outputs).
-- [ ] Check `SELECT * FROM public_health.quality.qc_results WHERE severity = 'ERROR' AND result = 'FAIL'` returns no rows.
+- [ ] Check `SELECT * FROM public_health.quality.qc_results WHERE status = 'FAIL'` returns no rows (a failed check stores status = FAIL; WARN does not block).
 - [ ] Open the Lakeview dashboard and confirm S1 and S2 pages show data.
 
 ### Understand the system
