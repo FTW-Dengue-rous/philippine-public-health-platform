@@ -1,5 +1,8 @@
 # Gold data model v2 (combined) — SQL
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-15
+
 5 dimensions, 4 facts. Built from data model v1 (`public_health.test_gold`) and the mentor's conceptual model. Target schema: `public_health.test_gold2` (beside v1 in `test_gold`, for comparison).
 
 Naming (decided 2026-10-14 evening): this is **data model v2**. v1 is the as-built model in `test_gold`; v2 is the combined model in `test_gold2`. The files and `build_log` rows were labelled "v4" until this evening (and the mentor proposal called the same model "v3"); those labels are retired. The "v2 / v3 options" in `gold-model-v2-v3-handoff.md` were proposal-stage alternatives, not this model.

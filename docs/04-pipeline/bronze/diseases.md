@@ -1,5 +1,8 @@
 # Bronze Layer - Diseases Domain
 
+Owner: Jemma Santiago
+Last updated: 2026-10-15
+
 ## 1. Domain Overview
 
 **Purpose**

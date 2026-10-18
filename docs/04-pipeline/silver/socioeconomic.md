@@ -1,5 +1,8 @@
 ﻿# Socioeconomic Silver — Implementation and Evidence
 
+Owner: Virna Pomendia
+Last updated: 2026-10-15
+
 ## 1. Scope
 
 Transform the validated Socioeconomic Bronze datasets into four separate Silver tables following Jemma's latest Socioeconomic Silver Guide v1.2.

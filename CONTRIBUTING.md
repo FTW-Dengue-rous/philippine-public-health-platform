@@ -1,5 +1,8 @@
 # Contributing
 
+Owner: Jemma Santiago
+Last updated: 2026-10-15
+
 ## Workflow
 1. Pull latest `dev`: `git checkout dev && git pull`
 2. Create a branch: `git checkout -b feature/<short-name>`

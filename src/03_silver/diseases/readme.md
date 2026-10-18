@@ -1,5 +1,8 @@
 # Silver: diseases
 
+Owner: Jemma Santiago
+Last updated: 2026-10-15
+
 This page covers the diseases domain in silver: six built tables, four reference tables, the rules that decide which bronze rows are kept, and what has been run so far. The design source is `diseases-silver-plan.md` (v1.7, 2026-10-09). Facts dated 2026-10-11 or later on this page are newer than the plan and override it.
 
 ## Status

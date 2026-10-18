@@ -1,5 +1,8 @@
 # PSGC Bronze Ingestion Evidence
 
+Owner: Shiena Arico
+Last updated: 2026-10-15
+
 ## Purpose
 
 This document records validation evidence for the PSA Philippine

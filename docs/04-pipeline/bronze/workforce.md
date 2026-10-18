@@ -1,5 +1,8 @@
 # Workforce Bronze — Ingestion and Quality Evidence
 
+Owner: Virna Pomendia
+Last updated: 2026-10-15
+
 **Project:** Philippine Public Health Platform / LUNASaan?
 **Layer / domain:** Bronze / Workforce
 **Code reference:** `origin/dev` at commit `7484f62` (Workforce source ZIP exported 2026-10-12)

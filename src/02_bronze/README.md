@@ -1,5 +1,8 @@
 # Bronze ingestion
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-15
+
 This page explains how source files move into `public_health.bronze` for the diseases, facilities, workforce and socioeconomic domains.
 
 It covers:

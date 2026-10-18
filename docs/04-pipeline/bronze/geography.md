@@ -1,5 +1,8 @@
 # Bronze Layer - Geography Domain
 
+Owner: Margarette Legaspi
+Last updated: 2026-10-15
+
 ## 1. Domain Overview
 
 The Geography Bronze domain loads geographic reference records and administrative-boundary features into Bronze tables. It covers two notebooks:

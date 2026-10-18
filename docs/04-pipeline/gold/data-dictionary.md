@@ -1,79 +1,125 @@
-# Data Dictionary
+# Data dictionary
 
-## Bronze Ingestion: Health Facilities and Medical Practitioners Data
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-15
 
-This ingests raw health-facility and health-workforce source files from the landing zone into the `public_health.bronze` schema. Bronze tables preserve the source structure as closely as possible and are refreshed in full on each run.
+Field definitions for the key silver and gold tables. For metric formulas, see [metric definitions](metric-definitions.md).
 
-### Table of Contents
+## `mart_area_service_profile`
 
-1. [Shared Conventions](#shared-conventions)
-2. [Tables at a Glance](#tables-at-a-glance)
-3. [Bronze Layer](#bronze-layer)
-    - [Diseases](#bronze-diseases-domain)
-    - [Geography](#bronze-geography-domain)
-        - [`geography_bronze`](#public_healthbronzegeography_bronze)
-        - [`geography_phl_admin_boundaries`](#public_healthbronzegeography_phl_admin_boundaries)
-        - [`geography_phl_admin_boundaries_dq`](#public_healthbronzegeography_phl_admin_boundaries_dq)
-    - [Facilities](#bronze-facilities-domain)
-        - [`facilities_primary_care`](#public_healthbronzefacilities_primary_care) — Regional Distribution of Primary Care Facilities
-        - [`active_facilities`](#public_healthbronzeactive_facilities) — NHFR Active Facilities
-        - [`facilities_hospital_list`](#public_healthbronzefacilities_hospital_list) — Regional Distribution of Hospitals
-        - [`facilities_infirmary`](#public_healthbronzefacilities_infirmary) — Regional Distribution of Regulated Infirmaries
-        - [`government_medical_practitioners_by_region`](#public_healthbronzegovernment_medical_practitioners_by_region) — Government Medical Practitioners by Region, 2012–2023
-        - [`psmo_oncologists`](#public_healthbronzepsmo_oncologists) — PSMO Oncologist Count by Region/Province
-        - [`globocan_2024_statistics_at_glance`](#public_healthbronzeglobocan_2024_statistics_at_glance) — GLOBOCAN 2024 Summary Cancer Statistics
-        - [`globocan_2024_cancer_site_metrics`](#public_healthbronzeglobocan_2024_cancer_site_metrics) — GLOBOCAN 2024 Cancer Site Metrics
-        - [`neoplasm_prevalence`](#public_healthbronzeneoplasm_prevalence) — IHME GBD Neoplasm Prevalence by Province
-    - [Population](#bronze-population-domain)
-        - [`population_bronze`](#public_healthbronzepopulation_bronze--legacy-psa-population-file-ingestion) — Legacy PSA Population Data
-    - [Socio-economic](#bronze-socio-economic-domain)
-    - [Workforce](#bronze-workforce-domain)
-4. [Silver Layer](#silver-layer)
-    - [Diseases](#silver-disease-domain)
-    - [Geography](#silver-geography-domain)
-    - [Facilities](#silver-facilities-domain)
-    - [Population](#silver-population-domain)
-        - [`population_silver`](#public_healthsilverpopulation_silver) —  Silver-Transformed PSGC Population Data
-    - [Socio-economic](#silver-socio-economic-domain)
-    - [Workforce](#silver-workforce-domain)
+| Column | Type | Description |
+|---|---|---|
+| `supply_section` | STRING | Which question: `S1_hospital_supply`, `S2_hospital_occupancy`, `S3_primary_care_supply` |
+| `area_level` | STRING | `City/Mun` or `Province` |
+| `area_key` | STRING | Area identifier (PSGC code or province_unit_key fallback) |
+| `psgc_code` | STRING | PSGC code from geography_silver (null for some NCR/historical areas) |
+| `area_name` | STRING | Area name from geography_silver |
+| `region_name` | STRING | Region name |
+| `province_name` | STRING | Province name (null for NCR and HUC/ICC areas) |
+| `year` | INT | Reference year (null for S1 current snapshot) |
+| `ownership` | STRING | `Government`, `Private`, or `Total` (normalized via INITCAP) |
+| `facility_level` | STRING | Hospital level from registry |
+| `population` | BIGINT | Population from geography_population_silver or facilities_metric_silver |
+| `hospital_count` | INT | Count of hospitals in the area |
+| `authorized_beds` | INT | Sum of Authorized Bed Capacity |
+| `analysis_beds` | INT | Beds used for analysis |
+| `beds_per_10000_pop` | DOUBLE | `authorized_beds / population × 10000` |
+| `avg_bor` | DOUBLE | Average bed occupancy rate (S2 only) |
+| `min_bor` | DOUBLE | Minimum BOR in the area (S2 only) |
+| `max_bor` | DOUBLE | Maximum BOR in the area (S2 only) |
+| `facility_count_reporting` | INT | Number of facilities reporting BOR (S2 only) |
+| `pct_bor_over_100` | DOUBLE | Percentage of hospitals with BOR > 100 (S2 only) |
+| `sum_implementing_beds` | INT | Sum of implementing beds (S2 only) |
+| `bhs_count` | INT | Barangay Health Stations count (S3 only) |
+| `rhu_count` | INT | Rural Health Units count (S3 only) |
+| `mhc_count` | INT | Main Health Centres count (S3 only) |
+| `chc_count` | INT | City Health Centres count (S3 only) |
+| `health_centers_total` | INT | `COALESCE(health_centers_total, mhc + chc)` (S3 only) |
+| `bhs_per_10000_pop` | DOUBLE | `bhs_count / population × 10000` (S3 only) |
+| `rhu_per_10000_pop` | DOUBLE | `rhu_count / population × 10000` (S3 only) |
+| `primary_care_per_10000_pop` | DOUBLE | `health_centers_total / population × 10000` (S3 only) |
+
+## `facilities_registry_silver`
+
+| Column | Type | Description |
+|---|---|---|
+| `facility_key` | STRING | Stable facility identifier (primary key) |
+| `facility_category` | STRING | `hospital`, `infirmary`, `primary_care`, `dialysis_clinic` |
+| `ownership` | STRING | `Government` or `Private` |
+| `ownership_class` | STRING | Ownership sub-class |
+| `service_level` | STRING | Hospital level (Level 1, 2, 3, or Specialist) |
+| `authorized_beds` | INT | Authorized Bed Capacity |
+| `analysis_beds` | INT | Beds used for analysis |
+| `psgc_code` | STRING | PSGC code for the facility's location |
+| `area_key` | STRING | Area key for joining to geography |
+| `_silver_build_id` | STRING | Build ID (links to `build_log`) |
+| `_source_key` | STRING | Source identifier |
+| `_source_file` | STRING | Source file path |
+| Lineage columns | Various | Per the [lineage contract](../../lineage-qc-contract_v1.3.md) |
+
+## `facilities_bed_occupancy_silver`
+
+| Column | Type | Description |
+|---|---|---|
+| `facility_key` | STRING | Facility identifier (foreign key to registry) |
+| `year` / `reporting_year` | INT | Reporting year (verify column name — see known issues KI6) |
+| `ownership` | STRING | `government` or `private` (lowercase in this table) |
+| `hospital_level` / `service_level` | STRING | Hospital level |
+| `bor_pct` | DOUBLE | Bed Occupancy Rate (implementing / authorized × 100) |
+| `authorized_beds` | INT | Authorized beds |
+| `implementing_beds` | INT | Implementing beds |
+| `baseline_eligible` | BOOLEAN | Whether the facility is eligible for baseline comparison |
+| `province_unit_key` | STRING | Province unit key as published |
+| `province_district` | STRING | Province district name for geography join |
+| `region_as_published` | STRING | Region name as published in the source |
+
+## `facilities_metric_silver`
+
+| Column | Type | Description |
+|---|---|---|
+| `area_key` | STRING | Area key |
+| `psgc_code` | STRING | PSGC code |
+| `year` | INT | Reference year |
+| `ownership` | STRING | Ownership (Government, Private, or Total) |
+| `hospitals` | INT | Hospital count |
+| `authorized_beds` | INT | Authorized beds |
+| `bhs` | INT | BHS count |
+| `rhu` | INT | RHU count |
+| `mhc` | INT | MHC count |
+| `chc` | INT | CHC count |
+| `health_centers_total` | INT | Total health centres |
+| `barangays` | INT | Barangay count |
+| `population` | BIGINT | Population |
+| `_source_key` | STRING | Source key (e.g. `doh_fhsis_demographic`, `psa_bhs_region_annual`) |
+
+## `geography_silver`
+
+| Column | Type | Description |
+|---|---|---|
+| `psgc_code` | STRING | PSGC code (primary key) |
+| `area_name` | STRING | Area name |
+| `geographic_level` | STRING | `Region`, `Prov`, `City`, `Mun`, `Bgy` |
+| `region_code` | STRING | Region code |
+| `province_code` | STRING | Province code (null for NCR) |
+| `populations_json` | STRING | JSON of population by year |
+| `source_version` | STRING | PSGC version (Q2 2024) |
+
+## `geography_population_silver`
+
+| Column | Type | Description |
+|---|---|---|
+| `psgc_code` | STRING | PSGC code |
+| `population_year` | INT | Population year (2015, 2020, 2024) |
+| `population` | BIGINT | Population count |
+
+## Bronze table definitions
+
+For bronze table column definitions, see the [bronze pipeline docs](../bronze/README.md) and the YAML source configs in `config/`. The detailed bronze dictionary (geography, admin boundaries, legacy facility tables) uses table names from a previous version and has been superseded by the config-driven naming convention (`<domain>_<source>_<content>_bronze`).
 
 
----
 
-### Shared Conventions
 
-* **Catalog:** `public_health`
-* **Schema:** `bronze`
-* **Storage format:** Delta
-* **Load strategy:** Full refresh (overwrite) or idempotent MERGE (upsert), depending on the table — see individual table entries
-* **Excel dependency:** `openpyxl` is required when using Serverless compute.
-* **Column preservation:** Tables with spaces or special characters in column names require Delta column mapping.
-
----
-
-### Tables at a Glance
-
-#### Bronze Layer
-| Bronze Table | Source File | Provider | Rows | Columns | Status |
-|---|---|---|---|---|---|
-| `facilities_primary_care` | `primary_care_asof20260630.xlsx` | PSA | 19 | 6 | Active |
-| `active_facilities` | `nhfr_activefacilities_asof_20260929.csv` | NHFR | 1,359 | 32 | Active |
-| `facilities_hospital_list` | `hospital_list_asof20260630.xlsx` | DOH | 40 | 14 | Active |
-| `facilities_infirmary` | `infirmary_asof20260630.xlsx` | DOH | 58 | 12 | Active |
-| `government_medical_practitioners_by_region` | `TABLE 9.14 …2012 to 2023.csv` | PSA | 72 | 14 | Active |
-| `psmo_oncologists` | `psmo_oncologists.csv` | PSMO | 52 | 6 | Active |
-| `globocan_2024_statistics_at_glance` | `globocan_2024.xlsx` | GLOBOCAN / IARC | 8 | 10 | Active |
-| `globocan_2024_cancer_site_metrics` | `globocan_2024.xlsx` | GLOBOCAN / IARC | 34 | 14 | Active |
-| `neoplasm_prevalence` | `neoplasm_prevaleFnce.csv` | IHME | 8,364 | 11 | Active |
-| `population_bronze` | Excel files in `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/population` | PSA | Runtime-dependent | 20 | Legacy |
-
-#### Silver Layer
-| Silver Table | Source File | Provider | Rows | Columns | Status |
-|---|---|---|---|---|---|
-| `population_silver` | `populations_json` in `geography_bronze` | PSA PSGC API | Run-time dependent | 8 | Active |
-> Row and column counts reflect the state at the time of writing and may change after a refresh.
-
----
+> **Legacy section below.** The geography and admin boundary column definitions are still accurate. The facility table names (e.g. `facilities_primary_care`, `active_facilities`) are from a previous version and have been superseded by the config-driven naming convention (`<domain>_<source>_<content>_bronze`). See the [bronze pipeline docs](../bronze/README.md) and YAML source configs for current table names.
 
 ## Bronze Layer
 
