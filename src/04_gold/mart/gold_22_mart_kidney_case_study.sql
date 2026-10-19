@@ -1,4 +1,5 @@
 -- ========================================
+-- gold_22_mart_kidney_case_study.sql
 -- Creates the view public_health.gold.mart_kidney_case_study
 --   One row is: one province (or NCR), as IHME publishes it
 --   Key: (kidney_unit_key, unit_basis). unit_basis follows from the key, one value per unit.
@@ -46,7 +47,14 @@
 --      (ihme_province_coverage_not_confirmed).
 --   4. Station completeness: at least 80 percent of the unit's dialysis facilities have a
 --      station count, or no dialysis facility is recorded (station_counts_incomplete).
---      80 percent is a PROPOSED threshold (open decision O-13).
+--      80 percent is a data-quality gate agreed by the team (D-56): stations per 100,000 is
+--      not compared when more than a fifth of a unit's dialysis facilities have no station
+--      count. Evidence: gold_o13_evidence.sql Q3/Q4 (comparable units at 70/80/90%).
+--
+-- SETTING (D-42). D-42 confirmed that IHME provinces include their HUCs, so
+-- ihme_includes_huc_confirmed is true. Broad rows pass gate 3 and are compared at the broad unit
+-- (province plus its HUCs). The reason ihme_province_coverage_not_confirmed no longer appears.
+-- Set it back to false only if D-42 is reversed.
 --
 -- Not in the view: undivided Maguindanao (hist:maguindanao). IHME still publishes it, but it is
 -- a named key, not a province, in dim_geography. The registry and the census use its two
@@ -57,6 +65,7 @@
 --   2026-10-18  Moved to public_health.gold and renamed gold_22. Comments updated for D-42.
 --               ihme_includes_huc_confirmed set to true (D-42): broad rows can now be
 --               comparison_eligible.
+--   2026-10-20  Reason for the 80% gate recorded from D-56 (closes O-13). No logic change.
 -- ========================================
 
 CREATE OR REPLACE VIEW public_health.gold.mart_kidney_case_study AS

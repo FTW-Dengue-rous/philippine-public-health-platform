@@ -12,6 +12,7 @@
 --   It does NOT answer BQ2 ("which areas would exceed capacity"). That needs the replay
 --   (stretch 2) with admission and length-of-stay assumptions. Nothing here converts cases to
 --   beds (review point 4, 2026-10-14 night).
+-- Previous file name: gold_v2_63_mart_dengue_peak_capacity.sql
 --
 -- Reads: fact_disease_metric (gold 07), fact_facility_capacity (gold 06),
 --        fact_area_indicator (gold 09), area_coverage_map (gold 11),
@@ -43,8 +44,9 @@
 --                                 only; null for monthly)
 --   * Repeat high burden (per source):
 --       - A year counts when it is complete or near-complete (at least 50 weeks or 12 months
---         reported). Near-complete covers the HDX years short by a week or two at a year edge
---         (F14). The strict is_complete_year still drives peak_label.
+--         reported). Near-complete covers the HDX source gaps of one week (F14; checked
+--         2026-10-19: 2019 misses ISO week 1 in every area; 2016, 2017 and 2020 miss one week in
+--         some provinces). The strict is_complete_year still drives peak_label.
 --       - The year is 'high' when the area's annual cases per 100,000 are in the top fifth of
 --         that source and year.
 --       - high_burden_years counts the high years. repeat_high_burden = 2 or more.
@@ -64,7 +66,9 @@
 --       - city: the city itself
 --       - province: the planning unit (province excluding HUCs)
 --       - province with cities listed apart (mapping_outcome aggregate): the planning unit
---         minus the beds of those cities (area_coverage_map.cities_included)
+--         minus the beds of those cities (area_coverage_map.cities_included). cities_included
+--         holds component cities only (gold 11 never lists a HUC there), so no HUC's beds are
+--         removed twice.
 --     Beds come from mart_locality_service_presence (registry snapshot). Show the as-of date.
 --   * Occupancy: fact_facility_capacity occupancy_report, ownership total, hospital_level all,
 --     latest year with any record. Coverage: province_excl_huc for a province, region for a
@@ -74,19 +78,26 @@
 --     figure for ranking, not a bed demand. Null when beds are 0 or the row is not
 --     comparison_eligible.
 --
--- PENDING (D-44). D-44 decided that each HDX date closes its week: the week runs from the date
--- minus 6 days to the date, and takes the ISO week and ISO year of the date. The evidence:
--- every HDX date is a Sunday, the last day of an ISO week, and in 2016 the HDX regional sums
--- match UP NOAH in 714 region-weeks at the ISO week of the date (21 under the week-start
--- reading). The silver and dim_date changes are not applied yet. Until then, peak_period_label
--- shows the dated week as it stands; do not read the date as the week start. After the change,
--- label HDX weeks "week ending <date>".
+-- Week convention (D-44, D-46). Each HDX date closes its week: the week runs from the date
+-- minus 6 days to the date, and takes the ISO week and ISO year of the date. UP NOAH weeks are
+-- ISO weeks (Monday to Sunday). The evidence: every HDX date is a Sunday, the last day of an
+-- ISO week, and in 2016 the HDX regional sums match UP NOAH in 714 region-weeks at the ISO week
+-- of the date (21 under the week-start reading). Silver applies it since 2026-10-19
+-- (period_basis iso_week_ending_date and iso_week). Because year is the ISO year, a few edge
+-- weeks belong to the previous year (e.g. 2021-01-03 is in 2020). peak_period_label is the
+-- dim_date label (gold 02), for example 'yyyy-Www' for UP NOAH. For HDX it reads
+-- "week ending <date>": this view adds the words, and dim_date keeps the bare date because it
+-- is part of the key.
 --
 -- History
 --   2026-10-14  Written for data model v2.
 --   2026-10-18  Moved to public_health.gold and renamed gold_23. Comments updated for D-43,
 --               D-44 (decided, pending), D-45, D-46 and D-47. The old D4 note (date = week
 --               start) is replaced. No logic change.
+--   2026-10-19  Added check 3 (one row per key). A city takes any occupancy row of its own, so
+--               two coverage_basis rows for one city would duplicate the key.
+--   2026-10-20  D-44 note updated: silver applies the ISO week convention. HDX gap note dated.
+--               HDX peak_period_label reads "week ending <date>".
 -- ========================================
 
 CREATE OR REPLACE VIEW public_health.gold.mart_dengue_peak_capacity AS
@@ -140,7 +151,7 @@ census AS (
 rated AS (
   SELECT p.*, c.population, c.population_year,
          CASE WHEN c.population > 0 THEN p.annual_cases / c.population * 100000 END AS annual_cases_per_100k,
-         -- near-complete: a year short by a week or two at its edge (HDX 2016, 2019, 2021: F14)
+         -- near-complete: a year short by one or two weeks (HDX source gaps, F14)
          -- still ranks for repeat high burden; the strict flag stays on peak_label
          (p.is_complete_year OR (p.period_grain = 'week' AND p.periods_reported >= 50)
                              OR (p.period_grain = 'month' AND p.periods_reported >= 12)) AS is_near_complete
@@ -232,7 +243,9 @@ SELECT r.area_key,
        CASE WHEN r.is_complete_year THEN 'peak'
             WHEN r.is_near_complete THEN 'highest observed period (year short by 1-2 periods at its edge)'
             ELSE 'highest observed period (year incomplete)' END AS peak_label,
-       r.peak_period_label,
+       -- HDX: the date closes its week (D-44), so show it as "week ending <date>"
+       CASE WHEN r.period_basis = 'iso_week_ending_date' THEN concat('week ending ', r.peak_period_label)
+            ELSE r.peak_period_label END                                               AS peak_period_label,
        r.peak_period_number,
        r.peak_cases,
        r.annual_cases,
@@ -305,3 +318,10 @@ FROM public_health.gold.mart_dengue_peak_capacity
 WHERE source_dataset = 'hdx_dengue' AND comparison_eligible
 ORDER BY peak_cases_per_100_beds DESC
 LIMIT 20;
+
+-- 3. Key check. Expect no row. A row means a city matched two occupancy rows (two
+--    coverage_basis values): fix the city branch of the occupancy join.
+SELECT area_key, data_source_key, year, count(*) AS rows_per_key
+FROM public_health.gold.mart_dengue_peak_capacity
+GROUP BY area_key, data_source_key, year
+HAVING count(*) > 1;
