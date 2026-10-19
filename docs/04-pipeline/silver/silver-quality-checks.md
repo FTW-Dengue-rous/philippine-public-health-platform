@@ -402,14 +402,24 @@ Years are derived at run time. Each detail names the years it used.
 
 ## 14. Latest recorded run
 
-Cross-domain run of 2026-10-19 (`validation_id e56cdd87-64bd-4686-9f32-74ff95622ed6`): **68 checks, 0 FAIL, 11 WARN**. All WARNs are expected:
+Run of 2026-10-20, after the workforce rebuild with the Zamboanga Sibugay override:
+
+| Script | `validation_id` | Result |
+|---|---|---|
+| `workforce_silver_qc.py` | `5ddb4edc-a3c7-49f0-ab52-7214b1cba1c5` | 0 FAIL. WARN: S68, S69, S70, S72, S73, S77, S79 (all expected, section 11). Headcount 28,080 rows, denominator 3,024, specialist 52 |
+| `silver_cross_domain_qc.py` | `14f27bc1-8c3f-48dd-aa5c-8a6faddd2ed4` | **68 checks, 0 FAIL, 10 WARN** |
+
+Cross-domain WARNs, all expected:
 
 | Check | Result | Reading |
 |---|---|---|
-| S29 × 9 | Quarantine below the limit: claims 1,404 of 245,405 (blank illness); TB 18 of 3,493; TB programme 2 of 5,244; OSM 2 of 16,032; facilities 7, 12 and 21 rows (no place label, or a service of an existing facility); workforce 9 of 4,999 (8 blank labels, 1 code not in geography); 1 of 3,627 (code not in geography) | Documented set-asides ([reconciliation](reconciliation.md), section 4). The code-not-in-geography row (headcount and denominator) is Zamboanga Sibugay 2025, printed `0908001000`; a row override to `0908300000` was added on 2026-10-20, so the next run shows 8 |
+| S29 × 8 | Quarantine below the limit: claims 1,404 of 245,405 (blank illness); FHSIS TB 18 of 3,493 (`area_unresolved`); TB programme 2 of 5,244 (`psgc_not_in_geography`); OSM 2 of 16,032 (outside every boundary); facilities 7 of 800, 12 of 614 and 21 of 1,180 (no place label, service of an existing facility, one place reviewed and unresolvable); workforce 8 of 4,999 (`area_label_missing`) | Documented set-asides ([reconciliation](reconciliation.md), section 4) |
 | S98 | `hdx_dengue` latest 2021; `psa_deaths_national_annual` latest 2020 | Both sources stopped publishing; history, not staleness. Candidates for `HISTORICAL_SOURCES` |
 | S99 | 11 of 171 area-years above 10% | Largest: regions VI and VII in 2024. FHSIS keeps the old regions; the 2024 census has the Negros Island Region. The rest are areas where FHSIS prints its own population figure |
-| S97 | PASS for both ratios | Beds on census 2024; health workers on FHSIS and census 2024 |
+
+Passed: S04 for workforce (0 of 1,743 codes missing from geography), S08 everywhere, S97 for both ratios (beds on census 2024; health workers on FHSIS and census 2024).
+
+The previous run (2026-10-19, `e56cdd87-64bd-4686-9f32-74ff95622ed6`, 11 WARN) had one more S29 WARN: the Zamboanga Sibugay 2025 row, printed `0908001000`, quarantined in headcount (9 rows) and denominator (1 row). A row override to `0908300000` (`accepted`) resolved it.
 
 The full results of every run go to [`06-evidence/`](../../06-evidence/README.md). How to read them: [quality results and evidence](../quality/quality-results-and-evidence.md).
 
@@ -478,4 +488,4 @@ QUALIFY row_number() OVER (PARTITION BY target_table ORDER BY finished_at DESC) 
 | 2026-10-14 | S29 Healthsites override removed; OSM newest file only; S98 tables added |
 | 2026-10-19 | Rule 2a: controls from the YAML, settings from `build_log.parameters`; GS07, GS08 and S59 added; S08 ceilings are the current year; S08 checks ISO weeks (D-44, D-46); cross-domain years derived |
 | 2026-10-19 | Page written |
-| 2026-10-20 | Workforce: Zamboanga Sibugay 2025 row override noted (S29, S73) |
+| 2026-10-20 | Workforce: Zamboanga Sibugay 2025 row override (S29, S73); latest run updated (68 checks, 0 FAIL, 10 WARN) |
