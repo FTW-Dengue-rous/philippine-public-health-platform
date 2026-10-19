@@ -58,6 +58,8 @@ A gate stops the build on any weekly row that is not a consistent ISO week. Edge
 
 ## Quality checks
 
+Every check of this domain, with its rule and severity: [silver quality checks](silver-quality-checks.md#9-diseases-diseases_silver_qcpy).
+
 `diseases_silver_qc.py`, codes S01–S12 and S30–S50. Highlights:
 
 | Code | Check |

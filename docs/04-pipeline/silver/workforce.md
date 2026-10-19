@@ -38,6 +38,8 @@ Shared settings, set once in `01` and recorded with each build: the files that p
 
 ## Quality checks
 
+Every check of this domain, with its rule and severity: [silver quality checks](silver-quality-checks.md#11-workforce-workforce_silver_qcpy).
+
 `workforce_silver_qc.py`, codes S01–S09 and S60–S79. Highlights:
 
 | Code | Check |

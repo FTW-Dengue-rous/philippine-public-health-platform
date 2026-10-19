@@ -33,6 +33,8 @@ The build stops before replacing the table if a key is duplicated or a status is
 
 ## Quality checks
 
+Every check of this domain, with its rule and severity: [silver quality checks](silver-quality-checks.md#8-population-psgc_population_silver_qcpy).
+
 `psgc_population_silver_qc.py`:
 
 | Code | Check | Severity |

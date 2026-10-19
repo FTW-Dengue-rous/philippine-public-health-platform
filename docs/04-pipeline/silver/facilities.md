@@ -46,6 +46,8 @@ New-file protection: a PSA table with a year column outside the expected range, 
 
 ## Quality checks
 
+Every check of this domain, with its rule and severity: [silver quality checks](silver-quality-checks.md#10-facilities-facilities_silver_qcpy).
+
 `facilities_silver_qc.py`, codes S01–S11 and S13–S28. Highlights:
 
 | Code | Check |

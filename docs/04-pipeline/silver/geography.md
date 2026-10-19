@@ -59,6 +59,8 @@ A boundary that matches nothing, or matches more than one area, stops the build.
 
 ## Quality checks
 
+Every check of this domain, with its rule and severity: [silver quality checks](silver-quality-checks.md#7-geography-and-boundaries).
+
 | Script | Codes | Highlights |
 |---|---|---|
 | `geography_silver_qc.py` | GS01–GS08 | Snapshot present, required fields, key unique, accepted levels, bronze = silver, hierarchy (WARN), 10-digit codes (GS07), the no-level codes are the documented ones (GS08, WARN) |
