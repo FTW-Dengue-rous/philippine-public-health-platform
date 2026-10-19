@@ -119,6 +119,9 @@
 #     - qc_results stores counts per run
 #     - quality.row_disposition stores row references per build
 #
+# Timestamps (executed_at, started_at, ended_at, profiled_at, captured_at, quarantined_at):
+#   timezone-aware UTC (2026-10-19; before, naive UTC). Same stored values on Databricks.
+#
 # Databricks Jobs: #   Pass {{job.run_id}} as job_run_id.
 #
 # Requires: #   pyspark / Databricks runtime
@@ -161,8 +164,11 @@ STATS_SCHEMA = (
 
 
 def _now():
-    # UTC without tzinfo, matching how the other loaders store timestamps.
-    return datetime.now(UTC).replace(tzinfo=None)
+    # Timezone-aware UTC. PySpark stores an aware datetime as that exact instant on any driver.
+    # A naive datetime (the old .replace(tzinfo=None)) is read in the driver's OS timezone: right
+    # on Databricks (UTC drivers), 8 hours off on a UTC+8 laptop, which made the preload gate
+    # mark a fresh source STALE. The geography loader also writes aware UTC.
+    return datetime.now(UTC)
 
 
 def _text(value, limit):

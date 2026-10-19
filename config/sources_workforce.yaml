@@ -1,6 +1,5 @@
 # =============================================================================
 # sources_workforce.yaml — workforce domain
-# Philippine Public Health Platform (FTW Capstone)
 #
 # Same structure and conventions as sources_diseases.yaml:
 #   - Entry name = source_key = folder name. Never change a key once in use.
@@ -347,6 +346,7 @@ sources:
       - 2025 PSGC is mostly text with leading zeros, but some cells are numbers (Bohol 701200000). Left-pad to 10 digits in silver.
       - 2024 has DOH-hired BHWs; 2025 has LGU-hired BHWs only.
       - The BGY & BHS tab of these workbooks belongs to the facilities domain (sources_facilities.yaml).
+      - "2019 Health Workers Part2 has 6 identical rows with a blank area_name below the table. Bronze QC B08 shows them as WARN (checked 2026-10-19); silver drops blank-area rows."
 
   # ---------------------------------------------------------------------------
   # 2. PSA Table 9.14: government medical practitioners, region x year, 2012-2023  (OPEN)

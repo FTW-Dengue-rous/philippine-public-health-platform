@@ -1,6 +1,4 @@
 # =============================================================================
-# diseases_silver_qc.py
-#
 # Runs QC on the published diseases Silver tables.
 #
 # All results go through dq_utils.DQRun into public_health.quality:
@@ -35,8 +33,10 @@
 #   diseases_hospital_encounters_silver
 #   diseases_hospital_claims_silver
 #
+#   Restricted by our own commitment in each request (D-47): academic use, reported in
+#   aggregate only; gold suppresses cells built from fewer than 3 records or hospitals.
 #   For restricted tables, record counts only.
-#   Do not write column profiles.
+#   Do not write column profiles or quarantine copies (no row leaves the table).
 #
 #
 # Reference table:
@@ -111,6 +111,12 @@
 #     IHME licence.
 #
 #   - S49 and S50 use the latest geography snapshot only.
+#
+#   - S08 checks weekly rows as ISO weeks (2026-10-19, D-44 and D-46):
+#       HDX      period_basis iso_week_ending_date, period_key = the date that closes the week
+#       UP NOAH  period_basis iso_week, period_key yyyy-Www
+#     Both: 7 days, week 1 to 52 / 53 of the ISO year, week and year = ISO week and year of
+#     period_end. The old values week_number_unconfirmed and source_date_unconfirmed now fail S08.
 # =============================================================================
 
 import argparse
@@ -262,11 +268,14 @@ DECLARED_INPUTS = {
     CLM: [("diseases_philhealth_claims_hospital_bronze", "philhealth_foi_claims_hospital")],
 }
 
-# TB programme controls: Philippines, all ages, both sexes, 2025 (FHSIS 2025 workbook, verified
-# against the printed national rows on 2026-10-14)
+# TB programme controls: Philippines, all ages, both sexes (FHSIS 2025 workbook, verified against
+# the printed national rows on 2026-10-14). The year belongs to the control, not to the SQL.
+TBP_CONTROL_YEAR = 2025
 TBP_CONTROLS = [("tpt_given", "not_applicable", 120108), ("tpt_eligible_contacts", "not_applicable", 1498711.2),
                 ("treatment_cohort", "drug_susceptible", 414185), ("treatment_success", "drug_susceptible", 382547),
                 ("treatment_cohort", "drug_resistant", 7721), ("treatment_success", "drug_resistant", 5030)]
+# TODO (rule 2a): CONTROLS, TBP_CONTROLS and CLM_CONTROLS repeat values that bronze QC reads from
+# sources_diseases.yaml. Read them from the YAML instead (pending the current repo copy of the file).
 
 # PhilHealth claims: sum of Claims Count per admission year, all rows (sources_diseases.yaml entry 19,
 # qc.control_totals). Silver holds these minus the quarantined rows (blank illness).
@@ -274,6 +283,14 @@ CLM_CONTROLS = {2016: 1709849, 2017: 1626227, 2018: 1706320, 2019: 2018226, 2020
                 2021: 622815, 2022: 920348, 2023: 1177840, 2024: 1451867, 2025: 1540811}
 
 LINEAGE_ALWAYS = ["_silver_build_id", "_source_key", "_source_file", "_source_row_num", "_as_of_date"]
+
+# S08 sanity floor per table: a year below it can only be a parse error. Set to the earliest year
+# each table's sources cover; the ceiling is always the current year.
+YEAR_FLOOR = {"metric": 2000, "tb_programme": 2015, "hospital_claims": 2016}
+
+# S44: UP NOAH has no Negros Island Region, so these region keys (VI, VII, NIR) are compared as one
+# combined area. A known exception of the source, not a count.
+UPNOAH_COMBINED_REGIONS = ("psgc:0600000000", "psgc:0700000000", "psgc:1800000000")
 
 # Sources whose PSGC code is printed in the source file. Every other source gets its code from
 # diseases_area_map, which build_diseases_reference_maps.py already checks against geography.
@@ -504,14 +521,24 @@ def check_metric(dq, profile):
     t.count("S06", f"SELECT count(*) FROM {METRIC} WHERE value < 0", total_sql, column_name="value")
     t.count("S08", f"""
         SELECT count(*) FROM {METRIC}
-        WHERE year IS NULL OR year NOT BETWEEN 2000 AND year(current_date())
+        WHERE year IS NULL OR year NOT BETWEEN {YEAR_FLOOR['metric']} AND year(current_date())
            OR (period_grain = 'year'  AND NOT period_key RLIKE '^[0-9]{{4}}$')
            OR (period_grain = 'month' AND (NOT period_key RLIKE '^[0-9]{{4}}-M[0-9]{{2}}$' OR month NOT BETWEEN 1 AND 12))
-           OR (period_grain = 'week'  AND period_basis = 'week_number_unconfirmed'
-               AND (NOT period_key RLIKE '^[0-9]{{4}}-W[0-9]{{2}}$' OR week NOT BETWEEN 1 AND 53))
-           OR (period_grain = 'week'  AND period_basis = 'source_date_unconfirmed'
-               AND NOT period_key RLIKE '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$')
-           OR period_grain NOT IN ('year', 'month', 'week')""", total_sql, column_name="period_key")
+           OR (period_grain = 'week'  AND period_basis = 'iso_week'
+               AND NOT period_key RLIKE '^[0-9]{{4}}-W[0-9]{{2}}$')
+           OR (period_grain = 'week'  AND period_basis = 'iso_week_ending_date'
+               AND (NOT period_key RLIKE '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$'
+                    OR period_end <> to_date(period_key)))
+           -- D-44 / D-46: a weekly row is one ISO week (7 days) with the ISO week and year of its end
+           OR (period_grain = 'week'
+               AND (period_basis NOT IN ('iso_week', 'iso_week_ending_date')
+                    OR week IS NULL OR week NOT BETWEEN 1 AND weekofyear(make_date(year, 12, 28))
+                    OR period_start IS NULL OR period_end IS NULL
+                    OR period_end <> date_add(period_start, 6)
+                    OR weekofyear(period_end) <> week
+                    OR extract(YEAROFWEEK FROM period_end) <> year))
+           OR period_grain NOT IN ('year', 'month', 'week')""", total_sql,
+            column_name="period_key, period_basis, year, week, period_start, period_end")
     t.count("S12", f"SELECT count(*) FROM {METRIC} WHERE value IS NULL", total_sql, column_name="value",
             threshold=0.05)
     t.count("S35", f"""SELECT count(*) FROM {METRIC}
@@ -621,7 +648,7 @@ def check_metric(dq, profile):
                 JOIN {METRIC} b ON b.disease_key = a.disease_key AND b.year = a.year
                 WHERE a._source_key = 'psa_deaths_national_monthly' AND a.period_grain = 'year'
                   AND b._source_key = 'psa_deaths_region_annual' AND b.area_key = 'ph'""",
-            detail="cause-years (2023, 2024) where the monthly table and the region table give different national totals")
+            detail="cause-years held by both tables where the monthly table and the region table give different national totals")
     t.count("S43", f"""
         SELECT count(DISTINCT area_key) FROM (
           SELECT area_key, datediff(to_date(period_key), lag(to_date(period_key)) OVER (PARTITION BY area_key ORDER BY period_key)) AS gap
@@ -629,23 +656,30 @@ def check_metric(dq, profile):
         WHERE gap <> 7""",
             f"SELECT count(DISTINCT area_key) FROM {METRIC} WHERE _source_key = 'hdx_dengue'",
             source_key="hdx_dengue", detail="areas whose weekly dates are not all 7 days apart")
-    # S44: DOH FOI and UP NOAH, complete common years only (2022-2024). UP NOAH has no Negros Island
-    # Region, so Regions VI + VII + NIR are compared as one combined area.
+    # S44: DOH FOI and UP NOAH, on the years BOTH hold completely at region level. The years come
+    # from diseases_source_coverage_silver at run time (they were typed as 2022-2024 until
+    # 2026-10-19). UP NOAH has no Negros Island Region, so UPNOAH_COMBINED_REGIONS are one area.
+    combined = ", ".join(f"'{k}'" for k in UPNOAH_COMBINED_REGIONS)
+    common_years = f"""(SELECT year FROM {COV}
+                        WHERE _source_key IN ('doh_foi_dengue', 'upnoah') AND geo_level = 'region'
+                        GROUP BY year HAVING count(DISTINCT _source_key) = 2 AND bool_and(is_complete_year))"""
+    years_used = [r[0] for r in spark.sql(f"SELECT year FROM {common_years} ORDER BY 1").collect()]
     t.count("S44", f"""
         WITH x AS (
           SELECT _source_key, year,
-                 CASE WHEN area_key IN ('psgc:0600000000', 'psgc:0700000000', 'psgc:1800000000')
-                      THEN 'regions VI + VII + NIR' ELSE area_key END AS area, sum(value) AS cases
+                 CASE WHEN area_key IN ({combined}) THEN 'regions VI + VII + NIR' ELSE area_key END AS area,
+                 sum(value) AS cases
           FROM {METRIC}
-          WHERE _source_key IN ('doh_foi_dengue', 'upnoah') AND measure = 'cases' AND year BETWEEN 2022 AND 2024
+          WHERE _source_key IN ('doh_foi_dengue', 'upnoah') AND measure = 'cases' AND year IN {common_years}
           GROUP BY 1, 2, 3)
         SELECT count(*) FROM (SELECT * FROM x WHERE _source_key = 'doh_foi_dengue') d
         JOIN (SELECT * FROM x WHERE _source_key = 'upnoah') u ON u.year = d.year AND u.area = d.area
         WHERE abs(d.cases - u.cases) > 0.10 * greatest(d.cases, u.cases)""",
             f"""SELECT count(*) FROM (SELECT DISTINCT year,
-                       CASE WHEN area_key IN ('psgc:0600000000', 'psgc:0700000000', 'psgc:1800000000') THEN 'x' ELSE area_key END
-                FROM {METRIC} WHERE _source_key = 'upnoah' AND year BETWEEN 2022 AND 2024)""",
-            detail="region-years (2022-2024) where annual dengue cases differ by more than 10% between DOH FOI and UP NOAH")
+                       CASE WHEN area_key IN ({combined}) THEN 'x' ELSE area_key END
+                FROM {METRIC} WHERE _source_key = 'upnoah' AND year IN {common_years})""",
+            detail=f"region-years where annual dengue cases differ by more than 10% between DOH FOI and UP NOAH; "
+                   f"complete common years: {', '.join(map(str, years_used)) or 'none'}")
 
     if profile:
         # value_lower / value_upper are filled only for IHME: their min / max would copy single IHME
@@ -707,7 +741,8 @@ def check_hospital_encounters(dq, profile):
     # S47: review counts. Kept in the table with a flag; shown here so a person looks at them.
     for column, where, note in [
             ("date_status", "date_status <> 'ok'", "not used for occupancy"),
-            ("is_long_stay", "is_long_stay", "published length of stay above 60 days"),
+            ("is_long_stay", "is_long_stay",
+             "published length of stay above long_stay_days (diseases_silver_03; value in build_log.parameters)"),
             ("death_fields_consistent", "NOT death_fields_consistent", "Result and DeathDate disagree"),
             ("patient_location_status", "patient_location_status <> 'ok'", "province or city not resolved"),
             ("age_group", "age_group = 'unknown'", "age missing or negative")]:
@@ -751,7 +786,7 @@ def check_tb_programme(dq, profile):
         t.freshness()
         t.reconcile()
     t.count("S06", f"SELECT count(*) FROM {TBP} WHERE value < 0", total_sql, column_name="value")
-    t.count("S08", f"SELECT count(*) FROM {TBP} WHERE year IS NULL OR year NOT BETWEEN 2015 AND year(current_date())",
+    t.count("S08", f"SELECT count(*) FROM {TBP} WHERE year IS NULL OR year NOT BETWEEN {YEAR_FLOOR['tb_programme']} AND year(current_date())",
             total_sql, column_name="year")
     t.count("S36", f"""SELECT count(*) FROM {TBP}
                        WHERE (value IS NULL) = (value_status = 'ok')
@@ -766,10 +801,10 @@ def check_tb_programme(dq, profile):
     # S50 (WARN): FHSIS prints its own codes; the build already quarantines codes not in geography
     t.geography()
     for indicator, resistance, expected in TBP_CONTROLS:
-        t.value("S34", scalar(f"""SELECT sum(value) FROM {TBP} WHERE area_key = 'ph' AND year = 2025
+        t.value("S34", scalar(f"""SELECT sum(value) FROM {TBP} WHERE area_key = 'ph' AND year = {TBP_CONTROL_YEAR}
                                   AND indicator = '{indicator}' AND drug_resistance = '{resistance}'
                                   AND age_group = 'all_ages' AND sex = 'both_sexes'"""), expected,
-                source_key="doh_fhsis", detail=f"Philippines 2025 {indicator} {resistance}")
+                source_key="doh_fhsis", detail=f"Philippines {TBP_CONTROL_YEAR} {indicator} {resistance}")
     if t.build_id:
         q = spark.sql(f"""SELECT count(*) AS n, count_if(coalesce(reason, '') <> 'psgc_not_in_geography') AS other
                           FROM {QUALITY}.row_disposition
@@ -802,7 +837,7 @@ def check_hospital_claims(dq, profile):
         t.reconcile()       # merged_into rows count as loaded
     t.count("S06", f"SELECT count(*) FROM {CLM} WHERE claims_count < 0 OR claims_amount_php < 0", total_sql,
             column_name="claims_count, claims_amount_php")
-    t.count("S08", f"SELECT count(*) FROM {CLM} WHERE year IS NULL OR year NOT BETWEEN 2016 AND year(current_date())",
+    t.count("S08", f"SELECT count(*) FROM {CLM} WHERE year IS NULL OR year NOT BETWEEN {YEAR_FLOOR['hospital_claims']} AND year(current_date())",
             total_sql, column_name="year")
     t.count("S36", f"""SELECT count(*) FROM {CLM}
                        WHERE claim_status NOT IN ('paid', 'denied', 'returned_to_hospital', 'in_process')

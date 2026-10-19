@@ -37,16 +37,32 @@
 #   S56  national census total matches the PSA release (control)            WARN until confirmed
 #   S57  one population snapshot, same PSGC release as geography Silver     WARN
 #   S58  change between census years above 30% (province / city / mun)      WARN
+#   S59  population years = the configured census years (added 2026-10-19) FAIL
 #   strict_registry is False for now (same as the other silver QC scripts), so
 #   these codes do not need to be registered yet. They are in Step 1 of
 #   quality_registry_seed.sql; when silver QC is final, run the seed and pass
 #   --strict_registry true (or change the default below).
 #
 # Fixed 2026-10-12: VALID_WITH_NOTE (added to the Silver notebook on
-# 2026-10-11) is an approved parse status. Before, S09 counted those 32 rows
-# as invalid and failed.
+# 2026-10-11) is an approved parse status. Before, S09 counted those rows
+# (32 on 2026-10-12) as invalid and failed.
 #
-# Expected WARNs (known source gaps, not bugs)
+# Fixed 2026-10-19 (silver revision 1, to-do 5e)
+#   * One S00 row per crash. The except block records S00 and no longer
+#     re-raises: DQRun.__exit__ wrote a second S00 for the same error.
+#     The run still fails: S00 is a FAIL, so DQRun raises at exit when
+#     --fail_on_error is true (the default).
+#   * SCRIPT_NAME = psgc_population_silver_qc.py (the file name). Runs before
+#     this date are in quality.run_log under population_silver_qc.py.
+#   * S09: the Bronze observation view no longer builds an unused population
+#     column (it removed commas only, unlike the Silver parse). S09 joins on
+#     the grain and checks the Silver parse status; it never read that column.
+#   * Census years and the S56 national controls moved to sources_population.yaml
+#     (psgc_population.silver_qc). New S59 FAILs when the table holds a year the
+#     YAML does not list, so a new census cannot slip past S54 and S56.
+#
+# Expected WARNs (known source gaps, not bugs; checked on the 2026-10-12 run, PSGC
+# Q2_2024 payload). The live lists are in the qc_results detail of S54, S55, S56.
 #   S54/S56: Negros Island Region has no 2015 / 2020 region rows; Sulu has no
 #            2024 rows.
 #   S55: Maguindanao del Norte 2015 and 2020 (province total excludes Cotabato
@@ -109,7 +125,7 @@ spark = SparkSession.builder.getOrCreate()
 CONFIG_NAMES = ("sources_population.yaml", "sources.yaml")
 SOURCE_KEY = "psgc_population"
 DOMAIN = "population"
-SCRIPT_NAME = "population_silver_qc.py"
+SCRIPT_NAME = "psgc_population_silver_qc.py"  # the file name (2026-10-19)
 
 SILVER_TABLE = "public_health.silver.population_silver"
 GEOGRAPHY_SILVER_TABLE = "public_health.silver.geography_silver"
@@ -130,15 +146,12 @@ REQUIRED_COLUMNS = [
 APPROVED_PARSE_STATUS = ("VALID", "VALID_WITH_NOTE", "MISSING", "INVALID")
 USABLE_PARSE_STATUS = ("VALID", "VALID_WITH_NOTE")  # population is a number
 
-# S54 / S56 / S58 settings
-CENSUS_YEARS = (2015, 2020, 2024)
+# S54 / S58 settings. PSGC level names (geography Silver vocabulary) and the S58 tolerance,
+# which is part of the check's meaning (its name says 30 percent).
 AREA_LEVELS = ("Reg", "Prov", "City", "Mun", "SubMun", "Bgy")
 MAX_CHANGE_PCT = 30.0
-# S56 control: PSA national census totals. CONTROL_CONFIRMED = False records a
-# difference as WARN; set it to True after the first run agrees (then FAIL).
-NATIONAL_CONTROL = {2015: 100981437, 2020: 109035343, 2024: 112729484}
-CONTROL_CONFIRMED = False
-CONTROL_TOLERANCE_PCT = 0.1
+# Census years (S54, S59) and the national control totals (S56) are data facts, so they live in
+# sources_population.yaml under psgc_population.silver_qc (moved there 2026-10-19).
 
 # The registry already assigns these meanings to S-codes. Do not create a
 # population-specific duplicate code without first changing the registry.
@@ -160,6 +173,7 @@ CHECKS = {
     "S56": ("national census total matches the PSA release", "RECONCILIATION", "WARN"),
     "S57": ("one population snapshot from the current PSGC release", "CONSISTENCY", "WARN"),
     "S58": ("change between census years above 30 percent", "VALIDITY", "WARN"),
+    "S59": ("population years are the configured census years", "CONSISTENCY", "FAIL"),
 }
 
 
@@ -215,6 +229,31 @@ def load_config(path):
     return config, entry
 
 
+def silver_qc_settings(entry):
+    """Census years and national controls from psgc_population.silver_qc in the YAML.
+    A missing or malformed block stops the run (recorded as S00): the checks have no
+    sensible default for these numbers."""
+    sq = entry.get("silver_qc") or {}
+    years = sorted(int(y) for y in (sq.get("census_years") or []))
+    ctl = sq.get("control_totals") or {}
+    expected = {int(y): int(n) for y, n in (ctl.get("expected") or {}).items()}
+    if not years:
+        raise KeyError(f"{SOURCE_KEY}.silver_qc.census_years is missing or empty in the YAML")
+    if not expected:
+        raise KeyError(f"{SOURCE_KEY}.silver_qc.control_totals.expected is missing in the YAML")
+    if set(expected) - set(years):
+        raise ValueError(
+            f"control_totals years {sorted(set(expected) - set(years))} are not census_years {years}"
+        )
+    return {
+        "census_years": years,
+        "national_control": expected,
+        "control_confirmed": bool(ctl.get("confirmed", False)),
+        "control_tolerance_pct": float(ctl.get("tolerance_pct", 0.1)),
+        "control_source": ctl.get("source"),
+    }
+
+
 def scalar(sql):
     return spark.sql(sql).collect()[0][0]
 
@@ -268,11 +307,7 @@ def create_bronze_population_observations(entry):
             g.psgc_code AS psgc_code,
             p.year AS population_year,
             g.source_version AS source_version,
-            p.population AS population_raw,
-            TRY_CAST(
-                REGEXP_REPLACE(TRIM(p.population), ',', '')
-                AS BIGINT
-            ) AS population
+            p.population AS population_raw
         FROM {bronze_table} g
         LATERAL VIEW EXPLODE(
             FROM_JSON(
@@ -606,7 +641,9 @@ def run_checks(dq, entry):
     )
 
     # S51-S58: added checks (see header). Same table, same DQRun session.
-    run_population_checks(dq, table_name, geography_table, silver_count, skip, overrides)
+    run_population_checks(
+        dq, table_name, geography_table, silver_count, skip, overrides, silver_qc_settings(entry)
+    )
 
     # Final schema check is intentionally informational here. S02 covers the
     # documented grain and the Silver build defines the remaining columns.
@@ -639,18 +676,39 @@ def listing(sql, limit=15):
     return "; ".join(" ".join(str(v) for v in row) for row in rows) or None
 
 
-def run_population_checks(dq, table_name, geography_table, silver_count, skip, overrides):
-    """S51-S58. Reads population Silver and geography Silver only; changes nothing."""
+def run_population_checks(dq, table_name, geography_table, silver_count, skip, overrides, settings):
+    """S51-S59. Reads population Silver and geography Silver only; changes nothing.
+    settings: census years and national controls from the YAML (silver_qc_settings)."""
     usable = "population_parse_status IN ('VALID', 'VALID_WITH_NOTE')"
     # Latest geography snapshot (geography Silver keeps one row per psgc_code per content_checksum)
     geo = f"""(SELECT psgc_code, geographic_level FROM {geography_table}
               WHERE content_checksum = (SELECT max_by(content_checksum, silver_processed_at)
                                         FROM {geography_table}))"""
     levels = ", ".join(f"'{x}'" for x in AREA_LEVELS)
-    years = ", ".join(str(y) for y in CENSUS_YEARS)
+    census_years = settings["census_years"]
+    years = ", ".join(str(y) for y in census_years)
 
     def rec(check_id, **kwargs):
         return record(dq, check_id, table_name, SOURCE_KEY, skip, overrides, **kwargs)
+
+    # S59 - the years in the table are exactly the configured census years. Guards S54 and S56:
+    # a census year added to the payload but not to the YAML would otherwise go unchecked.
+    observed_years = [
+        r[0]
+        for r in spark.sql(
+            f"SELECT DISTINCT population_year FROM {table_name} "
+            "WHERE population_year IS NOT NULL ORDER BY 1"
+        ).collect()
+    ]
+    rec(
+        "S59",
+        status="PASS" if observed_years == census_years else "FAIL",
+        observed=",".join(str(y) for y in observed_years),
+        expected=",".join(str(y) for y in census_years),
+        column_name="population_year",
+        detail="update psgc_population.silver_qc.census_years (and control_totals) in "
+        "sources_population.yaml when PSA adds a census year",
+    )
 
     # S51 - lineage columns not null (auditability)
     lineage = ["source_version", "content_checksum", "batch_id", "silver_processed_at"]
@@ -702,7 +760,7 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
         WHERE g.geographic_level IN ({levels})""").createOrReplaceTempView("population_qc_gaps")
     gaps = scalar("SELECT COUNT(*) FROM population_qc_gaps")
     expected_rows = scalar(
-        f"SELECT COUNT(*) * {len(CENSUS_YEARS)} FROM {geo} WHERE geographic_level IN ({levels})"
+        f"SELECT COUNT(*) * {len(census_years)} FROM {geo} WHERE geographic_level IN ({levels})"
     )
     rec(
         "S54",
@@ -754,9 +812,11 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
         )
 
     # S56 - national total vs the PSA census release (accuracy). Sum of region rows; a region
-    # without a row that year (NIR 2015 / 2020) is filled with the sum of its cities and
-    # municipalities.
-    for year, expected in NATIONAL_CONTROL.items():
+    # without a row that year (checked 2026-10-12: NIR in 2015 and 2020) is filled with the sum of
+    # its cities and municipalities. Controls, tolerance and confirmed flag come from the YAML.
+    confirmed = settings["control_confirmed"]
+    tolerance = settings["control_tolerance_pct"]
+    for year, expected in settings["national_control"].items():
         observed = scalar(f"""
             WITH v AS (
               SELECT p.psgc_code, p.population, g.geographic_level AS level
@@ -770,7 +830,7 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
             SELECT COALESCE(SUM(COALESCE(reg.pop, lgu.pop)), 0)
             FROM regions LEFT JOIN reg ON reg.r = regions.r LEFT JOIN lgu ON lgu.r = regions.r""")
         diff_pct = abs(observed - expected) * 100.0 / expected
-        severity = "FAIL" if CONTROL_CONFIRMED else "WARN"
+        severity = "FAIL" if confirmed else "WARN"
         record(
             dq,
             "S56",
@@ -778,14 +838,14 @@ def run_population_checks(dq, table_name, geography_table, silver_count, skip, o
             SOURCE_KEY,
             skip,
             {**overrides, "S56": severity},
-            status="PASS" if diff_pct <= CONTROL_TOLERANCE_PCT else severity,
+            status="PASS" if diff_pct <= tolerance else severity,
             observed=observed,
             expected=expected,
             column_name="population",
             admin_level=0,
             detail=f"{year}: difference {observed - expected:+,} ({diff_pct:.3f}%), tolerance "
-            f"{CONTROL_TOLERANCE_PCT}%"
-            + ("" if CONTROL_CONFIRMED else "; control not confirmed yet"),
+            f"{tolerance}%; control: {settings['control_source'] or 'sources_population.yaml'}"
+            + ("" if confirmed else "; control not confirmed yet"),
         )
 
     # S57 - one population snapshot, from the same PSGC release as geography Silver (timeliness)
@@ -864,6 +924,9 @@ def main():
         code_version=args.code_version,
         strict_registry=args.strict_registry == "true",
     ) as dq:
+        # A crash is recorded once, here, with the table and source key. No re-raise:
+        # DQRun.__exit__ would record a second S00 for the same error. S00 is a FAIL,
+        # so DQRun still raises at exit (fail_on_error) and the job task fails.
         try:
             run_checks(dq, entry)
         except Exception as exc:
@@ -878,7 +941,6 @@ def main():
                 severity=severity,
                 detail=f"{type(exc).__name__}: {exc}",
             )
-            raise
 
 
 if __name__ == "__main__":

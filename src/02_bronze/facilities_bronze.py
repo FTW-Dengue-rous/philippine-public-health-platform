@@ -1,6 +1,4 @@
 # =============================================================================
-# facilities_bronze.py
-#
 # Config-driven Bronze ingestion for the facilities domain.
 # Uses the shared Bronze ingestion contract documented in:
 #   docs/bronze_ingestion_contract.md
@@ -53,11 +51,14 @@ from pyspark.sql.types import (DateType, IntegerType, StringType, StructField,
 
 spark = SparkSession.builder.getOrCreate()
 
-LOADER_VERSION = "2026-10-14.1"                                # printed at start; bump when parsing behaviour changes
+LOADER_VERSION = "2026-10-19.1"                                # printed at start; bump when parsing or timestamp behaviour changes
 LINEAGE_COLS = ["_rescued_data", "_source_key", "_source_file", "_source_sheet",
                 "_source_row_num", "_as_of_date", "_ingested_at"]
 RUN_ID = str(uuid.uuid4())                                     # one id per run, written to the metadata log
-INGESTED_AT = datetime.now(timezone.utc).replace(tzinfo=None)  # same timestamp for every row of this run
+# Same timestamp for every row and log row of this run. Timezone-aware UTC (2026-10-19): PySpark stores
+# it as that exact instant on any driver. The old naive value was read in the driver's OS timezone,
+# so off Databricks it was shifted (8 hours on a UTC+8 laptop). Same stored values on Databricks.
+INGESTED_AT = datetime.now(timezone.utc)
 
 CONFIG_NAMES = ("sources_facilities.yaml",)                  # config file for this domain
 DOMAIN = "facilities"                                         # this file only loads entries of this domain
