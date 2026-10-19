@@ -1,5 +1,4 @@
 # =============================================================================
-# admin_boundaries_silver.py
 # 02 — HDX Administrative Boundaries Bronze to Silver
 #
 # Transforms HDX Philippines Administrative Boundaries from Bronze into a validated Silver
@@ -33,6 +32,15 @@
 #   - The Silver table gets any candidate column it is missing before the MERGE (older copies).
 #   - run_id uses --job_run_id when given. The duplicate "create table" cell is removed.
 #   - The idempotency proof and the closing diagnostic queries can be switched off.
+#
+# Rule 2a (2026-10-19)
+#   - The SPECIAL_STRUCTURE names (Metropolitan Manila*, City of Isabela (not a province),
+#     Special Geographic Area and its ADM3 children) come from
+#     hdx_phl_admin.silver_qc.special_structures in the YAML. AS08 in
+#     admin_boundaries_silver_qc.py reads the same lists; before, each file typed its own copy.
+#   - Other values stay: admin levels and geometry types were already read from the YAML; the
+#     latitude / longitude bounds are the globe's; the PSGC padding (8 / 5 / 3 zeros) is the
+#     10-digit code format, and a candidate of another length stops the run.
 # =============================================================================
 
 import argparse
@@ -228,6 +236,7 @@ if not isinstance(silver_qc_cfg, dict):
 required_silver_qc_keys = [
     "required_columns",
     "accepted_geometry_types",
+    "special_structures",
 ]
 
 missing_silver_qc_keys = [
@@ -281,6 +290,17 @@ SILVER_GEOMETRY_TYPES = (
     silver_qc_cfg["accepted_geometry_types"]
 )
 
+# HDX boundaries with no one-to-one PSGC area (SPECIAL_STRUCTURE). Same lists as AS08 in QC.
+_special_cfg = silver_qc_cfg["special_structures"] or {}
+SPECIAL_ADM2_PREFIXES = [str(v) for v in _special_cfg.get("adm2_name_prefixes") or []]
+SPECIAL_ADM2_NAMES = [str(v) for v in _special_cfg.get("adm2_names") or []]
+SPECIAL_ADM3_PARENTS = [str(v) for v in _special_cfg.get("adm3_parent_adm2_names") or []]
+if not (SPECIAL_ADM2_PREFIXES or SPECIAL_ADM2_NAMES or SPECIAL_ADM3_PARENTS):
+    raise ValueError(
+        "hdx_phl_admin.silver_qc.special_structures has no names. "
+        "List adm2_name_prefixes, adm2_names and adm3_parent_adm2_names."
+    )
+
 
 print("Runtime configuration resolved.")
 print(f"Source        : {SOURCE_NAME}")
@@ -290,6 +310,8 @@ print(f"Silver        : {SILVER_TABLE}")
 print(f"PSGC reference: {PSGC_TABLE}")
 print(f"QC results    : {QC_TABLE}")
 print(f"Admin levels  : {REQUIRED_LEVELS}")
+print(f"Special ADM2  : prefixes {SPECIAL_ADM2_PREFIXES}, names {SPECIAL_ADM2_NAMES}")
+print(f"Special ADM3  : children of {SPECIAL_ADM3_PARENTS}")
 
 
 # -----------------------------------------------------------------------------
@@ -2106,7 +2128,7 @@ def normalize_variant_name(column):
 
 
 # ---------------------------------------------------------
-# Only unresolved ADM3 rows outside Special Geographic Area
+# Only unresolved ADM3 rows outside the special-structure parents (YAML)
 # ---------------------------------------------------------
 
 variant_source = (
@@ -2117,8 +2139,8 @@ variant_source = (
         (F.col("admin_level") == "3")
         &
         (
-            F.coalesce(F.col("adm2_name"), F.lit(""))
-            != "Special Geographic Area"
+            ~F.coalesce(F.col("adm2_name"), F.lit("")).isin(SPECIAL_ADM3_PARENTS)
+            if SPECIAL_ADM3_PARENTS else F.lit(True)
         )
     )
     .withColumn(
@@ -2301,22 +2323,16 @@ print(
 # Identify legitimate HDX administrative structures that do not
 # have a direct one-to-one equivalent in the selected PSGC reference.
 
+# Names come from hdx_phl_admin.silver_qc.special_structures (YAML).
+adm2_special_name = F.lit(False)
+for prefix in SPECIAL_ADM2_PREFIXES:
+    adm2_special_name = adm2_special_name | F.col("boundary_name").startswith(prefix)
+if SPECIAL_ADM2_NAMES:
+    adm2_special_name = adm2_special_name | F.col("boundary_name").isin(SPECIAL_ADM2_NAMES)
+
 special_structure_condition = (
-    # ADM2 special structures
-    (
-        (F.col("admin_level") == "2")
-        &
-        (
-            F.col("boundary_name").startswith(
-                "Metropolitan Manila"
-            )
-            |
-            F.col("boundary_name").isin(
-                "City of Isabela (not a province)",
-                "Special Geographic Area"
-            )
-        )
-    )
+    # ADM2 special structures (Metro Manila, Isabela City placeholder, BARMM SGA)
+    ((F.col("admin_level") == "2") & adm2_special_name)
 
     |
 
@@ -2324,7 +2340,7 @@ special_structure_condition = (
     (
         (F.col("admin_level") == "3")
         &
-        (F.col("adm2_name") == "Special Geographic Area")
+        (F.col("adm2_name").isin(SPECIAL_ADM3_PARENTS) if SPECIAL_ADM3_PARENTS else F.lit(False))
     )
 )
 

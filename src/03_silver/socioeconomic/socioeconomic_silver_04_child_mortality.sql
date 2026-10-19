@@ -22,6 +22,16 @@
 -- Lineage on the silver row (7 columns): _silver_build_id, _source_key, _source_file,
 --   _source_sheet (null, the source is a CSV), _source_row_num, _as_of_date,
 --   _metric_source_columns ({infant_mortality_rate: 'imr_2022', ...})
+--
+-- Rule 2a (2026-10-19)
+--   - mortality_survey_years (2017, 2022) is a setting. The unpivot in [3] names the bronze
+--     columns (imr_2022, ...); a new gate stops the build when bronze holds a survey column the
+--     setting does not list, or the reverse.
+--   - Counts derived from mortality_characteristic_map instead of typed: rows = characteristics x
+--     survey years (was 60), group header rows = groups in the map (was 4), and the group header
+--     test in [1] uses the map's groups (was a typed list of the four).
+--   - Recorded in build_log.parameters: survey years, characteristic count, characteristics per
+--     group. socioeconomic_silver_qc.py S08 / S88 read them (S88 had its own typed copy).
 -- =============================================================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -32,6 +42,8 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
+-- NDHS survey years of the file loaded (psa_child_mortality_region_survey_2017_2022.csv).
+DECLARE OR REPLACE VARIABLE mortality_survey_years ARRAY<INT> DEFAULT array(2017, 2022);
 
 -- Label normalisation: apostrophes removed (straight \x27 and curly \u2019), repeated spaces become
 -- one space, then upper case. So the header "Mother's Education" has the key MOTHERS EDUCATION.
@@ -97,7 +109,8 @@ WITH tagged AS (
   SELECT b._source_key, b._source_file, b._source_sheet, b._source_row_num, b._ingested_at,
          b.characteristic_group AS group_cell, b.characteristic AS characteristic_cell,
          CASE WHEN b.characteristic IS NULL
-               AND se_label(b.characteristic_group) IN ('REGION', 'RESIDENCE', 'MOTHERS EDUCATION', 'WEALTH QUINTILE')
+               AND array_contains((SELECT collect_set(group_key) FROM mortality_characteristic_map),
+                                  se_label(b.characteristic_group))
               THEN trim(b.characteristic_group) END AS header_group
   FROM public_health.bronze.socioeconomic_psa_child_mortality_bronze b
   WHERE b._source_key = 'psa_child_mortality'
@@ -175,7 +188,8 @@ GROUP BY f.input_table, f._source_key, f._source_file, f._source_sheet, f._inges
 
 -- =============================================================================
 -- [3] candidate rows: survey years to rows. Bronze columns are named by year, and in the
---     file 2022 comes BEFORE 2017, so nothing here relies on column position.
+--     file 2022 comes BEFORE 2017, so nothing here relies on column position. The year column
+--     gate keeps this list and mortality_survey_years in step.
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.socioeconomic_child_mortality_silver__candidate AS
 WITH u AS (
@@ -225,6 +239,16 @@ UNION ALL
 SELECT 'inputs: not exactly one file', abs(count(*) - 1)
   FROM public_health.silver.socioeconomic_child_mortality_silver__inputs
 UNION ALL
+-- Survey years in the bronze column names (imr_2022, cmr_2017, ...) vs mortality_survey_years.
+SELECT 'bronze survey columns differ from mortality_survey_years (update the setting and the unpivot in [3])',
+       size(array_except(y.bronze_years, mortality_survey_years))
+     + size(array_except(mortality_survey_years, y.bronze_years))
+FROM (SELECT array_distinct(collect_list(CAST(regexp_extract(k, '^(imr|cmr|u5mr)_([0-9]{4})$', 2) AS INT))) AS bronze_years
+      FROM (SELECT explode(json_object_keys(to_json(struct(*), map('ignoreNullFields', 'false')))) AS k
+            FROM (SELECT * FROM public_health.bronze.socioeconomic_psa_child_mortality_bronze
+                  WHERE _source_key = 'psa_child_mortality' LIMIT 1))
+      WHERE k RLIKE '^(imr|cmr|u5mr)_[0-9]{4}$') y
+UNION ALL
 SELECT 'unclassified bronze rows', count(*)
   FROM public_health.silver.socioeconomic_child_mortality_silver__classified WHERE row_class NOT IN ('data', 'non_data')
 UNION ALL
@@ -235,8 +259,9 @@ SELECT 'characteristic of the approved list missing from the file, or listed twi
     ON c.characteristic_order = a.characteristic_order AND c.row_class = 'data'
   GROUP BY a.characteristic_order HAVING count(c.characteristic_order) <> 1)
 UNION ALL
-SELECT 'not exactly four group header rows',
-       abs((SELECT count(*) FROM public_health.silver.socioeconomic_child_mortality_silver__classified WHERE reason = 'group_header') - 4)
+SELECT 'group header rows <> groups in mortality_characteristic_map',
+       abs((SELECT count(*) FROM public_health.silver.socioeconomic_child_mortality_silver__classified WHERE reason = 'group_header')
+         - (SELECT count(DISTINCT group_key) FROM mortality_characteristic_map))
 UNION ALL
 SELECT 'cell that is neither a rate nor a documented marker', count(*)
   FROM public_health.silver.socioeconomic_child_mortality_silver__candidate
@@ -273,8 +298,9 @@ SELECT 'classified rows <> bronze rows read',
        abs((SELECT count(*) FROM public_health.silver.socioeconomic_child_mortality_silver__classified)
          - (SELECT coalesce(sum(input_rows), 0) FROM public_health.silver.socioeconomic_child_mortality_silver__inputs))
 UNION ALL
-SELECT 'silver rows <> 30 characteristics x 2 surveys',
-       abs((SELECT count(*) FROM public_health.silver.socioeconomic_child_mortality_silver__candidate) - 60)
+SELECT 'silver rows <> characteristics in the map x mortality_survey_years',
+       abs((SELECT count(*) FROM public_health.silver.socioeconomic_child_mortality_silver__candidate)
+         - (SELECT count(*) FROM mortality_characteristic_map) * size(mortality_survey_years))
 UNION ALL
 SELECT 'reconciliation: bronze rows referenced by silver <> rows read - rows not loaded (data rows)',
        abs((SELECT count(DISTINCT _source_row_num) FROM public_health.silver.socioeconomic_child_mortality_silver__candidate)
@@ -296,6 +322,12 @@ SELECT silver_build_id                                AS build_id,
        CAST(NULL AS BIGINT)                           AS target_table_version,     -- filled in [8]
        code_version                                   AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup,
+                            'mortality_survey_years', mortality_survey_years,
+                            'characteristic_count', (SELECT count(*) FROM mortality_characteristic_map),
+                            -- keys are the normalised group headers (se_label): MOTHERS EDUCATION
+                            'characteristics_by_group',
+                            (SELECT map_from_entries(collect_list(struct(group_key, n)))
+                             FROM (SELECT group_key, count(*) AS n FROM mortality_characteristic_map GROUP BY group_key)),
                             'inputs_without_load_log',
                             (SELECT count(*) FROM public_health.silver.socioeconomic_child_mortality_silver__inputs WHERE metadata_matches = 0))) AS parameters,
        job_run_id                                     AS run_id,
@@ -384,7 +416,8 @@ SELECT (SELECT count(*) FROM public_health.silver.socioeconomic_child_mortality_
              + count_if(under5_mortality_reliability = 'suppressed') FROM public_health.silver.socioeconomic_child_mortality_silver) AS suppressed_rates,
        (SELECT count_if(infant_mortality_reliability = 'low_precision') + count_if(child_mortality_reliability = 'low_precision')
              + count_if(under5_mortality_reliability = 'low_precision') FROM public_health.silver.socioeconomic_child_mortality_silver) AS low_precision_rates,
-       -- control values to read against the PSA table (expected 8 and 55)
+       -- control values to read against the PSA table: the expected numbers are the
+       -- psa_child_mortality qc.control_values in sources_socioeconomic.yaml (S84 checks them)
        (SELECT max(infant_mortality_rate) FROM public_health.silver.socioeconomic_child_mortality_silver WHERE characteristic = 'NCR' AND survey_year = 2022) AS ncr_infant_2022,
        (SELECT max(under5_mortality_rate) FROM public_health.silver.socioeconomic_child_mortality_silver WHERE characteristic = 'BARMM' AND survey_year = 2017) AS barmm_under5_2017;
 

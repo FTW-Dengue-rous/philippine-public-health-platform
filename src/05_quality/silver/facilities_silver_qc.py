@@ -1,5 +1,4 @@
-# facilities_silver_qc.py
-#
+
 # Silver QC for the facilities domain. Same approach as diseases_silver_qc.py and
 # workforce_silver_qc.py: every result goes through dq_utils.DQRun into public_health.quality
 # (qc_results, run_log, table_stats, profile, quarantine), and the script raises at the end if any
@@ -82,11 +81,27 @@
 # Updated 2026-10-14
 #   * hdx_healthsites is read from its newest file only (LATEST_FILE_SOURCES): S09, S16 and S28 compare
 #     the build with that file, not with every snapshot in bronze.
+# Updated 2026-10-19 (rule 2a: no number the logic depends on is typed here)
+#   * S21 controls are read from sources_facilities.yaml, the numbers bronze QC checks:
+#       nhfr_facilities  doh_nhfr qc.expected_rows
+#       nhfr_beds        doh_nhfr qc.control_values item with column 'Bed Capacity'
+#       bor_rows         doh_foi_hospital_beds qc.expected_rows
+#     A missing value is S00 FAIL for the table, so a YAML edit cannot switch S21 off.
+#   * Build settings are read from build_log.parameters of the table's latest succeeded build:
+#       bed occupancy  bor_baseline_max (S24, S25), bor_expected_sheets (S08 years)
+#       metric         hospital_definition_break_year (S11)
+#       OSM points     ph_bbox (S11)
+#     A build written before 2026-10-19 lacks the newer keys: S00 FAIL for that table says which
+#     build to rerun.
+#   * S08 year ceilings are the current year, not 2025; floors are named in YEAR_FLOOR.
 
 import argparse
+import functools
+import json
 import os
 import sys
 
+import yaml
 from pyspark.sql import SparkSession
 
 
@@ -144,6 +159,8 @@ def parse_args():
     p.add_argument("--tables", default="ALL", help="ALL, or any of: registry,id_map,metric,bed_occupancy,osm_point")
     p.add_argument("--fail_on_error", default="true", help="false = record results but do not raise")
     p.add_argument("--profile", default="true", help="Also write a column profile (never for bed occupancy)")
+    p.add_argument("--config_path", default=None,
+                   help="Full path to sources_facilities.yaml (found automatically if omitted)")
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--code_version", default=None)
     a, _ = p.parse_known_args()       # parse_known_args: notebook kernels pass their own arguments
@@ -229,22 +246,78 @@ def bronze_scope(bronze, source_key):
     return cond
 
 # Controls (plan 6.3): name -> (source_key, expected value, content_checksum of the file the value
-# belongs to). Values are from the NHFR file loaded on 2026-09-29 and the 2025 BOR file.
+# belongs to). The values come from sources_facilities.yaml (load_controls below, 2026-10-19).
 #   checksum None: the value is compared (FAIL on a difference); the detail shows the checksum of
 #                  the file the build read, so it can be pasted here after the first Databricks run.
 #   checksum set:  a build that read another file gives WARN "new artifact, update control" instead
 #                  of comparing (a new file is expected to change the value).
-CONTROLS = {
-    "nhfr_facilities": ("doh_nhfr", 1359, None),        # NHFR rows = registry facilities with in_nhfr
-    "nhfr_beds": ("doh_nhfr", 119862, None),            # sum of NHFR Bed_Capacity
-    "bor_rows": ("doh_foi_hospital_beds", 9145, None),  # bed occupancy data rows 2018-2025 (anonymous records)
-}
-BOR_BASELINE_MAX = 150               # same as the variable bor_baseline_max in 03
+CONTROL_CHECKSUMS = {"nhfr_facilities": None, "nhfr_beds": None, "bor_rows": None}
+
+# S08: a year below the floor can only be a parse error (earliest year each source covers); the
+# ceiling is the current year. Bed occupancy years come from the build's bor_expected_sheets.
+YEAR_FLOOR = {"metric": 1990, "doh_fhsis_demographic": 2018}
+CONFIG_NAME = "sources_facilities.yaml"
 
 
 # ----------------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------------
+def find_config(explicit=None):
+    # Same search as the bronze QC scripts: --config_path, else this file's folder and the working
+    # directory, and their config/ folders, up to five levels above each.
+    if explicit:
+        if not os.path.isfile(explicit):
+            raise FileNotFoundError(f"--config_path does not exist: {explicit}")
+        return os.path.abspath(explicit)
+    starts = [os.getcwd()]
+    try:
+        starts.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    except NameError:
+        pass
+    searched = []
+    for start in starts:
+        folder = start
+        for _ in range(6):
+            for sub in ("", "config", "configs", "conf"):
+                candidate = os.path.join(folder, sub, CONFIG_NAME)
+                searched.append(candidate)
+                if os.path.isfile(candidate):
+                    return candidate
+            parent = os.path.dirname(folder)
+            if parent == folder:
+                break
+            folder = parent
+    raise FileNotFoundError(f"{CONFIG_NAME} not found. Pass --config_path. Looked in:\n  "
+                            + "\n  ".join(dict.fromkeys(searched)))
+
+
+@functools.lru_cache(maxsize=1)
+def load_controls():
+    """S21 controls from sources_facilities.yaml: name -> (source_key, expected, checksum).
+    Raises (S00 FAIL for the table being checked) when a value is missing."""
+    with open(find_config(ARGS.config_path), encoding="utf-8") as f:
+        sources = (yaml.safe_load(f) or {}).get("sources") or {}
+
+    def qc(key):
+        if key not in sources:
+            raise KeyError(f"{CONFIG_NAME}: source {key} missing (needed for S21)")
+        return sources[key].get("qc") or {}
+
+    def rows(key):
+        n = qc(key).get("expected_rows")
+        if not isinstance(n, int):
+            raise ValueError(f"{CONFIG_NAME}: {key} qc.expected_rows must be one number for S21, got {n!r}")
+        return n
+
+    beds = [cv["expected"] for cv in qc("doh_nhfr").get("control_values") or [] if cv.get("column") == "Bed Capacity"]
+    if len(beds) != 1:
+        raise ValueError(f"{CONFIG_NAME}: doh_nhfr needs exactly one qc.control_values item with column 'Bed Capacity'")
+    values = {"nhfr_facilities": ("doh_nhfr", rows("doh_nhfr")),
+              "nhfr_beds": ("doh_nhfr", beds[0]),
+              "bor_rows": ("doh_foi_hospital_beds", rows("doh_foi_hospital_beds"))}
+    return {k: (sk, v, CONTROL_CHECKSUMS[k]) for k, (sk, v) in values.items()}
+
+
 def scalar(sql):
     return spark.sql(sql).collect()[0][0]
 
@@ -303,14 +376,22 @@ class TableQC:
 
     def __init__(self, dq, table):
         self.dq, self.table = dq, table
-        rows = spark.sql(f"""SELECT build_id, row_count FROM {QUALITY}.build_log
+        rows = spark.sql(f"""SELECT build_id, row_count, parameters FROM {QUALITY}.build_log
                              WHERE target_table = '{table}' AND status = 'succeeded'
                              ORDER BY finished_at DESC, build_id DESC LIMIT 1""").collect()
         self.build_id = rows[0]["build_id"] if rows else None
         self.logged_rows = rows[0]["row_count"] if rows else None
+        self.params = json.loads(rows[0]["parameters"]) if rows and rows[0]["parameters"] else {}
         self.batch = f"build:{self.build_id}" if self.build_id else None
         self.total_sql = f"SELECT count(*) FROM {table}"
         self.this_build = f"_silver_build_id = '{self.build_id}'"
+
+    def param(self, key):
+        """A build setting from build_log.parameters of the latest succeeded build (rule 2a)."""
+        if key not in self.params:
+            raise KeyError(f"build_log.parameters of the latest {self.table} build has no '{key}': "
+                           f"rebuild the table with the 2026-10-19 build file")
+        return self.params[key]
 
     def checksums(self, source_key):
         """content_checksum(s) of one source as read by this build (build_inputs)."""
@@ -350,15 +431,16 @@ class TableQC:
 
     def control(self, name, observed, column_name=None, detail=None):
         """S21: control total of one source file (plan 6.3)."""
-        source_key, expected, checksum = CONTROLS[name]
+        source_key, expected, checksum = load_controls()[name]
         sums = self.checksums(source_key)
         now = ", ".join(c[:12] for c in sums) or "none"
         if checksum and checksum not in sums:
             return self._rec("S21", status="WARN", observed=observed, expected=expected, source_key=source_key,
                              column_name=column_name,
-                             detail=f"new artifact {now}: check the value, then update CONTROLS['{name}']")
+                             detail=f"new artifact {now}: check the value in {CONFIG_NAME}, then update CONTROL_CHECKSUMS['{name}']")
         return self.value("S21", observed, expected, source_key=source_key, column_name=column_name,
-                          detail=f"{detail}; file checksum {now}" + ("" if checksum else " (control checksum not set)"))
+                          detail=f"{detail} (control from {CONFIG_NAME}); file checksum {now}"
+                                 + ("" if checksum else " (control checksum not set)"))
 
     # ---- checks shared by the tables ---------------------------------------------
     def basics(self, key):
@@ -718,15 +800,16 @@ def check_metric(dq, profile):
     t.count("S06", f"SELECT count(*) FROM {MET} WHERE least({', '.join(f'coalesce({m}, 0)' for m in MEASURES)}) < 0",
             total_sql, column_name=", ".join(MEASURES))
     t.count("S08", f"""SELECT count(*) FROM {MET}
-                       WHERE year NOT BETWEEN 1990 AND 2025
-                          OR (_source_key = 'doh_fhsis_demographic' AND year NOT BETWEEN 2018 AND 2025)""",
+                       WHERE year NOT BETWEEN {YEAR_FLOOR['metric']} AND year(current_date())
+                          OR (_source_key = 'doh_fhsis_demographic'
+                              AND year < {YEAR_FLOOR['doh_fhsis_demographic']})""",
             total_sql, column_name="year")
     t.count("S11", f"""SELECT count(*) FROM {MET}
                        WHERE ownership NOT IN ('total', 'government', 'private')
                           OR coalesce(series_definition, 'none') NOT IN ('none', 'hospitals_incl_infirmaries',
                                                                           'general_and_specialty_hospitals')
                           OR NOT area_key RLIKE '^(psgc:[0-9]{{10}}|ph|hist:[a-z_]+|sga:[a-z]+)$'
-                          OR (is_break_year AND year <> 2013)""",
+                          OR (is_break_year AND year <> {int(t.param('hospital_definition_break_year'))})""",
             total_sql, column_name="ownership, series_definition, area_key, is_break_year")
     # S26 (plan 4.3): FHSIS region row = its provinces (without their listed cities) + listed cities,
     # per file (one file per year), for bhs and barangays
@@ -770,6 +853,10 @@ def check_metric(dq, profile):
 def check_bed_occupancy(dq, profile):
     t = TableQC(dq, BOR)
     total_sql = t.total_sql
+    # build settings of 03 (rule 2a): the baseline maximum and the sheets (years) it expects
+    v = float(t.param("bor_baseline_max"))
+    BOR_BASELINE_MAX = int(v) if v.is_integer() else v
+    bor_years = sorted(int(y) for y in t.param("bor_expected_sheets"))
     t.basics(["_source_key", "_source_file", "_source_sheet", "_source_row_num"])
     t.build_record()
     t.lineage_not_null(["_silver_build_id", "_source_key", "_source_file", "_source_sheet", "_source_row_num",
@@ -791,7 +878,8 @@ def check_bed_occupancy(dq, profile):
                        WHERE (bor_pct < 0 AND coalesce(exclusion_reason, '') <> 'bor_negative')
                           OR authorized_beds < 0 OR implementing_beds < 0 OR inpatient_bed_days < 0""",
             total_sql, column_name="bor_pct, authorized_beds, implementing_beds, inpatient_bed_days")
-    t.count("S08", f"SELECT count(*) FROM {BOR} WHERE year NOT BETWEEN 2018 AND 2025", total_sql, column_name="year")
+    t.count("S08", f"SELECT count(*) FROM {BOR} WHERE year NOT IN ({', '.join(str(y) for y in bor_years)})",
+            total_sql, column_name="year", detail=f"years = bor_expected_sheets of the build: {bor_years}")
     t.count("S11", f"""SELECT count(*) FROM {BOR}
                        WHERE sharing <> 'restricted'
                           OR ownership NOT IN ('government', 'private')
@@ -828,6 +916,7 @@ def check_bed_occupancy(dq, profile):
 def check_osm_point(dq, profile):
     t = TableQC(dq, OSM)
     total_sql = t.total_sql
+    lon_min, lat_min, lon_max, lat_max = (float(v) for v in t.param("ph_bbox"))   # 04 setting (rule 2a)
     t.basics(["osm_type", "osm_id"])
     t.build_record()
     t.lineage_not_null(["_silver_build_id", "_source_key", "_source_file", "_source_row_num", "_as_of_date",
@@ -847,8 +936,8 @@ def check_osm_point(dq, profile):
     t.count("S11", f"""SELECT count(*) FROM {OSM}
                        WHERE location_precision NOT IN ('point', 'municipality')
                           OR (location_precision = 'point') <> (coordinate_status = 'ok')
-                          OR (location_precision = 'point' AND (longitude NOT BETWEEN 114 AND 127
-                                                                OR latitude NOT BETWEEN 4 AND 21.5))
+                          OR (location_precision = 'point' AND (longitude NOT BETWEEN {lon_min} AND {lon_max}
+                                                                OR latitude NOT BETWEEN {lat_min} AND {lat_max}))
                           OR (location_precision = 'municipality' AND (longitude IS NOT NULL OR latitude IS NOT NULL))
                           OR geo_resolution_method NOT IN ('point_in_polygon', 'nearest_boundary', 'exception', 'addr_city_name')
                           OR (geo_resolution_method IN ('point_in_polygon', 'nearest_boundary')) <> (location_precision = 'point')

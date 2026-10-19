@@ -59,6 +59,13 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;
+-- Philippine bounding box (lon_min, lat_min, lon_max, lat_max). Same box as PH_BBOX in
+-- facilities_silver_04a_osm_locate.py and the centroid gate in 00a; was typed in the gate until
+-- 2026-10-19 (rule 2a).
+DECLARE OR REPLACE VARIABLE ph_bbox ARRAY<DOUBLE> DEFAULT array(114D, 4D, 127D, 21.5D);
+-- OSM tags that make a row a health facility (one list, used in [0] and [4]; was typed three times)
+DECLARE OR REPLACE VARIABLE osm_health_amenities ARRAY<STRING>
+  DEFAULT array('hospital', 'clinic', 'doctors', 'dentist', 'pharmacy', 'laboratory', 'health_post', 'nursing_home', 'blood_bank');
 DECLARE OR REPLACE VARIABLE geography_checksum STRING;
 SET VARIABLE geography_checksum =
   (SELECT max_by(content_checksum, silver_processed_at) FROM public_health.silver.geography_silver);
@@ -93,12 +100,11 @@ SELECT psgc_code, area_name,
 FROM public_health.silver.geography_silver
 WHERE content_checksum = geography_checksum AND geographic_level IN ('City', 'Mun');
 
--- OSM tags that make a row a health facility. amenity first; healthcare when amenity is missing
--- or not a health amenity (laboratory, optometrist, ... are tagged healthcare only).
--- The same list is written as an array in [4] (keep both together).
+-- OSM tags that make a row a health facility (setting osm_health_amenities). amenity first;
+-- healthcare when amenity is missing or not a health amenity (laboratory, optometrist, ... are
+-- tagged healthcare only).
 CREATE OR REPLACE TEMP VIEW fac_osm_health_amenity AS
-SELECT * FROM VALUES ('hospital'), ('clinic'), ('doctors'), ('dentist'), ('pharmacy'), ('laboratory'),
-                     ('health_post'), ('nursing_home'), ('blood_bank') AS t(amenity);
+SELECT explode(osm_health_amenities) AS amenity;
 
 
 -- The newest Healthsites file (see "Which bronze file" above)
@@ -237,7 +243,7 @@ SELECT
   concat(c.osm_type, '/', c.osm_id)                                         AS osm_key,
   nullif(trim(c.name), '')                                                  AS facility_name,
   -- facility type: amenity when it is a health amenity, else the first healthcare value
-  CASE WHEN array_contains(array('hospital', 'clinic', 'doctors', 'dentist', 'pharmacy', 'laboratory', 'health_post', 'nursing_home', 'blood_bank'), c.amenity_norm) THEN c.amenity_norm
+  CASE WHEN array_contains(osm_health_amenities, c.amenity_norm) THEN c.amenity_norm
        ELSE c.healthcare_first END                                          AS facility_type,
   c.amenity_norm                                                            AS amenity,
   nullif(trim(c.healthcare), '')                                            AS healthcare,
@@ -277,7 +283,7 @@ SELECT
   osm_build_id AS _silver_build_id,
   c._source_key, c._source_file, c._source_sheet, c._source_row_num, c._as_of_date,
   map_filter(map('longitude', 'X', 'latitude', 'Y', 'beds', 'beds', 'facility_type',
-                 CASE WHEN array_contains(array('hospital', 'clinic', 'doctors', 'dentist', 'pharmacy', 'laboratory', 'health_post', 'nursing_home', 'blood_bank'), c.amenity_norm) THEN 'amenity' ELSE 'healthcare' END),
+                 CASE WHEN array_contains(osm_health_amenities, c.amenity_norm) THEN 'amenity' ELSE 'healthcare' END),
              (k, v) -> NOT (k IN ('longitude', 'latitude') AND a.coordinate_status <> 'ok')
                        AND NOT (k = 'beds' AND try_cast(trim(c.beds) AS INT) IS NULL)) AS _metric_source_columns
 FROM public_health.silver.facilities_osm_point_silver__classified c
@@ -350,7 +356,7 @@ SELECT 'psgc_code not a city / municipality of the geography snapshot', 'fail', 
 UNION ALL
 SELECT 'coordinates present but outside the Philippines, or a point without coordinates placed by them', 'fail', count(*)
   FROM public_health.silver.facilities_osm_point_silver__candidate
-  WHERE (has_coordinates AND (longitude NOT BETWEEN 114 AND 127 OR latitude NOT BETWEEN 4 AND 21.5))
+  WHERE (has_coordinates AND (longitude NOT BETWEEN ph_bbox[0] AND ph_bbox[2] OR latitude NOT BETWEEN ph_bbox[1] AND ph_bbox[3]))
      OR (location_precision = 'point' AND NOT has_coordinates)
 UNION ALL
 SELECT 'coordinates that are not numbers', 'fail', count(*)
@@ -380,8 +386,14 @@ LEFT JOIN (
   ON nl.source_key = i.source_key AND nl.source_file = i.source_file AND nl.source_sheet <=> i.source_sheet
 WHERE i.input_kind = 'bronze_source' AND i.input_rows - coalesce(nl.n, 0) <> coalesce(ref.n, 0)
 UNION ALL
+-- control for hdx_healthsites_facility_asof_20261014.csv (sources_facilities.yaml qc.expected_rows).
+-- A newer Healthsites file fails here on purpose until its count is verified and set in both places.
 SELECT 'control: bronze rows of the newest file = 16,032 (bronze QC expected_rows)', 'fail',
        CASE WHEN (SELECT count(*) FROM public_health.silver.facilities_osm_point_silver__classified) = 16032 THEN 0 ELSE 1 END
+UNION ALL
+SELECT 'setting: 04a ran with another nearest-boundary distance than this build records', 'fail',
+       CASE WHEN (SELECT count(DISTINCT nearest_max_km) FROM public_health.silver.facilities_osm_point_silver__located) = 1
+            THEN 0 ELSE 1 END
 UNION ALL
 -- warnings: reported, never block
 SELECT 'warn: health facilities not located (quarantined; see row_disposition)', 'warn', count(*)
@@ -408,6 +420,8 @@ SELECT osm_build_id AS build_id, 'silver' AS layer, 'facilities' AS domain,
        CASE WHEN g.failed_gates = 0 THEN (SELECT count(*) FROM public_health.silver.facilities_osm_point_silver__candidate) END AS row_count,
        CAST(NULL AS BIGINT) AS target_table_version, code_version AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup, 'geography_checksum', geography_checksum,
+                            'ph_bbox', ph_bbox, 'osm_health_amenities', osm_health_amenities,
+                            'nearest_max_km', (SELECT max(nearest_max_km) FROM public_health.silver.facilities_osm_point_silver__located),
                             'warnings', g.warn_names)) AS parameters,
        job_run_id AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message

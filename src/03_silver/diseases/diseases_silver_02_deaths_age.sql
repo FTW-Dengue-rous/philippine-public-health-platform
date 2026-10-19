@@ -2,8 +2,10 @@
 -- Builds public_health.silver.diseases_deaths_age_silver:
 --   registered deaths of one cause in one area in one year in one age group.
 --   Key: (disease_key, area_key, year, age_group, _source_key)
--- Source: PSA deaths by region, annual (2023, 2024). It is the only source with age groups.
--- Each bronze row becomes 20 rows: 19 age bands plus "not stated".
+-- Source: PSA deaths by region, annual (files on hand 2026-10-19: 2023 and 2024; the year comes
+-- from each file name). It is the only source with age groups.
+-- Each bronze row becomes 20 rows: 19 age bands plus "not stated" (the layout of the PSA table;
+-- the gate "silver rows <> data rows x 20" stops the build if the layout changes).
 --
 -- Lineage on the silver row (7 columns): _silver_build_id, _source_key, _source_file,
 --   _source_sheet, _source_row_num, _as_of_date, _metric_source_columns ({deaths: 'age_25_29'}).

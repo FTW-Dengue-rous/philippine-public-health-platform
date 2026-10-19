@@ -25,6 +25,7 @@
 -- Needs
 --   diseases_silver_00_reference.sql has been run (area map, cause map, directory)
 --   quality_setup.sql has been run (build_log, build_inputs, row_disposition)
+--   geography_silver is built (FHSIS TB region prefixes, latest snapshot; since 2026-10-19)
 --   Bronze QC passed for the eight sources read here
 --
 -- Lineage on the silver row (contract 3.3, 7 columns)
@@ -32,6 +33,14 @@
 --   _metric_source_columns. Load time, load id and file checksum are in quality.build_inputs;
 
 --   build time is in quality.build_log. One join gets them: quality.v_build_lineage.
+--
+-- Weekly dengue periods (2026-10-19, D-44 and D-46; replaces the open D4 / O-07 reading)
+--   source   period_basis           period_key   year / week          period_start .. period_end
+--   HDX      iso_week_ending_date   2016-01-10   ISO year / ISO week  date - 6 .. date
+--   UP NOAH  iso_week               2016-W01     YR / WN (ISO)        Monday .. Sunday of the ISO week
+--   UP NOAH is_approximated is false: FLAG_DEKADAL_APPROX is a rainfall flag (D-46).
+--   Gate [6] checks every weekly row is a consistent ISO week. Gold dim_date must accept the two
+--   new period_basis values (it listed week_number_unconfirmed and source_date_unconfirmed).
 -- =============================================================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -43,6 +52,25 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
+
+-- Source facts the classification depends on (rule 2a: named here, guarded by a gate).
+-- HDX: the file that repeats the 2021 rows of the main file (finding F1), and the date pattern of
+-- each file. If the repeat file is renamed, its rows load as data and the gate "key not unique"
+-- stops the build.
+DECLARE OR REPLACE VARIABLE hdx_repeat_file STRING DEFAULT 'hdx_dengue_province_weekly_2021.csv';
+DECLARE OR REPLACE VARIABLE hdx_repeat_file_date_format STRING DEFAULT 'd/M/yyyy';
+DECLARE OR REPLACE VARIABLE hdx_main_date_format STRING DEFAULT 'M/d/yyyy';
+
+-- FHSIS TB region prefixes come from geography_silver (latest snapshot), not a typed list:
+-- a code whose first two digits are not a region there stays 'unclassified' and fails a gate.
+DECLARE OR REPLACE VARIABLE geography_checksum STRING;
+SET VARIABLE geography_checksum =
+  (SELECT max_by(content_checksum, silver_processed_at) FROM public_health.silver.geography_silver);
+
+CREATE OR REPLACE TEMP VIEW metric_region_prefixes AS
+SELECT DISTINCT substr(lpad(trim(CAST(psgc_code AS STRING)), 10, '0'), 1, 2) AS region_prefix
+FROM public_health.silver.geography_silver
+WHERE content_checksum = geography_checksum AND geographic_level = 'Reg';
 
 -- Label normalisation, the same rule as norm() in build_diseases_reference_maps.py:
 -- upper case, N for N-tilde, anything that is not A-Z or 0-9 becomes a space, single spaces.
@@ -64,6 +92,15 @@ RETURN CASE WHEN s IS NULL OR trim(s) = '' THEN blank_status
 -- Year at the end of a file name: ..._2024.csv -> 2024
 CREATE OR REPLACE TEMPORARY FUNCTION dz_file_year(f STRING) RETURNS INT
 RETURN try_cast(regexp_extract(f, '_([0-9]{4})[.][A-Za-z]+$', 1) AS INT);
+
+-- ISO 8601 weeks (D-44, D-46). Week 1 is the week with 4 January; weeks run Monday to Sunday.
+-- Monday of week 1 of ISO year y, and the number of ISO weeks in y (52 or 53: 28 December is
+-- always in the last week). weekofyear() and extract(YEAROFWEEK ...) are ISO in Spark.
+CREATE OR REPLACE TEMPORARY FUNCTION dz_iso_week1_monday(y INT) RETURNS DATE
+RETURN date_sub(make_date(y, 1, 4), weekday(make_date(y, 1, 4)));
+
+CREATE OR REPLACE TEMPORARY FUNCTION dz_iso_weeks_in_year(y INT) RETURNS INT
+RETURN weekofyear(make_date(y, 12, 28));
 
 
 -- =============================================================================
@@ -95,10 +132,10 @@ CREATE OR REPLACE TEMP VIEW cls_hdx_dengue AS
 WITH r AS (
   SELECT t.*,
          dz_norm(loc) AS loc_norm,
-         (_source_file LIKE '%hdx_dengue_province_weekly_2021.csv') AS is_dup_file,
-         CASE WHEN _source_file LIKE '%hdx_dengue_province_weekly_2021.csv'
-              THEN to_date(try_to_timestamp(`date`, 'd/M/yyyy'))
-              ELSE to_date(try_to_timestamp(`date`, 'M/d/yyyy')) END AS obs_date,
+         endswith(_source_file, hdx_repeat_file) AS is_dup_file,
+         CASE WHEN endswith(_source_file, hdx_repeat_file)
+              THEN to_date(try_to_timestamp(`date`, hdx_repeat_file_date_format))
+              ELSE to_date(try_to_timestamp(`date`, hdx_main_date_format)) END AS obs_date,
          dz_num(cases) AS cases_n, dz_num(deaths) AS deaths_n
   FROM public_health.bronze.diseases_hdx_dengue_bronze t
   WHERE _source_key = 'hdx_dengue'
@@ -187,8 +224,8 @@ SELECT j.*,
             WHEN trim(psgc_code) = '0' THEN 'non_data'
             WHEN area_name IS NULL AND code10 IS NULL THEN 'non_data'
             WHEN code10 LIKE '19999%' THEN 'quarantined'
-            WHEN substr(code10, 1, 2) IN ('01','02','03','04','05','06','07','08','09','10',
-                                          '11','12','13','14','16','17','18','19') THEN 'data'
+            -- region prefix of a region in the geography snapshot (was a typed list to 2026-10-19)
+            WHEN rp.region_prefix IS NOT NULL THEN 'data'
             ELSE 'unclassified' END AS row_class,
        CASE WHEN override_applied OR is_country_row THEN NULL
             WHEN trim(psgc_code) = '0' THEN 'hospital_section'
@@ -197,7 +234,8 @@ SELECT j.*,
             WHEN code10 LIKE '19999%' THEN 'area_unresolved' END AS reason,
        CASE WHEN override_applied OR is_country_row THEN 'ph' ELSE concat('psgc:', code10) END AS tb_area_key,
        CAST(NULL AS STRING) AS kept_file, CAST(NULL AS STRING) AS kept_sheet, CAST(NULL AS INT) AS kept_row
-FROM j;
+FROM j
+LEFT JOIN metric_region_prefixes rp ON rp.region_prefix = substr(j.code10, 1, 2);
 
 -- [1f] IHME GBD. A (location, measure, cause, year) held by two files is kept once (finding F2):
 --      the neoplasms file wins. dup_equal says whether the dropped row has the same values.
@@ -308,7 +346,9 @@ UNION ALL SELECT 'public_health.silver.diseases_cause_map',
 UNION ALL SELECT 'public_health.silver.diseases_area_map',
        (SELECT max(version) FROM (DESCRIBE HISTORY public_health.silver.diseases_area_map))
 UNION ALL SELECT 'public_health.silver.diseases_directory_silver',
-       (SELECT max(version) FROM (DESCRIBE HISTORY public_health.silver.diseases_directory_silver));
+       (SELECT max(version) FROM (DESCRIBE HISTORY public_health.silver.diseases_directory_silver))
+UNION ALL SELECT 'public_health.silver.geography_silver',
+       (SELECT max(version) FROM (DESCRIBE HISTORY public_health.silver.geography_silver));
 -- NULL version (use this instead if the view above fails):
 -- CREATE OR REPLACE TEMP VIEW metric_table_versions AS
 -- SELECT CAST(NULL AS STRING) AS table_name, CAST(NULL AS BIGINT) AS table_version WHERE 1 = 0;
@@ -346,11 +386,14 @@ UNION ALL
 -- the reference tables that shaped the build
 SELECT silver_build_id, 'public_health.silver.diseases_metric_silver', 'table', t.table_name,
        v.table_version,
-       CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING),
+       CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING),
+       CASE WHEN t.table_name LIKE '%geography_silver' THEN geography_checksum END,   -- snapshot read
        CAST(NULL AS TIMESTAMP), t.n, CAST(NULL AS STRING), CAST(NULL AS BIGINT)
 FROM (SELECT 'public_health.silver.diseases_cause_map' AS table_name, count(*) AS n FROM public_health.silver.diseases_cause_map
       UNION ALL SELECT 'public_health.silver.diseases_area_map', count(*) FROM public_health.silver.diseases_area_map
-      UNION ALL SELECT 'public_health.silver.diseases_directory_silver', count(*) FROM public_health.silver.diseases_directory_silver) t
+      UNION ALL SELECT 'public_health.silver.diseases_directory_silver', count(*) FROM public_health.silver.diseases_directory_silver
+      -- region prefixes only (FHSIS TB classification); input_rows = regions in the snapshot
+      UNION ALL SELECT 'public_health.silver.geography_silver', count(*) FROM metric_region_prefixes) t
 LEFT JOIN metric_table_versions v ON v.table_name = t.table_name;
 
 
@@ -399,7 +442,12 @@ SELECT 'dengue' AS disease_key, CAST(NULL AS STRING) AS source_cause_code, CAST(
        map('value', src_col) AS _metric_source_columns
 FROM u;
 
--- [4b] UP NOAH: region, week number; cases only. Every row is flagged as approximated by the source.
+-- [4b] UP NOAH: region, ISO week; cases only.
+--      DC_DOH holds DOH-EB counts released under FOI 2026-031, by ISO week (WN) and ISO year (YR).
+--      They are NOT approximated (D-46): FLAG_DEKADAL_APPROX belongs to the rainfall column
+--      (RF_HDX, CHIRPS 10-day totals split into weeks), so it is not read here.
+--      period_start / period_end = Monday to Sunday of that ISO week. DOH counts by Sunday to
+--      Saturday weeks, so a week can sit one day off the DOH week; peaks and totals do not change.
 CREATE OR REPLACE TEMP VIEW part_upnoah
   (disease_key, source_cause_code, source_cause_label,
    area_key, area_label_source, geo_level, psgc_code, parent_area_key, geo_coverage_basis, location_basis,
@@ -422,18 +470,23 @@ SELECT 'dengue', CAST(NULL AS STRING), CAST(NULL AS STRING),
        'reporting_unconfirmed',
        'week', concat(y, '-W', lpad(CAST(w AS STRING), 2, '0')),
        y, CAST(NULL AS INT), w,
-       CAST(NULL AS DATE), CAST(NULL AS DATE),          -- week rule not confirmed (decision D4)
-       'week_number_unconfirmed',
+       date_add(dz_iso_week1_monday(y), (w - 1) * 7),   -- ISO week, Monday (D-46)
+       date_add(dz_iso_week1_monday(y), (w - 1) * 7 + 6),  -- Sunday
+       'iso_week',
        'cases', 'reported_dengue_cases',
        DC_DOH, CAST(NULL AS STRING), CAST(NULL AS STRING),
        'reported', CAST(NULL AS STRING), 'missing',
-       false, false, (trim(FLAG_DEKADAL_APPROX) = '1'), (trim(FLAG_PLAUSIBILITY) = '1'),
+       false, false, false, (trim(FLAG_PLAUSIBILITY) = '1'),   -- is_approximated false (D-46)
        coalesce(is_superseded_area = 'true', false),
        _source_key, _source_file, _source_sheet, _source_row_num, _as_of_date,
        map('value', 'DC_DOH')
 FROM s;
 
 -- [4c] HDX dengue: province or city, weekly date; cases and deaths
+--      The date CLOSES its week (D-44): the week is date - 6 to date, and its week number and year
+--      are the ISO week and ISO year of the date. period_key keeps the date (yyyy-MM-dd); label it
+--      "week ending <date>". year is the ISO year, so a date in early January can belong to the
+--      year before (2021-01-03 is 2020-W53).
 CREATE OR REPLACE TEMP VIEW part_hdx_dengue
   (disease_key, source_cause_code, source_cause_label,
    area_key, area_label_source, geo_level, psgc_code, parent_area_key, geo_coverage_basis, location_basis,
@@ -458,9 +511,9 @@ SELECT 'dengue', CAST(NULL AS STRING), CAST(NULL AS STRING),
        area_key, trim(loc), geo_level, psgc_code, parent_area_key, geo_coverage_basis,
        'reporting_unconfirmed',
        'week', date_format(obs_date, 'yyyy-MM-dd'),
-       year(obs_date), CAST(NULL AS INT), CAST(NULL AS INT),
-       CAST(NULL AS DATE), CAST(NULL AS DATE),          -- is the date the week start or end? (D4)
-       'source_date_unconfirmed',
+       CAST(extract(YEAROFWEEK FROM obs_date) AS INT), CAST(NULL AS INT), weekofyear(obs_date),
+       date_sub(obs_date, 6), obs_date,                 -- the date closes its week (D-44)
+       'iso_week_ending_date',
        measure, concat('reported_dengue_', measure),
        raw, CAST(NULL AS STRING), CAST(NULL AS STRING),
        'reported', CAST(NULL AS STRING), 'missing',
@@ -767,7 +820,20 @@ SELECT 'period that does not parse (year, month 1-12, week 1-53)', count(*)
   FROM public_health.silver.diseases_metric_silver__candidate
   WHERE year IS NULL OR period_key IS NULL
      OR (period_grain = 'month' AND (month IS NULL OR month NOT BETWEEN 1 AND 12))
-     OR (period_basis = 'week_number_unconfirmed' AND (week IS NULL OR week NOT BETWEEN 1 AND 53))
+     OR (period_grain = 'week' AND (week IS NULL OR week NOT BETWEEN 1 AND dz_iso_weeks_in_year(year)))
+UNION ALL
+-- D-44 / D-46: every weekly row spans 7 days and carries the ISO week and ISO year of its last day.
+-- UP NOAH weeks run Monday to Sunday; an HDX week ends on its own date.
+SELECT 'weekly row not a consistent ISO week (D-44, D-46)', count(*)
+  FROM public_health.silver.diseases_metric_silver__candidate
+  WHERE period_grain = 'week'
+    AND (period_basis NOT IN ('iso_week', 'iso_week_ending_date')
+         OR period_start IS NULL OR period_end IS NULL
+         OR period_end <> date_add(period_start, 6)
+         OR (period_basis = 'iso_week' AND weekday(period_start) <> 0)
+         OR weekofyear(period_end) <> week
+         OR extract(YEAROFWEEK FROM period_end) <> year
+         OR (period_basis = 'iso_week_ending_date' AND period_end <> to_date(period_key)))
 UNION ALL
 SELECT 'negative value', count(*) FROM public_health.silver.diseases_metric_silver__candidate WHERE value < 0
 UNION ALL

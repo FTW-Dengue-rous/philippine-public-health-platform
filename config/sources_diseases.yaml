@@ -1,6 +1,5 @@
 # =============================================================================
 # sources_diseases.yaml — disease domain
-# Philippine Public Health Platform (FTW Capstone)
 #
 # One entry per source. The bronze loader reads an entry, loads the file(s)
 # to bronze with every data column as STRING, and adds the lineage columns:
@@ -35,6 +34,16 @@
 #   - qc: settings used by the bronze QC script. expected_rows and control numbers must be
 #     verified against the file / published source. skip_checks: [B08] switches a check off;
 #     severity: {B03: WARN} changes what a failed check produces for that source.
+#   - qc.control_values items may carry a `silver:` block (year, and for the TB programme
+#     indicator and drug_resistance). Bronze QC ignores it; diseases_silver_qc.py S34 reads the
+#     same number from silver. qc.control_totals of doh_foi_dengue and
+#     philhealth_foi_claims_hospital are read by S34 as they are. One number, written once
+#     (rule 2a, 2026-10-19).
+#   - sharing (D-47): open / public = published data. restricted = FOI releases and the hospital
+#     extract, where our requests promised academic use and aggregate reporting only: never
+#     committed to the repo, never profiled, published in gold as aggregates with cells from
+#     fewer than 3 records or hospitals suppressed. IHME is restricted by its licence (no
+#     redistribution), handled the same way.
 #
 # Ingestion-contract checks (run by the loader BEFORE anything is written)
 #   - header_check: the physical title/header rows must contain the expected text at
@@ -93,7 +102,7 @@ sources:
     as_of_date: 2025-09-30                 # data extracted around Sept 2025; CONFIRM the date on the FOI response
     load_mode: upsert
     merge_keys: [region_name, year, month]
-    sharing: restricted
+    sharing: restricted                    # D-47: FOI release, academic use, aggregates only, cells < 3 suppressed
     coverage: 2021-01 to 2025-09, 18 regions (includes Negros Island Region)
     column_map:
       Year: year
@@ -111,7 +120,7 @@ sources:
     qc:
       expected_rows: 1026
       numeric_columns: [Year, Month, Cases, Deaths]
-      control_totals:
+      control_totals:                      # also silver QC S34 (cases per year in diseases_metric_silver)
         group_by: Year
         sum: Cases
         expected: {2021: 80919, 2022: 264390, 2023: 214638, 2024: 413960, 2025: 240540}
@@ -164,8 +173,10 @@ sources:
     control_file: diseases/upnoah/PH_REGIONS-DC.csv   # used in silver QC, not bronze
     notes:
       - 17 regions, old definition (no Negros Island Region).
-      - Keep week as a number; week definition is not fully reconciled in the README.
-      - Week 53 is folded into week 52 per the README.
+      - "D-46 (2026-10-19): DC_DOH = DOH Epidemiology Bureau counts (FOI 2026-031) by ISO week. They are reported counts, not approximations. FLAG_DEKADAL_APPROX marks the RAINFALL column (dekadal values spread to weeks), not the cases."
+      - "Silver: period_basis iso_week, YR = ISO year, WN = ISO week, period Monday to Sunday; is_approximated = false. A WN above the ISO weeks of its year fails the silver gate."
+      - "The README folds week 53 into week 52. No year on hand has 53 ISO weeks (2016-2019, 2022-2025; checked 2026-10-19, max WN = 52 every year), so the folding changes no row today. 2026 has 53 ISO weeks: check a new release before loading it."
+
 
   # ---------------------------------------------------------------------------
   # 3. HDX dengue: province x week, 2016-2020 plus a separate 2021 file (OPEN)
@@ -222,10 +233,14 @@ sources:
     notes:
       - Use the original download. Excel reinterprets dates with day <= 12.
       - Check every province has dates exactly 7 days apart.
+      - "D-44 (2026-10-19): each date CLOSES its week (every date is a Sunday, the last day of an ISO week; checked 2026-10-19 with each file read in its own date format). Silver: period_basis iso_week_ending_date, period = date - 6 to date, year and week = ISO year and ISO week of the date. A few edge weeks move year (2021-01-03 belongs to ISO 2020 week 53)."
+      - "Missing weeks in the source (checked 2026-10-19 after the D-44 rebuild; each gap is exactly one week): week ending 2019-01-06 for all 126 areas (ISO 2019 week 1, so 2019 has 51 of 52 weeks); 2016-11-13 for 46 areas, 2017-11-12 for 41, 2020-11-15 for 46. Silver keeps them as gaps (no zero filled); silver QC S43 shows them as WARN."
+      - "date_format below is the big file's format. The 2021 file uses d/M/yyyy; diseases_silver_01 reads each file with its own format (settings hdx_main_date_format, hdx_repeat_file_date_format)."
+
       - "hdx_dengue_province_weekly_2021.csv repeats the 252 rows of 2021 already in the 2016-2021 file (same cases and deaths), and writes dates as dd/MM/yyyy (03/01/2021 = 3 January). The big file uses M/d/yyyy. Silver must use the 2016-2021 file only for these weeks, or parse dates per file."
       - Expect older province names (Compostela Valley, undivided Maguindanao).
       - Assign region from the province via the geography table.
-      - Derive year and week from the parsed date, not from the source year column.
+      - Derive year and week from the parsed date (ISO year and week, D-44), not from the source year column.
       - loc includes highly urbanized cities (e.g. ANGELES CITY) as separate rows.
 
   # ---------------------------------------------------------------------------
@@ -258,7 +273,7 @@ sources:
     as_of_date: 2026-10-01                 # CONFIRM date received
     load_mode: latest_file
     silver_enabled: false
-    sharing: restricted
+    sharing: restricted                    # D-47: FOI release, academic use, aggregates only
     coverage: Region II only, 2020-2025, annual
     qc:
       expected_rows: 127
@@ -329,11 +344,11 @@ sources:
         total: total
         parts: [january, february, march, april, may, june, july, august, september, october, november, december]
       control_values:
-        - {label: "2020 all causes", column: total, expected: 613936, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2020.%'"}
-        - {label: "2021 all causes", column: total, expected: 879429, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2021.%'"}
-        - {label: "2022 all causes", column: total, expected: 679766, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2022.%'"}
-        - {label: "2023 all causes", column: total, expected: 694821, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2023.%'"}
-        - {label: "2024 all causes", column: total, expected: 701884, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2024.%'"}
+        - {label: "2020 all causes", column: total, expected: 613936, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2020.%'", silver: {year: 2020}}
+        - {label: "2021 all causes", column: total, expected: 879429, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2021.%'", silver: {year: 2021}}
+        - {label: "2022 all causes", column: total, expected: 679766, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2022.%'", silver: {year: 2022}}
+        - {label: "2023 all causes", column: total, expected: 694821, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2023.%'", silver: {year: 2023}}
+        - {label: "2024 all causes", column: total, expected: 701884, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2024.%'", silver: {year: 2024}}
     notes:
       - Excel files hold many sheets; only the cause-by-month sheet is loaded.
       - Source and notes lines at the bottom of each Excel sheet are loaded as rows; drop them in silver.
@@ -525,8 +540,8 @@ sources:
       numeric_columns: [population, cases_total]
       null_tokens: ["*"]                  # * = incomplete or no data submitted
       control_values:
-        - {label: "2024 Philippines TB cases", column: cases_total, expected: 544948, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'"}
-        - {label: "2025 Philippines TB cases", column: cases_total, expected: 535254, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2025.%'"}
+        - {label: "2024 Philippines TB cases", column: cases_total, expected: 544948, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'", silver: {year: 2024}}
+        - {label: "2025 Philippines TB cases", column: cases_total, expected: 535254, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2025.%'", silver: {year: 2025}}
     notes:
       - 2025 population is projected; 2025 has two extra testing columns (null for 2024).
       - PSGC code is blank on the 2025 Philippines row; pad codes to 10 digits in silver.
@@ -573,7 +588,10 @@ sources:
         total: tpt_all_total
         parts: [tpt_0_14_total, tpt_15_over_total]
       control_values:
-        - {label: "2025 Philippines contacts given TPT", column: tpt_all_total, expected: 120108, where: "upper(trim(area_name)) = 'PHILIPPINES'"}
+        - {label: "2025 Philippines contacts given TPT", column: tpt_all_total, expected: 120108, where: "upper(trim(area_name)) = 'PHILIPPINES'",
+           silver: {indicator: tpt_given, drug_resistance: not_applicable, year: 2025}}
+        - {label: "2025 Philippines eligible contacts (FHSIS estimate)", column: tpt_eligible_population, expected: 1498711.2, where: "upper(trim(area_name)) = 'PHILIPPINES'",
+           silver: {indicator: tpt_eligible_contacts, drug_resistance: not_applicable, year: 2025}}   # = 535,254 notified x 4 x 70%; was a silver-only control until 2026-10-19
         - {label: "2025 Philippines TPT 0-14", column: tpt_0_14_total, expected: 37399, where: "upper(trim(area_name)) = 'PHILIPPINES'"}
         - {label: "2025 Philippines TPT 15+", column: tpt_15_over_total, expected: 82709, where: "upper(trim(area_name)) = 'PHILIPPINES'"}
     notes:
@@ -637,10 +655,14 @@ sources:
         total: success_all_total
         parts: [success_all_male, success_all_female]
       control_values:
-        - {label: "2025 Philippines DSTB cohort", column: cohort_cases_all, expected: 414185, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-DSTB'"}
-        - {label: "2025 Philippines DSTB cured and completed", column: success_all_total, expected: 382547, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-DSTB'"}
-        - {label: "2025 Philippines RR/MDR-TB cohort", column: cohort_cases_all, expected: 7721, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-MDRTB'"}
-        - {label: "2025 Philippines RR/MDR-TB cured and completed", column: success_all_total, expected: 5030, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-MDRTB'"}
+        - {label: "2025 Philippines DSTB cohort", column: cohort_cases_all, expected: 414185, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-DSTB'",
+           silver: {indicator: treatment_cohort, drug_resistance: drug_susceptible, year: 2025}}
+        - {label: "2025 Philippines DSTB cured and completed", column: success_all_total, expected: 382547, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-DSTB'",
+           silver: {indicator: treatment_success, drug_resistance: drug_susceptible, year: 2025}}
+        - {label: "2025 Philippines RR/MDR-TB cohort", column: cohort_cases_all, expected: 7721, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-MDRTB'",
+           silver: {indicator: treatment_cohort, drug_resistance: drug_resistant, year: 2025}}
+        - {label: "2025 Philippines RR/MDR-TB cured and completed", column: success_all_total, expected: 5030, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-MDRTB'",
+           silver: {indicator: treatment_success, drug_resistance: drug_resistant, year: 2025}}
     notes:
       - "Treatment success = cured + treatment completed, over the cases in the treatment cohort (cohort_cases_*). success_*_pct = success_*_total / cohort_cases_* x 100 (checked: Philippines DSTB 382,547 / 414,185 = 92.36%)."
       - The cohort is the group of cases whose treatment outcome is reported in 2025, not the 2025 notifications. Never divide by notified cases from doh_fhsis_tb.
@@ -729,7 +751,7 @@ sources:
     as_of_date: 2026-10-01
     load_mode: upsert
     merge_keys: [EncounterID]
-    sharing: restricted
+    sharing: restricted                    # D-47: de-identified hospital extract, academic use, aggregates only, cells < 3 suppressed
     silver_target: "public_health.silver.diseases_hospital_encounters_silver"
     deidentify:
       drop_columns: [EncounterID, Brgy, Height, Weight, Total_Bill, PhilHealth_Coverage, Guarantee_Letter_Coverage]
@@ -760,7 +782,7 @@ sources:
     as_of_date: 2026-10-02
     load_mode: upsert
     silver_enabled: false
-    sharing: restricted
+    sharing: restricted                    # D-47: FOI release, academic use, aggregates only
     qc:
       expected_rows: 60678                # 60,675 data rows + 3 'Applied filters' footer rows
       numeric_columns: [Admit Year, Claims Count]
@@ -977,7 +999,7 @@ sources:
     as_of_date: 2026-10-14                # date the file was received
     load_mode: upsert
     merge_keys: [admit_year, facility_name, facility_municipality, illness_description, claim_status]
-    sharing: restricted                   # FOI release for academic use; report in aggregate only (as stated in the request)
+    sharing: restricted                   # D-47: FOI release for academic use; aggregates only, cells < 3 suppressed (as stated in the request)
     silver_target: "public_health.silver.diseases_hospital_claims_silver"   # planned
     coverage: admission years 2016-2025; 2,294 facilities in 86 province labels; 14 illness packages; 4 claim statuses
     column_map:
@@ -994,7 +1016,7 @@ sources:
     qc:
       expected_rows: 245405
       numeric_columns: [Admit Year, Claims Count, Claims Amount]
-      control_totals:                     # sum of Claims Count per admission year, all claim statuses
+      control_totals:                     # sum of Claims Count per admission year, all claim statuses; also silver QC S34
         group_by: Admit Year
         sum: Claims Count
         expected: {2016: 1709849, 2017: 1626227, 2018: 1706320, 2019: 2018226, 2020: 804669,

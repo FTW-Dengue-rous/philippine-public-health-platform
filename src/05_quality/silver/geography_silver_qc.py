@@ -1,5 +1,4 @@
 # =============================================================================
-# geography_silver_qc.py
 # Silver QC for PSGC geography (public_health.silver.geography_silver)
 #
 # Checks one persisted PSGC snapshot in Silver against its Bronze source and writes the
@@ -12,6 +11,12 @@
 #   GS04  non-null geographic levels accepted                        FAIL
 #   GS05  Bronze to Silver row counts reconcile                      FAIL
 #   GS06  PSGC hierarchy components reconstruct the code             WARN
+#   GS07  psgc_code is 10 digits (added 2026-10-19)                   FAIL
+#   GS08  null-level codes = psgc.silver_qc.null_level_codes          WARN
+#         (added 2026-10-19; lists the codes when they differ)
+#
+# Settings (rule 2a, 2026-10-19): GS04's level list and GS08's codes come from
+# psgc.silver_qc in sources_geography.yaml, the same list geography_silver.py SG03 reads.
 #
 # Which snapshot is checked
 #   source_version  YAML psgc.version (Q2_2024), or --source_version
@@ -170,6 +175,15 @@ JOB_RUN_ID = param(ARGS.job_run_id, "job_run_id")
 FAIL_ON_ERROR = param(ARGS.fail_on_error, "fail_on_error", default="true").lower() == "true"
 DQ_SCHEMA_NAME = param(ARGS.dq_schema, "dq_schema", default=DQ_SCHEMA)
 
+# GS04 / GS08 settings. A missing list stops the run: the checks have no sensible default.
+silver_qc_cfg = psgc_cfg.get("silver_qc") or {}
+ACCEPTED_LEVELS = [str(v) for v in silver_qc_cfg.get("accepted_geographic_levels") or []]
+NULL_LEVEL_CODES = sorted(str(v) for v in silver_qc_cfg.get("null_level_codes") or [])
+if not ACCEPTED_LEVELS:
+    raise ValueError(f"psgc.silver_qc.accepted_geographic_levels is missing in {CONFIG_PATH}")
+if "null_level_codes" not in silver_qc_cfg:
+    raise ValueError(f"psgc.silver_qc.null_level_codes is missing in {CONFIG_PATH} (use [] for none)")
+
 print(f"Config         : {CONFIG_PATH}")
 print(f"Silver table   : {SILVER_TABLE}")
 print(f"Bronze table   : {BRONZE_TABLE}")
@@ -294,10 +308,11 @@ with DQRun(
     )
 
     # GS04: null levels are allowed, matching the geography Silver notebook.
-    invalid_levels = count_sql("""
+    accepted_sql = ", ".join("'" + level.replace("'", "''") + "'" for level in ACCEPTED_LEVELS)
+    invalid_levels = count_sql(f"""
         SELECT COUNT(*) FROM beginner_geography_silver
         WHERE geographic_level IS NOT NULL
-          AND geographic_level NOT IN ('Reg', 'Prov', 'City', 'Mun', 'SubMun', 'Bgy')
+          AND geographic_level NOT IN ({accepted_sql})
     """)
     dq.record(
         "GS04",
@@ -310,6 +325,7 @@ with DQRun(
         threshold=0,
         fail_count=invalid_levels,
         total_count=silver_rows,
+        expected=", ".join(ACCEPTED_LEVELS),
     )
 
     # GS05: the transformation must preserve the number of source rows.
@@ -347,6 +363,55 @@ with DQRun(
         threshold=0,
         fail_count=hierarchy_issues,
         total_count=silver_rows,
+    )
+
+    # GS07: downstream code reads levels from fixed positions of a 10-digit code
+    # (population S55, admin boundaries, facilities). Null codes are GS02's job.
+    bad_codes = count_sql("""
+        SELECT COUNT(*) FROM beginner_geography_silver
+        WHERE psgc_code IS NOT NULL AND NOT psgc_code RLIKE '^[0-9]{10}$'
+    """)
+    dq.record(
+        "GS07",
+        table_name=SILVER_TABLE,
+        source_key="psgc",
+        batch_id=BATCH_ID,
+        check_name="PSGC code is 10 digits",
+        check_type="VALIDITY",
+        severity="FAIL",
+        threshold=0,
+        fail_count=bad_codes,
+        total_count=silver_rows,
+        column_name="psgc_code",
+    )
+
+    # GS08: the null-level rows are the documented placeholders, never areas. A new release
+    # that adds or drops one is listed here so the YAML (and anything that filters by level)
+    # can be reviewed.
+    observed_null_codes = sorted(
+        r[0] for r in spark.sql("""
+            SELECT DISTINCT psgc_code FROM beginner_geography_silver
+            WHERE geographic_level IS NULL AND psgc_code IS NOT NULL
+        """).collect()
+    )
+    unexpected = sorted(set(observed_null_codes) - set(NULL_LEVEL_CODES))
+    absent = sorted(set(NULL_LEVEL_CODES) - set(observed_null_codes))
+    dq.record(
+        "GS08",
+        table_name=SILVER_TABLE,
+        source_key="psgc",
+        batch_id=BATCH_ID,
+        check_name="Null-level codes are the documented placeholders",
+        check_type="CONSISTENCY",
+        severity="WARN",
+        status="PASS" if not unexpected and not absent else "WARN",
+        fail_count=len(unexpected) + len(absent),
+        total_count=len(observed_null_codes),
+        observed=",".join(observed_null_codes) or "none",
+        expected=",".join(NULL_LEVEL_CODES) or "none",
+        column_name="geographic_level",
+        detail=(f"new: {','.join(unexpected) or 'none'}; gone: {','.join(absent) or 'none'}. "
+                "Update psgc.silver_qc.null_level_codes in sources_geography.yaml after review."),
     )
 
 print(f"Geography Silver QC completed. Results: {DQ_SCHEMA_NAME}.qc_results")

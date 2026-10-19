@@ -4,8 +4,9 @@
 --   Key: (_source_key, disease_scope, geo_level, period_grain, year)
 -- and the view public_health.silver.diseases_metric_wide_v.
 --
--- Why it exists: annual comparisons must use the same months on both sides. DOH FOI dengue 2025
--- holds January to September only; gold reads this table to compare like with like.
+-- Why it exists: annual comparisons must use the same months on both sides. For example, the
+-- DOH FOI dengue file was extracted in September 2025, so its 2025 holds January to September
+-- only (live: missing_periods); gold reads this table to compare like with like.
 --
 -- Reads the published public_health.silver.diseases_metric_silver, so run it after
 -- diseases_silver_01_metric.sql. It has no bronze input and writes no row dispositions.
@@ -16,6 +17,11 @@ DECLARE OR REPLACE VARIABLE silver_build_id STRING DEFAULT uuid();
 DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_timestamp();
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;
+
+-- Number of ISO weeks in ISO year y (52 or 53): 28 December is always in the last ISO week.
+-- Same function as in diseases_silver_01_metric.sql (kept identical).
+CREATE OR REPLACE TEMPORARY FUNCTION dz_iso_weeks_in_year(y INT) RETURNS INT
+RETURN weekofyear(make_date(y, 12, 28));
 
 
 -- =============================================================================
@@ -35,25 +41,26 @@ SELECT silver_build_id AS build_id, 'public_health.silver.diseases_source_covera
 
 -- =============================================================================
 -- [2] candidate rows
---   periods_expected  1 for annual rows, 12 for months, 52 (nominal) for weekly sources.
+--   periods_expected  1 for annual rows, 12 for months, and for weekly sources the number of
+--                     ISO weeks in the ISO year (52 or 53).
 --   is_complete_year  the SOURCE holds every period of the year, counted over all areas.
---                     year: always. month: 12 months. week-number sources (UP NOAH): 52 weeks.
---                     Date-based weeks (HDX): the dates are contiguous, 7 days apart with no
---                     interior gap ((last - first) / 7 + 1 = periods_present), and span the
---                     year (first date on or before 7 January, last date on or after
---                     25 December). A year holds 52 or 53 of any weekday, so a contiguous
---                     spanning series always has 52 or 53 dates: 51 means a missing week
---                     (HDX 2016 starts 10 January; HDX 2019 is short one week at an edge,
---                     Databricks 2026-10-14). The span test holds whichever end of the week
---                     the date marks (D4). Changed 2026-10-14: HDX was null before.
+--                     year: always. month: 12 months. week: every ISO week 1 to 52 / 53 of the
+--                     ISO year, one period per week (D-44, D-46). Weekly rows carry the ISO week
+--                     and ISO year from diseases_silver_01 (HDX: of the date that closes the
+--                     week; UP NOAH: WN and YR). Changed 2026-10-19: before, HDX used a
+--                     date-span test and UP NOAH needed 52 weeks.
+--                     D-44 expects HDX 2016, 2017, 2018 and 2020 complete and 2019 without its
+--                     week 1.
 --   areas_complete    areas that hold every period THE SOURCE holds in that year (an area's
---                     distinct periods >= periods_present), so a 51-week year does not mark
---                     every area incomplete. HDX provinces cover different week ranges (208 to
---                     261 weeks over 2016-2021), so a year can be complete for the source and
---                     incomplete for some provinces (2020: 61 of 81). Gold applies the per-area
---                     test on each fact row (gold_v2_30).
+--                     distinct periods >= periods_present), so a year short by one week does not
+--                     mark every area incomplete. HDX provinces cover different week ranges
+--                     (Databricks 2026-10-14, calendar years: 208 to 261 weeks over 2016-2021;
+--                     2020: 61 of 81 provinces held all weeks), so a year can be complete for the
+--                     source and incomplete for some provinces. Live: areas_complete vs
+--                     areas_present. Gold applies the per-area test on each fact row
+--                     (fact_disease_metric).
 --   all_areas_complete  areas_complete = areas_present.
---   missing_periods   month numbers not present (monthly sources only)
+--   missing_periods   month numbers (monthly sources) or ISO week numbers (weekly sources) not present
 --   min / max_periods_per_area  areas do not all cover the same periods
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.diseases_source_coverage_silver__candidate AS
@@ -63,8 +70,9 @@ WITH m AS (
               WHEN _source_key LIKE 'psa_deaths%' THEN 'psa_causes_of_death'
               WHEN _source_key = 'doh_fhsis' THEN 'tuberculosis'
               WHEN _source_key = 'ihme_gbd' THEN 'ihme_gbd_causes' END AS disease_scope,
-         geo_level, period_grain, period_basis, year, month, period_key, area_key,
-         CASE period_grain WHEN 'year' THEN 1 WHEN 'month' THEN 12 WHEN 'week' THEN 52 END AS periods_expected
+         geo_level, period_grain, period_basis, year, month, week, period_key, area_key,
+         CASE period_grain WHEN 'year' THEN 1 WHEN 'month' THEN 12
+                           WHEN 'week' THEN dz_iso_weeks_in_year(year) END AS periods_expected
   FROM public_health.silver.diseases_metric_silver
 ),
 g AS (
@@ -72,9 +80,8 @@ g AS (
          max(periods_expected) AS periods_expected,
          count(DISTINCT period_key) AS periods_present,
          min(period_key) AS first_period, max(period_key) AS last_period,
-         -- dated weeks only (HDX period_key is yyyy-MM-dd); null for week numbers and months
-         min(try_cast(period_key AS DATE)) AS first_date, max(try_cast(period_key AS DATE)) AS last_date,
-         collect_set(month) AS months_present
+         collect_set(month) AS months_present,
+         collect_set(week) AS weeks_present            -- ISO week numbers (weekly sources)
   FROM m GROUP BY _source_key, disease_scope, geo_level, period_grain, year
 ),
 per_area AS (
@@ -97,15 +104,14 @@ SELECT g._source_key, g.disease_scope, g.geo_level, g.period_grain, g.year,
        CASE g.period_grain
             WHEN 'year'  THEN true
             WHEN 'month' THEN g.periods_present = 12
-            WHEN 'week'  THEN CASE WHEN g.period_basis = 'source_date_unconfirmed'
-                                   -- contiguous 7-day dates (no interior gap) that span the year
-                                   THEN CAST(datediff(g.last_date, g.first_date) / 7 AS INT) + 1 = g.periods_present
-                                        AND g.first_date <= make_date(g.year, 1, 7)
-                                        AND g.last_date >= make_date(g.year, 12, 25)
-                                   ELSE g.periods_present >= 52 END
+            -- every ISO week of the ISO year, one period per week (D-44, D-46)
+            WHEN 'week'  THEN size(g.weeks_present) = g.periods_expected
+                              AND g.periods_present = g.periods_expected
        END AS is_complete_year,
        CASE WHEN g.period_grain = 'month'
-            THEN array_join(array_except(sequence(1, 12), g.months_present), ',') END AS missing_periods,
+            THEN array_join(array_except(sequence(1, 12), g.months_present), ',')
+            WHEN g.period_grain = 'week'
+            THEN array_join(array_except(sequence(1, g.periods_expected), g.weeks_present), ',') END AS missing_periods,
        a.areas_present, a.min_periods_per_area, a.max_periods_per_area,
        a.areas_complete,
        (a.areas_complete = a.areas_present) AS all_areas_complete,
@@ -236,10 +242,10 @@ FROM public_health.silver.diseases_metric_silver
 GROUP BY disease_key, area_key, period_grain, period_key, _source_key;
 
 
--- [9] result. Databricks 2026-10-14: hdx province 2016 = 51 weeks, 2017 = 53, 2018 = 52,
---     2019 = 51, 2020 = 52 (61 of 81 provinces hold all 52), 2021 = 2. Complete for the source:
---     2017, 2018, 2020. 2016 and 2019 are each short one week at a year edge (see first_period /
---     last_period), 2021 has two weeks. areas_complete below areas_present shows the provinces
+-- [9] result. Databricks 2026-10-14, calendar years (before D-44): hdx province 2016 = 51 weeks,
+--     2017 = 53, 2018 = 52, 2019 = 51, 2020 = 52 (61 of 81 provinces hold all 52), 2021 = 2.
+--     Expected after D-44 (ISO years, to verify on the rebuild): 2016, 2017, 2018 and 2020
+--     complete; 2019 missing_periods = 1. areas_complete below areas_present shows the provinces
 --     that hold fewer weeks than the source.
 SELECT _source_key, geo_level, period_grain, year, periods_expected, periods_present,
        is_complete_year, missing_periods, areas_present, areas_complete, all_areas_complete

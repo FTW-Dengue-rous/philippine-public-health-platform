@@ -23,8 +23,8 @@
 #   S04   workforce PSGC codes found in geography (latest snapshot)    consistency     WARN
 #   S08   no data year in the future                                   validity        FAIL
 #   S97   ratio per population inside a plausible band (by region)     business rule   WARN
-#           beds per 1,000 (facilities registry / census 2024)
-#           doctors + nurses + midwives per 10,000 (FHSIS / census 2024)
+#           beds per 1,000 (facilities registry / latest census year)
+#           doctors + nurses + midwives per 10,000 (FHSIS / census, latest year in both)
 #   S98   latest data year of each source no older than --max_age_years  timeliness    WARN
 #   S99   FHSIS reported population vs census population, same area and year  consistency  WARN
 #
@@ -37,6 +37,11 @@
 #   2026-10-14  S29: hdx_healthsites 20 % override removed (runbook incident 2 closed by the
 #               GeoJSON-derived Healthsites file). S98: diseases TB programme and hospital claims
 #               tables added; three PSA facilities tables that end in 2015 marked historical.
+#   2026-10-19  Rule 2a: the years are derived, not typed. S97 beds use the latest census year in
+#               population_silver (was RATIO_YEAR = 2024); S97 health workers use the latest year
+#               held by both the census and FHSIS; S99 compares every year held by both the census
+#               and the FHSIS denominator (was 2020, 2024). Each detail names the years used.
+#               Kept as named policy: the S29 limits, the S97 bands, the S99 tolerance.
 
 import argparse
 import os
@@ -168,10 +173,9 @@ HISTORICAL_SOURCES = {
 BED_BAND_PER_1000 = (0.3, 5.0)  # PH hospital beds per 1,000 people is about 1
 HW_BAND_PER_10000 = (1.0, 60.0)  # FHSIS doctors + nurses + midwives per 10,000
 HW_PROFESSIONS = ("doctors", "nurses", "midwives")
-RATIO_YEAR = 2024  # census year used as the denominator
 FHSIS_KEY = "doh_fhsis_demographic"
 S99_TOLERANCE_PCT = 10.0
-S99_YEARS = (2020, 2024)
+# Years are derived at run time (census_years, latest_common_year); none are typed here.
 
 
 def scalar(sql):
@@ -192,11 +196,21 @@ def latest_geography():
                WHERE content_checksum = (SELECT max_by(content_checksum, silver_processed_at) FROM {GEO}))"""
 
 
-def region_population():
-    """Census population of each region in RATIO_YEAR (region = first two digits of the code)."""
+def census_years():
+    """Census years held by population_silver (with at least one population value)."""
+    return sorted(r[0] for r in spark.sql(
+        f"SELECT DISTINCT population_year FROM {POP} WHERE population IS NOT NULL").collect())
+
+
+def years_in(table, where="true", col="year"):
+    return {r[0] for r in spark.sql(f"SELECT DISTINCT {col} FROM {table} WHERE {where}").collect()}
+
+
+def region_population(year):
+    """Census population of each region in a census year (region = first two digits of the code)."""
     return f"""(SELECT substr(p.psgc_code, 1, 2) AS r, max(p.population) AS pop
                FROM {POP} p JOIN {latest_geography()} g ON g.psgc_code = p.psgc_code
-               WHERE g.geographic_level = 'Reg' AND p.population_year = {RATIO_YEAR}
+               WHERE g.geographic_level = 'Reg' AND p.population_year = {int(year)}
                  AND p.population IS NOT NULL
                GROUP BY 1)"""
 
@@ -328,12 +342,14 @@ def check_timeliness(dq):
 # S97: business rules, ratio per population by region
 # ----------------------------------------------------------------------------------
 def check_ratios(dq):
-    if exists(REG) and exists(POP):
+    census = census_years() if exists(POP) else []
+    if exists(REG) and census:
+        ratio_year = census[-1]  # latest census: the registry is a current snapshot
         lo, hi = BED_BAND_PER_1000
         spark.sql(f"""
             SELECT p.r, coalesce(b.beds, 0) AS beds, p.pop,
                    round(coalesce(b.beds, 0) * 1000.0 / p.pop, 2) AS per_1000
-            FROM {region_population()} p
+            FROM {region_population(ratio_year)} p
             LEFT JOIN (SELECT substr(psgc_code, 1, 2) AS r, sum(analysis_beds) AS beds FROM {REG}
                        WHERE facility_status = 'listed' AND facility_category IN ('hospital', 'infirmary')
                          AND psgc_code IS NOT NULL GROUP BY 1) b ON b.r = p.r""").createOrReplaceTempView(
@@ -348,13 +364,15 @@ def check_ratios(dq):
             "SELECT count(*) FROM xd_beds",
             column_name="analysis_beds per 1,000 population",
             admin_level=1,
-            expected=f"{lo} to {hi} per 1,000 (census {RATIO_YEAR})",
+            expected=f"{lo} to {hi} per 1,000 (census {ratio_year}, the latest in population_silver)",
             observed=listing("SELECT r, per_1000 FROM xd_beds ORDER BY r", 25),
             detail=listing(
                 f"SELECT concat('region ', r, ': ', per_1000) FROM xd_beds WHERE {out} ORDER BY r"
             ),
         )
-    if exists(HC) and exists(POP):
+    hw_years = sorted(set(census) & years_in(HC, f"_source_key = '{FHSIS_KEY}'")) if exists(HC) and census else []
+    if hw_years:
+        hw_year = hw_years[-1]  # latest year held by both the census and FHSIS
         lo, hi = HW_BAND_PER_10000
         profs = ", ".join(f"'{x}'" for x in HW_PROFESSIONS)
         # Province rows plus city rows add up to the region (FHSIS prints listed cities apart from
@@ -362,10 +380,10 @@ def check_ratios(dq):
         spark.sql(f"""
             SELECT p.r, coalesce(h.workers, 0) AS workers, p.pop,
                    round(coalesce(h.workers, 0) * 10000.0 / p.pop, 2) AS per_10000
-            FROM {region_population()} p
+            FROM {region_population(hw_year)} p
             LEFT JOIN (SELECT substr(t.psgc_code, 1, 2) AS r, sum(t.headcount_total) AS workers
                        FROM {HC} t JOIN {latest_geography()} g ON g.psgc_code = t.psgc_code
-                       WHERE t._source_key = '{FHSIS_KEY}' AND t.year = {RATIO_YEAR}
+                       WHERE t._source_key = '{FHSIS_KEY}' AND t.year = {hw_year}
                          AND t.profession IN ({profs}) AND t.total_status = 'ok'
                          AND coalesce(t.analysis_eligible, true)
                          AND g.geographic_level IN ('Prov', 'City')
@@ -380,7 +398,7 @@ def check_ratios(dq):
             column_name="doctors+nurses+midwives per 10,000 population",
             admin_level=1,
             source_key=FHSIS_KEY,
-            expected=f"{lo} to {hi} per 10,000 (FHSIS {RATIO_YEAR} / census {RATIO_YEAR})",
+            expected=f"{lo} to {hi} per 10,000 (FHSIS {hw_year} / census {hw_year}, latest year in both)",
             observed=listing("SELECT r, per_10000 FROM xd_hw ORDER BY r", 25),
             detail=listing(
                 f"SELECT concat('region ', r, ': ', per_10000) FROM xd_hw WHERE {out} ORDER BY r"
@@ -394,7 +412,12 @@ def check_ratios(dq):
 def check_population_sources(dq):
     if not (exists(DEN) and exists(POP)):
         return
-    years = ", ".join(str(y) for y in S99_YEARS)
+    common = sorted(set(census_years()) & years_in(DEN))
+    if not common:
+        rec(dq, "S99", DEN, status="WARN", source_key=FHSIS_KEY,
+            detail="no year held by both population_silver and the FHSIS denominator: nothing compared")
+        return
+    years = ", ".join(str(y) for y in common)
     # Regions, cities and municipalities only: province coverage differs between the two sources
     # (census 2024 provinces exclude HUCs; FHSIS provinces exclude their listed cities).
     spark.sql(f"""
@@ -415,7 +438,7 @@ def check_population_sources(dq):
         "SELECT count(*) FROM xd_pop",
         column_name="reported_population vs population_silver.population",
         source_key=FHSIS_KEY,
-        expected=f"within {S99_TOLERANCE_PCT}% of the census, years {years}",
+        expected=f"within {S99_TOLERANCE_PCT}% of the census, years {years} (held by both)",
         detail=listing(f"""SELECT psgc_code, level, year, fhsis, 'vs', census, concat(diff_pct, '%')
                              FROM xd_pop WHERE {out} ORDER BY diff_pct DESC"""),
     )

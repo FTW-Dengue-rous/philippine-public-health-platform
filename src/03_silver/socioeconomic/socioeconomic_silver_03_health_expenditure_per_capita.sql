@@ -20,6 +20,13 @@
 --   _amount_source_row_num, _growth_source_row_num, _metric_source_columns
 --   ({per_capita_health_expenditure_php: 'value_2023', growth_rate_pct: 'value_2023'}).
 --   The source is a CSV, so there is no sheet column.
+--
+-- Rule 2a (2026-10-19)
+--   - per_capita_years (2016 to 2023) is a setting, used by the year gate and recorded in
+--     build_log.parameters (socioeconomic_silver_qc.py S08 / S88 read it). The unpivot in [3]
+--     names the bronze columns (value_2016, ...); a new gate stops the build when bronze holds a
+--     year column the setting does not list, or the reverse. Before, a value_2024 column would
+--     have been left out without any gate failing (the year gate counted only the stacked years).
 -- =============================================================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -30,6 +37,8 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
+-- Years of the file loaded (psa_health_expenditure_per_capita_national_annual_2016_2023.csv).
+DECLARE OR REPLACE VARIABLE per_capita_years ARRAY<INT> DEFAULT sequence(2016, 2023);
 
 -- Label normalisation: repeated spaces become one space, then upper case.
 CREATE OR REPLACE TEMPORARY FUNCTION se_label(s STRING) RETURNS STRING
@@ -131,7 +140,9 @@ GROUP BY f.input_table, f._source_key, f._source_file, f._source_sheet, f._inges
 
 
 -- =============================================================================
--- [3] candidate rows: one per year, from the amount row, the growth row and the period header
+-- [3] candidate rows: one per year, from the amount row, the growth row and the period header.
+--     The bronze columns are named by year, so they are listed by name; the year column gate
+--     keeps this list and per_capita_years in step.
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.socioeconomic_health_expenditure_per_capita_silver__candidate AS
 WITH long AS (
@@ -202,6 +213,15 @@ UNION ALL
 SELECT 'inputs: not exactly one file', abs(count(*) - 1)
   FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver__inputs
 UNION ALL
+-- Years in the bronze column names (value_2016, ...) vs per_capita_years, from one row of the source.
+SELECT 'bronze year columns differ from per_capita_years (update the setting and the unpivot in [3])',
+       size(array_except(y.bronze_years, per_capita_years)) + size(array_except(per_capita_years, y.bronze_years))
+FROM (SELECT array_distinct(collect_list(CAST(regexp_extract(k, '^value_([0-9]{4})$', 1) AS INT))) AS bronze_years
+      FROM (SELECT explode(json_object_keys(to_json(struct(*), map('ignoreNullFields', 'false')))) AS k
+            FROM (SELECT * FROM public_health.bronze.socioeconomic_psa_health_expenditure_per_capita_bronze
+                  WHERE _source_key = 'psa_health_expenditure_per_capita_national_annual' LIMIT 1))
+      WHERE k RLIKE '^value_[0-9]{4}$') y
+UNION ALL
 SELECT 'unclassified bronze rows', count(*)
   FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver__classified WHERE row_class NOT IN ('data', 'non_data')
 UNION ALL
@@ -225,8 +245,9 @@ UNION ALL
 SELECT 'per capita amount is not positive', count(*)
   FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver__candidate WHERE per_capita_health_expenditure_php <= 0
 UNION ALL
-SELECT 'years are not exactly 2016 to 2023',
-       CASE WHEN count(*) = 8 AND min(year) = 2016 AND max(year) = 2023 AND count(DISTINCT year) = 8 THEN 0 ELSE 1 END
+SELECT 'years are not exactly per_capita_years, one row each',
+       CASE WHEN count(*) = size(per_capita_years)
+             AND sort_array(collect_set(year)) = sort_array(per_capita_years) THEN 0 ELSE 1 END
   FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver__candidate
 UNION ALL
 SELECT 'lineage column is null', count(*)
@@ -259,6 +280,7 @@ SELECT silver_build_id                                AS build_id,
        CAST(NULL AS BIGINT)                           AS target_table_version,     -- filled in [8]
        code_version                                   AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup,
+                            'per_capita_years', per_capita_years,
                             'inputs_without_load_log',
                             (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver__inputs WHERE metadata_matches = 0))) AS parameters,
        job_run_id                                     AS run_id,
@@ -343,7 +365,8 @@ SELECT (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditu
        (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver__classified WHERE row_class = 'data') AS data_rows,
        (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver) AS silver_rows,
        (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver WHERE is_revised) AS revised_years,
-       -- control values to read against the PSA table (expected 11082.68 and 5836.93)
+       -- control values to read against the PSA table: the expected numbers are the
+       -- qc.control_values of this source in sources_socioeconomic.yaml (S84 checks them)
        (SELECT max(per_capita_health_expenditure_php) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver WHERE year = 2023) AS amount_2023_php,
        (SELECT max(per_capita_health_expenditure_php) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver WHERE year = 2016) AS amount_2016_php;
 

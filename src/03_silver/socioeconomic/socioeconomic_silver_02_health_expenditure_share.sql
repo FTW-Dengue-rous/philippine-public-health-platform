@@ -15,6 +15,14 @@
 -- Lineage on the silver row (7 columns): _silver_build_id, _source_key, _source_file,
 --   _source_sheet (null, the source is a CSV), _source_row_num, _as_of_date,
 --   _metric_source_columns ({share_pct: 'share_2023'}).
+--
+-- Rule 2a (2026-10-19)
+--   - share_years (2016 to 2023) is a setting. The unpivot in [3] names the bronze columns
+--     (share_2016, ...); a new gate stops the build when bronze holds a year column the setting
+--     does not list, or the reverse.
+--   - The row-count gate is derived: agents in share_agent_map x size(share_years) (was 128).
+--   - share_level1_tolerance_pct (0.2): level-1 shares are rounded to one decimal in the source,
+--     so their sum may miss 100 by a little. socioeconomic_silver_qc.py S91 reads it from build_log.
 -- =============================================================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -25,6 +33,10 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
+-- Years of the file loaded (psa_health_expenditure_share_national_annual_2016_2023.csv).
+DECLARE OR REPLACE VARIABLE share_years ARRAY<INT> DEFAULT sequence(2016, 2023);
+-- Level-1 agents may miss 100 by this much (percentage points; source rounds to 0.1).
+DECLARE OR REPLACE VARIABLE share_level1_tolerance_pct DECIMAL(4,2) DEFAULT 0.2;
 
 -- Label normalisation: line breaks and repeated spaces become one space, then upper case.
 CREATE OR REPLACE TEMPORARY FUNCTION se_label(s STRING) RETURNS STRING
@@ -126,6 +138,8 @@ GROUP BY f.input_table, f._source_key, f._source_file, f._source_sheet, f._inges
 
 -- =============================================================================
 -- [3] candidate rows: years to rows. 'a/' means the share is below 0.05 percent.
+--     The bronze columns are named by year, so they are listed by name; the year column gate
+--     keeps this list and share_years in step.
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.socioeconomic_health_expenditure_share_silver__candidate AS
 WITH u AS (
@@ -176,6 +190,15 @@ UNION ALL
 SELECT 'inputs: not exactly one file', abs(count(*) - 1)
   FROM public_health.silver.socioeconomic_health_expenditure_share_silver__inputs
 UNION ALL
+-- Years in the bronze column names (share_2016, ...) vs share_years, from one row of the source.
+SELECT 'bronze year columns differ from share_years (update the setting and the unpivot in [3])',
+       size(array_except(y.bronze_years, share_years)) + size(array_except(share_years, y.bronze_years))
+FROM (SELECT array_distinct(collect_list(CAST(regexp_extract(k, '^share_([0-9]{4})$', 1) AS INT))) AS bronze_years
+      FROM (SELECT explode(json_object_keys(to_json(struct(*), map('ignoreNullFields', 'false')))) AS k
+            FROM (SELECT * FROM public_health.bronze.socioeconomic_psa_health_expenditure_share_bronze
+                  WHERE _source_key = 'psa_health_expenditure_share_national_annual' LIMIT 1))
+      WHERE k RLIKE '^share_[0-9]{4}$') y
+UNION ALL
 SELECT 'unclassified bronze rows', count(*)
   FROM public_health.silver.socioeconomic_health_expenditure_share_silver__classified WHERE row_class NOT IN ('data', 'non_data')
 UNION ALL
@@ -198,9 +221,9 @@ UNION ALL
 SELECT 'total is not 100', count(*)
   FROM public_health.silver.socioeconomic_health_expenditure_share_silver__candidate WHERE agent_level = 0 AND NOT (share_pct <=> 100)
 UNION ALL
-SELECT 'level-1 agents do not sum to 100 (tolerance 0.2)', count(*) FROM (
+SELECT 'level-1 agents do not sum to 100 (tolerance share_level1_tolerance_pct)', count(*) FROM (
   SELECT year FROM public_health.silver.socioeconomic_health_expenditure_share_silver__candidate
-  WHERE agent_level = 1 GROUP BY year HAVING abs(sum(share_pct) - 100) > 0.2)
+  WHERE agent_level = 1 GROUP BY year HAVING abs(sum(share_pct) - 100) > share_level1_tolerance_pct)
 UNION ALL
 SELECT 'key column is null', count(*)
   FROM public_health.silver.socioeconomic_health_expenditure_share_silver__candidate WHERE financing_agent IS NULL OR year IS NULL
@@ -218,8 +241,9 @@ SELECT 'classified rows <> bronze rows read',
        abs((SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_share_silver__classified)
          - (SELECT coalesce(sum(input_rows), 0) FROM public_health.silver.socioeconomic_health_expenditure_share_silver__inputs))
 UNION ALL
-SELECT 'silver rows <> 16 agents x 8 years',
-       abs((SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_share_silver__candidate) - 128)
+SELECT 'silver rows <> agents in share_agent_map x share_years',
+       abs((SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_share_silver__candidate)
+         - (SELECT count(*) FROM share_agent_map) * size(share_years))
 UNION ALL
 SELECT 'reconciliation: bronze rows referenced by silver <> rows read - rows not loaded (data rows)',
        abs((SELECT count(DISTINCT _source_row_num) FROM public_health.silver.socioeconomic_health_expenditure_share_silver__candidate)
@@ -241,6 +265,9 @@ SELECT silver_build_id                                AS build_id,
        CAST(NULL AS BIGINT)                           AS target_table_version,     -- filled in [8]
        code_version                                   AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup,
+                            'share_years', share_years,
+                            'share_agent_count', (SELECT count(*) FROM share_agent_map),
+                            'share_level1_tolerance_pct', share_level1_tolerance_pct,
                             'inputs_without_load_log',
                             (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_share_silver__inputs WHERE metadata_matches = 0))) AS parameters,
        job_run_id                                     AS run_id,
@@ -323,7 +350,8 @@ SELECT (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditu
        (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_share_silver__classified WHERE row_class = 'data') AS data_rows,
        (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_share_silver) AS silver_rows,
        (SELECT count(*) FROM public_health.silver.socioeconomic_health_expenditure_share_silver WHERE is_below_0_05) AS rows_below_0_05,
-       -- control values to read against the PSA table (expected 44.4 and 50.5)
+       -- control values to read against the PSA table: the expected numbers are the
+       -- qc.control_values of this source in sources_socioeconomic.yaml (S84 checks them)
        (SELECT max(share_pct) FROM public_health.silver.socioeconomic_health_expenditure_share_silver WHERE financing_agent = 'Households' AND year = 2023) AS households_2023_pct,
        (SELECT max(share_pct) FROM public_health.silver.socioeconomic_health_expenditure_share_silver WHERE financing_agent = 'Households' AND year = 2016) AS households_2016_pct;
 

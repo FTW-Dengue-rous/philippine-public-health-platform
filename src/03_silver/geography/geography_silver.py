@@ -1,5 +1,4 @@
 # =============================================================================
-# geography_silver.py
 # 01 — PSGC Geography Bronze to Silver
 #
 # Transforms PSA PSGC Bronze geography records into a cleaned and validated Silver
@@ -8,7 +7,7 @@
 #   Config   config/sources_geography.yaml (psgc entry), found by walking up from this file
 #   Source   public_health.bronze.geography_bronze
 #   Target   public_health.silver.geography_silver
-#   QC       public_health.quality.qc_results (checks SG01–SG06)
+#   QC       public_health.quality.qc_results (checks SG01–SG07)
 #   Grain    one PSGC geographic area per logical PSGC source snapshot
 #   Key      psgc_code + content_checksum
 #   Flow     Bronze -> clean/standardize -> DQ checks -> DQ gate -> align table schema -> MERGE
@@ -26,7 +25,14 @@
 #   - MERGE inserts new keys and updates area_name, area_name_raw and batch_id when they
 #     change (batch_id changes when the same content is reloaded into Bronze under a new load).
 #     A rerun on unchanged Bronze inserts and updates nothing.
-#   - Expected for PSGC Q2_2024: 43,762 rows, 0 duplicate keys, 456 names repaired (SG06).
+#   - Expected for PSGC Q2_2024: 43,762 rows, 0 duplicate keys, 456 names repaired (SG06),
+#     2 null-level rows. Another release gives other numbers; none of them is a check.
+#
+# Rule 2a (2026-10-19)
+#   - Accepted levels come from psgc.silver_qc.accepted_geographic_levels in the YAML (the same
+#     list geography_silver_qc.py GS04 reads), not a list typed here.
+#   - New SG07 (FAIL): every psgc_code is 10 digits. Population S55, admin boundaries and the
+#     facilities builders read region / province / municipality from fixed positions of the code.
 # =============================================================================
 
 import argparse
@@ -158,6 +164,16 @@ if missing_keys:
     )
 
 EXPECTED_SOURCE_VERSION = psgc_config["version"]
+
+# Accepted geographic levels (SG03). Shared with geography_silver_qc.py through the YAML.
+ACCEPTED_GEOGRAPHIC_LEVELS = [
+    str(level) for level in (psgc_config.get("silver_qc") or {}).get("accepted_geographic_levels") or []
+]
+if not ACCEPTED_GEOGRAPHIC_LEVELS:
+    raise ValueError(
+        "psgc.silver_qc.accepted_geographic_levels is missing or empty in "
+        f"{CONFIG_PATH.name}; SG03 has no level list to check against."
+    )
 
 SOURCE_TABLE = psgc_config["bronze_table"]
 TARGET_TABLE = psgc_config["geography_silver_table"]
@@ -512,7 +528,7 @@ print(
 
 
 # -----------------------------------------------------------------------------
-# Inspect the 2 null-level records
+# Inspect the null-level records (2 in Q2_2024; GS08 in the QC compares them with the YAML)
 # -----------------------------------------------------------------------------
 null_level_rows = (
     geography_candidate
@@ -533,17 +549,8 @@ show(null_level_rows)
 
 
 # -----------------------------------------------------------------------------
-# SG03 Accepted Values
+# SG03 Accepted Values (list from the YAML, read at the top)
 # -----------------------------------------------------------------------------
-ACCEPTED_GEOGRAPHIC_LEVELS = [
-    "Reg",
-    "Prov",
-    "City",
-    "Mun",
-    "SubMun",
-    "Bgy",
-]
-
 invalid_level_condition = (
     F.col("geographic_level").isNotNull()
     & ~F.col("geographic_level").isin(ACCEPTED_GEOGRAPHIC_LEVELS)
@@ -646,7 +653,23 @@ sg06_repaired_count = (
     .count()
 )
 print(f"SG06 - Names still damaged: {sg06_fail_count:,}")
-print(f"Names repaired            : {sg06_repaired_count:,}")   # expect 456
+print(f"Names repaired            : {sg06_repaired_count:,}")   # 456 for Q2_2024
+
+
+# -----------------------------------------------------------------------------
+# SG07 PSGC code format: 10 digits
+# Downstream code reads levels from fixed positions (2 region, 5 province, 7 city /
+# municipality digits), so a code of another shape would join to the wrong parent silently.
+# -----------------------------------------------------------------------------
+bad_code_condition = ~F.col("psgc_code").rlike(r"^[0-9]{10}$")
+sg07_fail_count = geography_candidate.filter(bad_code_condition).count()
+print(f"SG07 - PSGC codes not 10 digits: {sg07_fail_count:,}")
+if sg07_fail_count > 0:
+    show(
+        geography_candidate.filter(bad_code_condition)
+        .select("psgc_code", "area_name", "geographic_level")
+        .limit(50)
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -746,8 +769,8 @@ qc_rows = [
         severity="FAIL",
         column_name="geographic_level",
         detail=(
-            "Accepted non-null values: Reg, Prov, City, Mun, "
-            f"SubMun, Bgy. Preserved special/null records: "
+            f"Accepted non-null values: {', '.join(ACCEPTED_GEOGRAPHIC_LEVELS)} "
+            "(psgc.silver_qc.accepted_geographic_levels). Preserved special/null records: "
             f"{sg03_null_count}"
         ),
     ),
@@ -785,6 +808,16 @@ qc_rows = [
         severity="FAIL",
         column_name="area_name",
         detail=f"No damaged characters after repair. Names repaired: {sg06_repaired_count}",
+    ),
+    make_qc_result(
+        check_id="SG07",
+        check_name="PSGC code is 10 digits",
+        check_type="VALIDITY",
+        fail_count=sg07_fail_count,
+        total_count=candidate_row_count,
+        severity="FAIL",
+        column_name="psgc_code",
+        detail="Downstream code reads region, province and city/municipality from fixed positions.",
     ),
 ]
 

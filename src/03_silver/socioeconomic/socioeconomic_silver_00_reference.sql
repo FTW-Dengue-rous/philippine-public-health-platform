@@ -11,6 +11,10 @@
 --
 -- BEFORE RUNNING: replace the path below with where the CSV is readable from
 -- (a Volume folder, or a workspace path if your compute can read it).
+--
+-- Rule 2a (2026-10-19): first_estimate_year is checked here only as a readable year. Whether it is
+-- one of the reporting years is a gate in socioeconomic_silver_01_poverty.sql, against its
+-- poverty_years setting (was "2021, 2023 or 2025" typed here as well).
 -- =============================================================================
 
 -- [1] area map
@@ -99,12 +103,12 @@ WHERE geo_level IS NULL OR geo_level NOT IN ('country', 'region', 'ncr_district'
 UNION ALL
 
 SELECT
-    'area map: first_estimate_year is not 2021, 2023 or 2025' AS check_name,
+    'area map: first_estimate_year is not a year (01 checks it against poverty_years)' AS check_name,
     count(*) AS failures
 FROM public_health.silver.socioeconomic_poverty_area_map
 WHERE
     try_cast(first_estimate_year AS INT) IS NULL
-    OR try_cast(first_estimate_year AS INT) NOT IN (2021, 2023, 2025)
+    OR NOT trim(first_estimate_year) RLIKE '^[0-9]{4}$'
 
 UNION ALL
 

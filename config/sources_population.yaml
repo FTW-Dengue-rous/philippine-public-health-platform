@@ -39,3 +39,19 @@ sources:
         - B11
         - B12
         - B14
+
+    # Settings read by psgc_population_silver_qc.py (2026-10-19). Kept apart from the bronze
+    # `qc` block above so bronze QC never sees them.
+    silver_qc:
+      # S54: every geography area must have a row for each census year. The years of the census
+      # releases this PSGC payload carries (POPCEN 2015, CPH 2020, POPCEN 2024). S54b FAILs when
+      # population_silver holds a year not listed here, so a new census year cannot be skipped.
+      census_years: [2015, 2020, 2024]
+      # S56: national census totals as published by PSA for each release.
+      # confirmed: false records a difference as WARN; set true after a run agrees (then FAIL).
+      control_totals:
+        description: national population, sum of the region rows (a region with no row that year takes the sum of its cities and municipalities)
+        source: PSA census releases (POPCEN 2015, 2020 CPH, POPCEN 2024)
+        tolerance_pct: 0.1
+        confirmed: false
+        expected: {2015: 100981437, 2020: 109035343, 2024: 112729484}

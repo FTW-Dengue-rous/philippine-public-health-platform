@@ -10,7 +10,10 @@
 --   * Gates are counts, and dispositions are row references: no patient value leaves this table.
 --   * The staging table ..__candidate holds the same de-identified rows and is dropped at the end.
 --     If a gate fails it is kept for inspection: treat it as restricted too.
---   * Gold publishes aggregates only, with small cells suppressed, and does not name the hospital.
+--   * Why restricted (D-47): our own commitment when the data was requested, not a release term.
+--     Academic use only, reported in aggregate form. Gold publishes aggregates only, suppresses
+--     cells built from fewer than 3 records, and does not name the hospital. The raw file is never
+--     redistributed or committed to the repository.
 --
 -- What is not established
 --   * The file has no column that confirms an inpatient admission: is_inpatient_confirmed = false.
@@ -32,6 +35,10 @@ DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}
 -- area_key of the hospital's province, e.g. 'psgc:<code>'. Left out of the repo on purpose so the
 -- code does not identify the hospital. NULL leaves is_same_province_as_hospital null.
 DECLARE OR REPLACE VARIABLE hospital_province_area_key STRING DEFAULT NULL;
+
+-- Review threshold for is_long_stay (published length of stay in days). A review rule, not a
+-- data fact; recorded in build_log.parameters so the QC count (S47) can be read against it.
+DECLARE OR REPLACE VARIABLE long_stay_days INT DEFAULT 60;
 
 -- Label normalisation, the same rule as norm() in build_diseases_reference_maps.py:
 -- upper case, N for N-tilde, anything that is not A-Z or 0-9 becomes a space, single spaces.
@@ -141,7 +148,7 @@ SELECT
   (s.adm = s.dis)                                AS is_same_day,          -- adds no bed-day under the midnight census
   s.los_n                                        AS length_of_stay_days_published,   -- whole elapsed days, as published
   datediff(s.dis, s.adm)                         AS stay_days_by_date,               -- discharge date minus admission date
-  (s.los_n > 60)                                 AS is_long_stay,         -- kept; on a review list
+  (s.los_n > long_stay_days)                     AS is_long_stay,         -- kept; on a review list
   false                                          AS is_inpatient_confirmed,
   (upper(trim(s.Result)) = 'DIED')               AS died_in_hospital,
   ((upper(trim(s.Result)) = 'DIED') = (s.DeathDate IS NOT NULL AND trim(s.DeathDate) <> '')) AS death_fields_consistent,
@@ -238,6 +245,7 @@ SELECT silver_build_id                                AS build_id,
        CAST(NULL AS BIGINT)                           AS target_table_version,     -- filled in [8]
        code_version                                   AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup,
+                            'long_stay_days', long_stay_days,
                             'inputs_without_load_log',
                             (SELECT count(*) FROM public_health.silver.diseases_hospital_encounters_silver__inputs WHERE input_kind = 'bronze_source' AND metadata_matches = 0))) AS parameters,
        job_run_id                                     AS run_id,

@@ -1,6 +1,8 @@
 -- =============================================================================
--- Builds public_health.silver.diseases_hospital_claims_silver (RESTRICTED: eFOI release, report in
--- aggregate only):
+-- Builds public_health.silver.diseases_hospital_claims_silver (RESTRICTED, D-47: the request
+-- FOI-REQ-2026-6223 committed to academic use, reported only in aggregate form. The release letter
+-- sets no terms of its own. Gold publishes aggregates only and suppresses cells built from fewer
+-- than 3 hospitals; the raw file is never redistributed or committed):
 --   PhilHealth claims count and amount of one hospital, in one admission year, for one case-rate
 --   package and one claim status.
 --   Key: (year, facility_name_norm, area_key, disease_key, claim_status, _source_key)
@@ -24,10 +26,12 @@
 --            (_source_key philhealth_foi_claims_hospital, parent_label_norm = province). The pairs
 --            are resolved by build_diseases_reference_maps.py section 6b. A pair missing from the
 --            map fails the build: rerun the builder.
---   Package  Illness_Description -> diseases_cause_map. A blank illness (1,404 rows) is
---            QUARANTINED (reason illness_missing). An unknown package fails the build.
---   Repeats  Bronze rows with the same key are SUMMED (112 key groups with different numbers,
---            19 exact repeats). The first row (lowest _source_row_num) carries the lineage; the
+--   Package  Illness_Description -> diseases_cause_map. A blank illness is QUARANTINED (reason
+--            illness_missing; 1,404 rows when checked 2026-10-14, live count = warn gate "rows
+--            quarantined" in build_log.parameters). An unknown package fails the build.
+--   Repeats  Bronze rows with the same key are SUMMED (checked 2026-10-14: 112 key groups with
+--            different numbers, 19 exact repeats; live count = warn gate "merged_into" in
+--            build_log.parameters). The first row (lowest _source_row_num) carries the lineage; the
 --            others get disposition merged_into with the silver key. source_rows says how many
 --            bronze rows a silver row holds. Facility names are compared normalised
 --            (case, punctuation, INC / CORP dropped), so spelling variants of one hospital in one
@@ -43,10 +47,15 @@
 --                              the same single word); exactly one such facility
 --            otherwise 'unmatched' (facility_key null). A tier is used only when it gives exactly
 --            one registry facility. Unmatched hospitals stay in the table (warn gate).
---   Flags    is_covid_period (2020-2021), is_amount_series_break (2024 on: case rates changed),
---            is_preliminary (latest admission year in the file: claims still being filed),
---            is_package_definition_change (IHD with MI from 2025: claims fall from 31,722 to 6,164,
---            likely moved to another package). Gold must show or filter these; silver keeps every year.
+--   Flags    The years and package are settings in [0], recorded in build_log.parameters; a warn
+--            gate in [5] fires when the data stops showing each rule.
+--            is_covid_period (covid_year_from .. covid_year_to: claims drop by more than half),
+--            is_amount_series_break (from amount_series_break_year: case rates changed),
+--            is_preliminary (latest admission year in the file, derived at run time: claims still
+--            being filed), is_package_definition_change (package_change_disease_key from
+--            package_change_year; checked 2026-10-14: IHD with MI fell from 31,722 claims in 2024
+--            to 6,164 in 2025, likely moved to another package).
+--            Gold must show or filter these; silver keeps every year.
 --
 -- Needs: diseases_silver_00_reference.sql (area map, cause map, directory with the claims rows),
 --   facilities_silver_01_registry.sql (facilities_registry_silver), quality_setup.sql,
@@ -59,6 +68,19 @@ DECLARE OR REPLACE VARIABLE phc_build_started_at TIMESTAMP DEFAULT current_times
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;
+
+-- Flag rules (rule 2a: source facts named here, recorded in build_log.parameters, and each one
+-- guarded by a warn gate in [5] that fires when the data no longer shows it). Source:
+-- sources_diseases.yaml entry 19 notes, checked against the file on 2026-10-14.
+--   COVID period: the admission years where claims drop by more than half. This is a claims flag,
+--   separate from the pandemic period in gold dim_date; the team agreed both as they are.
+DECLARE OR REPLACE VARIABLE covid_year_from INT DEFAULT 2020;
+DECLARE OR REPLACE VARIABLE covid_year_to INT DEFAULT 2021;
+--   Case rates changed: the average claimed amount jumps from this admission year on.
+DECLARE OR REPLACE VARIABLE amount_series_break_year INT DEFAULT 2024;
+--   One package whose claims fall sharply from this year (likely moved to another package).
+DECLARE OR REPLACE VARIABLE package_change_disease_key STRING DEFAULT 'phic_ihd_with_mi';
+DECLARE OR REPLACE VARIABLE package_change_year INT DEFAULT 2025;
 
 -- Same as diseases_silver_01_metric.sql (kept identical)
 CREATE OR REPLACE TEMPORARY FUNCTION dz_norm(s STRING) RETURNS STRING
@@ -287,10 +309,10 @@ SELECT
   'amount_claimed' AS amount_basis,
   'claims_filed' AS measure_definition,
   g.source_rows,
-  g.year IN (2020, 2021) AS is_covid_period,
-  g.year >= 2024 AS is_amount_series_break,
+  g.year BETWEEN covid_year_from AND covid_year_to AS is_covid_period,
+  g.year >= amount_series_break_year AS is_amount_series_break,
   g.year = l.y AS is_preliminary,
-  (g.disease_key = 'phic_ihd_with_mi' AND g.year >= 2025) AS is_package_definition_change,
+  (g.disease_key = package_change_disease_key AND g.year >= package_change_year) AS is_package_definition_change,
   phc_build_id AS _silver_build_id,
   g._source_key, g.k._source_file AS _source_file, g.k._source_sheet AS _source_sheet,
   g.k._source_row_num AS _source_row_num, g.k._as_of_date AS _as_of_date,
@@ -448,7 +470,26 @@ SELECT 'warn: area map rows resolved by a review rule (initials, spelling, other
 UNION ALL
 SELECT 'warn: claims count 0 with an amount, or a count with amount 0', 'warn', count(*)
   FROM public_health.silver.diseases_hospital_claims_silver__candidate
-  WHERE (claims_count = 0) <> (claims_amount_php = 0);
+  WHERE (claims_count = 0) <> (claims_amount_php = 0)
+UNION ALL
+-- the flag rules in [0] still match the data (1 = the rule is no longer visible: review it)
+SELECT 'warn: COVID flag - claims in covid_year_from not below half of the year before', 'warn',
+       CASE WHEN sum(CASE WHEN year = covid_year_from THEN claims_count END)
+                 < 0.5 * sum(CASE WHEN year = covid_year_from - 1 THEN claims_count END) THEN 0 ELSE 1 END
+  FROM public_health.silver.diseases_hospital_claims_silver__candidate
+UNION ALL
+SELECT 'warn: amount break flag - average claimed amount in amount_series_break_year not above the year before', 'warn',
+       CASE WHEN sum(CASE WHEN year = amount_series_break_year THEN claims_amount_php END)
+                 / sum(CASE WHEN year = amount_series_break_year THEN claims_count END)
+               > sum(CASE WHEN year = amount_series_break_year - 1 THEN claims_amount_php END)
+                 / sum(CASE WHEN year = amount_series_break_year - 1 THEN claims_count END) THEN 0 ELSE 1 END
+  FROM public_health.silver.diseases_hospital_claims_silver__candidate
+UNION ALL
+SELECT 'warn: package change flag - package_change_disease_key claims in package_change_year not below half of the year before', 'warn',
+       CASE WHEN sum(CASE WHEN year = package_change_year THEN claims_count END)
+                 < 0.5 * sum(CASE WHEN year = package_change_year - 1 THEN claims_count END) THEN 0 ELSE 1 END
+  FROM public_health.silver.diseases_hospital_claims_silver__candidate
+  WHERE disease_key = package_change_disease_key;
 
 
 -- =============================================================================
@@ -461,7 +502,11 @@ SELECT phc_build_id AS build_id, 'silver' AS layer, 'diseases' AS domain,
        CASE WHEN g.failed_gates = 0 THEN 'succeeded' ELSE 'failed' END AS status,
        CASE WHEN g.failed_gates = 0 THEN (SELECT count(*) FROM public_health.silver.diseases_hospital_claims_silver__candidate) END AS row_count,
        CAST(NULL AS BIGINT) AS target_table_version, code_version AS code_version,
-       to_json(named_struct('strict_load_lookup', strict_load_lookup, 'warnings', g.warn_names)) AS parameters,
+       to_json(named_struct('strict_load_lookup', strict_load_lookup,
+                            'covid_years', concat(covid_year_from, '-', covid_year_to),
+                            'amount_series_break_year', amount_series_break_year,
+                            'package_change', concat(package_change_disease_key, ' from ', package_change_year),
+                            'warnings', g.warn_names)) AS parameters,
        job_run_id AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT count_if(failures <> 0 AND severity = 'fail') AS failed_gates,

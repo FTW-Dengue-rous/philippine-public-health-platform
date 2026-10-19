@@ -27,7 +27,26 @@
 --   * Bronze is read at its current version, not pinned with VERSION AS OF. Run 01, 02 and 03 in
 --     one job right after bronze QC. 02 and 03 stop if bronze changed after this file ran.
 --   * Staging tables hold the intermediate results.
+--
+-- Rule 2a (2026-10-19)
+--   - Settings in [0], one place for the whole FHSIS chain. 01 writes them to
+--     public_health.silver.workforce_fhsis__settings; 02 and 03 read them from there and record
+--     them in build_log.parameters, where workforce_silver_qc.py reads them.
+--       fhsis_coded_years              files that print a PSGC code per row (was "year = 2025"
+--                                      typed in five places here and in 02 and the QC)
+--       province_coverage_change_year  first year a province row excludes only HUC / ICC (G1;
+--                                      was "year <= 2022" in 02 and 03, "year = 2023" in 02)
+--       nurse_definition_break_year    PHN count break (was 2019 in 02)
+--       geography_expected_regions     regions in the PSGC snapshot (gate; PSGC Q2_2024 has 18)
+--   - New gate: every child_region_codes value in workforce_area_exceptions is a region of the
+--     geography snapshot (a wrong prefix would make the name join find nothing for that region).
 -- =============================================================================
+
+-- [0] settings (read by 02 and 03 through workforce_fhsis__settings)
+DECLARE OR REPLACE VARIABLE fhsis_coded_years ARRAY<INT> DEFAULT array(2025);
+DECLARE OR REPLACE VARIABLE province_coverage_change_year INT DEFAULT 2023;
+DECLARE OR REPLACE VARIABLE nurse_definition_break_year INT DEFAULT 2019;
+DECLARE OR REPLACE VARIABLE geography_expected_regions INT DEFAULT 18;   -- PSGC Q2_2024: 17 + Negros Island Region
 
 -- [1] helper functions (same rules as norm(), core() and loose() in build_workforce_area_exceptions.py)
 -- Upper case, accents folded, punctuation to spaces, single spaces. A damaged n-tilde ('Ã±', the
@@ -64,7 +83,8 @@ RETURN replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regex
 --       geographic_level Reg / Prov / City / Mun -> region / province / city / municipality
 --       1999900000 Special Geographic Area (no level in PSGC) -> special_geographic_area
 --       0990100000 'City of Isabela (Not a Province)' (no level) is a placeholder and is left out;
---       the city is 0990101000. SubMun and Bgy are left out.
+--       the city is 0990101000. SubMun and Bgy are left out. Both codes are the documented
+--       null-level codes in sources_geography.yaml; geography_silver_qc.py GS08 warns if they change.
 --       parent province: municipalities and component cities (city_class not HUC / ICC) whose
 --       5-digit prefix is a province (or the SGA) in geography; everything else hangs on its region.
 DECLARE OR REPLACE VARIABLE geography_checksum STRING;
@@ -141,8 +161,9 @@ WHERE o._source_key = 'doh_fhsis_demographic';
 
 
 -- [4] bronze rows with label kind, code and region context, saved to a staging table
---     label_kind: labelled / legend / blank. Region rows: 2018-2024 by the region labels in the
---     exceptions file; 2025 by code. Each row gets the region row above it (published membership).
+--     label_kind: labelled / legend / blank. Region rows: by the region labels in the exceptions
+--     file; in fhsis_coded_years (2025) by code. Each row gets the region row above it (published
+--     membership).
 CREATE OR REPLACE TABLE public_health.silver.workforce_fhsis__ctx AS
 WITH b AS (
   SELECT t._source_key, t._source_file, t._source_sheet, t._source_row_num, t._as_of_date, t._ingested_at,
@@ -170,7 +191,7 @@ k AS (
   FROM b
   LEFT JOIN wf_exc er
     ON er.match_role = 'region' AND b.year BETWEEN er.year_from AND er.year_to AND er.area_label_norm = b.label_norm
-  LEFT JOIN wf_geo gc ON gc.psgc_code = b.code10 AND b.year = 2025),
+  LEFT JOIN wf_geo gc ON gc.psgc_code = b.code10 AND array_contains(fhsis_coded_years, b.year)),
 r AS (
   SELECT k.*,
          coalesce(label_kind = 'labelled' AND (exc_region_code IS NOT NULL OR code_geo_level = 'region'), false) AS is_region_row,
@@ -239,7 +260,7 @@ SELECT c._source_file, c._source_sheet, c._source_row_num,
        auto.candidates                                                        AS auto_candidates
 FROM c
 LEFT JOIN ov   ON ov._source_file = c._source_file AND ov._source_sheet <=> c._source_sheet AND ov._source_row_num = c._source_row_num
-LEFT JOIN wf_geo gc ON gc.psgc_code = c.code10 AND c.year = 2025
+LEFT JOIN wf_geo gc ON gc.psgc_code = c.code10 AND array_contains(fhsis_coded_years, c.year)
 LEFT JOIN exc1 ON exc1._source_file = c._source_file AND exc1._source_sheet <=> c._source_sheet AND exc1._source_row_num = c._source_row_num
 LEFT JOIN auto ON auto._source_file = c._source_file AND auto._source_sheet <=> c._source_sheet AND auto._source_row_num = c._source_row_num;
 
@@ -252,9 +273,9 @@ WITH m AS (
          m.auto_n, m.auto_code, m.auto_candidates,
          CASE WHEN x.label_kind <> 'labelled' THEN NULL
               WHEN m.override_status IN ('proposed', 'accepted') THEN 'override'
-              WHEN x.is_region_row AND x.year < 2025 THEN 'exception'
-              WHEN x.year = 2025 AND x.code10 IS NOT NULL AND m.code_geo_psgc IS NOT NULL THEN 'psgc_code'
-              WHEN x.year = 2025 AND x.code10 IS NOT NULL THEN 'code_not_in_geography'
+              WHEN x.is_region_row AND NOT array_contains(fhsis_coded_years, x.year) THEN 'exception'
+              WHEN array_contains(fhsis_coded_years, x.year) AND x.code10 IS NOT NULL AND m.code_geo_psgc IS NOT NULL THEN 'psgc_code'
+              WHEN array_contains(fhsis_coded_years, x.year) AND x.code10 IS NOT NULL THEN 'code_not_in_geography'
               WHEN m.exc_n = 1 THEN 'exception'
               WHEN m.exc_n > 1 THEN 'ambiguous_exception'
               WHEN m.auto_n = 1 THEN 'name_join'
@@ -288,7 +309,7 @@ SELECT r._source_key, r._source_file, r._source_sheet, r._source_row_num, r._as_
             WHEN g.parent_region_psgc IS NOT NULL THEN concat('psgc:', g.parent_region_psgc) END AS parent_area_key,
        coalesce(CASE WHEN r.res_named_key IS NOT NULL THEN r.exc_superseded END, false)   AS is_superseded_area,
        (g.psgc_code IS NOT NULL OR r.res_named_key IS NOT NULL)                           AS area_in_geography,
-       -- 2025: the printed code is in geography under another name (loose key: spelling and
+       -- fhsis_coded_years: the printed code is in geography under another name (loose key: spelling and
        -- abbreviations ignored) and no exception confirms it (a swapped code looks like this; G10).
        -- Region rows are excluded: they are region rows because their code is a region in geography,
        -- and their labels ('Region 1', 'NCR') never match the geography names.
@@ -326,12 +347,29 @@ UNION ALL SELECT 'public_health.silver.workforce_area_override',
 --             ('public_health.silver.workforce_area_exceptions'), ('public_health.silver.workforce_area_override') AS v(t);
 
 
+-- [7a] settings for 02 and 03 (one row). Rewritten on every run of this file.
+CREATE OR REPLACE TABLE public_health.silver.workforce_fhsis__settings AS
+SELECT fhsis_coded_years             AS fhsis_coded_years,
+       province_coverage_change_year AS province_coverage_change_year,
+       nurse_definition_break_year   AS nurse_definition_break_year,
+       geography_checksum            AS geography_checksum,
+       current_timestamp()           AS written_at;
+
+
 -- [8] gates: every row must have failures = 0
 CREATE OR REPLACE TABLE public_health.silver.workforce_fhsis__gates AS
-SELECT 'geography snapshot: not 18 regions, or no snapshot found' AS gate,
-       CASE WHEN geography_checksum IS NULL THEN 1 ELSE abs(count_if(geo_level = 'region') - 18) END AS failures,
-       concat('content_checksum ', coalesce(geography_checksum, 'none'), '; ', count(*), ' areas') AS detail
+SELECT 'geography snapshot: regions <> geography_expected_regions, or no snapshot found' AS gate,
+       CASE WHEN geography_checksum IS NULL THEN 1
+            ELSE abs(count_if(geo_level = 'region') - geography_expected_regions) END AS failures,
+       concat('content_checksum ', coalesce(geography_checksum, 'none'), '; ', count(*), ' areas; ',
+              count_if(geo_level = 'region'), ' regions, setting ', geography_expected_regions) AS detail
 FROM wf_geo
+UNION ALL
+SELECT 'exceptions: child_region_codes that are not a region of the geography snapshot', count(*),
+       left(concat_ws('; ', collect_list(x.code)), 1000)
+FROM (SELECT DISTINCT code FROM (SELECT explode(child_region_codes) AS code FROM wf_exc
+                                 WHERE child_region_codes IS NOT NULL)) x
+LEFT ANTI JOIN (SELECT substr(psgc_code, 1, 2) AS code FROM wf_geo WHERE geo_level = 'region') g ON g.code = x.code
 UNION ALL
 SELECT 'geography snapshot: city without city_class (HUC / ICC / CC)', count(*),
        left(concat_ws('; ', collect_list(concat(psgc_code, ' ', geo_name))), 1000)
@@ -362,7 +400,7 @@ LEFT JOIN public_health.silver.workforce_fhsis__resolved r
 WHERE o._source_file IN (SELECT _source_file FROM wf_fhsis_file_versions)
   AND NOT (coalesce(o.bound_ok, false) AND r._source_row_num IS NOT NULL)
 UNION ALL
-SELECT '2025 printed code is another area in geography (needs an override or a name_variant exception; G10)', count(*),
+SELECT 'printed code (fhsis_coded_years) is another area in geography (needs an override or a name_variant exception; G10)', count(*),
        left(concat_ws('; ', collect_list(concat('row ', _source_row_num, ' ', area_label_source, ' code ', code10))), 1000)
 FROM public_health.silver.workforce_fhsis__resolved WHERE code_name_mismatch
 UNION ALL

@@ -19,6 +19,14 @@
 -- Dispositions (only rows not loaded are stored, as in diseases): separate households rows are
 -- 'merged_into' the area-year row (target_key = the silver key); population-side rows are loaded
 -- and not stored; 2024-2025 rows give both sides and count once, as loaded.
+--
+-- Rule 2a (2026-10-19)
+--   - province_coverage_change_year is read from workforce_fhsis__settings (set in
+--     workforce_silver_01 [0]; was "year <= 2022" here).
+--   - New gate: an FHSIS file year in bronze without a population sheet in wf_denominator_layout.
+--     Before, the layout join dropped such a year without any gate failing.
+--   - The layout (year, side, sheet) is recorded in build_log.parameters; workforce_silver_qc.py
+--     reads it instead of its own copy of the sheet list and the households years.
 -- =============================================================================
 
 -- [0] build id, settings, helpers, layout
@@ -27,6 +35,9 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;   -- see workforce_silver_02
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;
+-- Shared FHSIS setting, written by workforce_silver_01 (gate 'settings missing' if absent).
+DECLARE OR REPLACE VARIABLE province_coverage_change_year INT;
+SET VARIABLE province_coverage_change_year = (SELECT max(province_coverage_change_year) FROM public_health.silver.workforce_fhsis__settings);
 
 -- Text to number; fractions allowed (the 2019 workbook prints population with decimals).
 CREATE OR REPLACE TEMPORARY FUNCTION wf_dbl(x STRING) RETURNS DOUBLE
@@ -173,7 +184,8 @@ y AS (
   FROM x)
 SELECT y.area_key, y.area_label_source, y.geo_level, y.psgc_code, y.parent_area_key, y.city_class,
        y.region_as_published,
-       CASE y.geo_level WHEN 'province' THEN CASE WHEN y.year <= 2022 THEN 'province_excl_listed_cities' ELSE 'province_excl_huc_icc' END
+       CASE y.geo_level WHEN 'province' THEN CASE WHEN y.year < province_coverage_change_year THEN 'province_excl_listed_cities'
+                                                  ELSE 'province_excl_huc_icc' END
             ELSE y.geo_level END                                                        AS geo_coverage_basis,
        y.is_superseded_area, y.resolve_method AS area_resolution_method,
        y.override_status AS area_label_override_status,
@@ -205,6 +217,13 @@ FROM y;
 CREATE OR REPLACE TABLE public_health.silver.workforce_area_denominator_silver__gates AS
 SELECT 'workforce_silver_01 gates are not all 0: rerun 01' AS gate, count(*) AS failures
   FROM public_health.silver.workforce_fhsis__gates WHERE failures <> 0
+UNION ALL
+SELECT 'settings from workforce_fhsis__settings missing: rerun 01',
+       CASE WHEN province_coverage_change_year IS NULL THEN 1 ELSE 0 END
+UNION ALL
+SELECT 'FHSIS file year without a population sheet in wf_denominator_layout (add the year to the layout)', count(*) FROM (
+  SELECT DISTINCT year FROM public_health.silver.workforce_fhsis__resolved WHERE year IS NOT NULL) r
+  LEFT ANTI JOIN (SELECT year FROM wf_denominator_layout WHERE side = 'population') l ON l.year = r.year
 UNION ALL
 SELECT 'FHSIS bronze changed after workforce_silver_01 ran: rerun 01', count(*) FROM (
   SELECT coalesce(b._source_file, r._source_file) AS f
@@ -312,6 +331,13 @@ SELECT silver_build_id                                              AS build_id,
        CAST(NULL AS BIGINT)                                         AS target_table_version,
        code_version                                                 AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup,
+                            'province_coverage_change_year', province_coverage_change_year,
+                            -- [{year, side, sheet}], the sheets this build reads (QC scopes S09 / S63 with it)
+                            'denominator_sheets',
+                            (SELECT sort_array(collect_list(named_struct('year', year, 'side', side, 'sheet', sheet)))
+                             FROM wf_denominator_layout),
+                            'households_years',
+                            (SELECT sort_array(collect_set(year)) FROM wf_denominator_layout WHERE side = 'households'),
                             'inputs_without_load_log',
                             (SELECT count(*) FROM public_health.silver.workforce_area_denominator_silver__inputs
                              WHERE input_kind = 'bronze_source' AND metadata_matches = 0))) AS parameters,

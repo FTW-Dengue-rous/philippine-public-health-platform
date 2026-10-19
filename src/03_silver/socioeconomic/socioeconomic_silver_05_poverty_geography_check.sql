@@ -5,7 +5,8 @@
 --
 -- Geography table: public_health.silver.geography_silver (source of truth for PSGC codes and
 -- names). Columns used: psgc_code, area_name, geographic_level (Reg / Prov / City / Mun / SubMun /
--- Bgy, or null for the two placeholder rows 0990100000 and 1999900000).
+-- Bgy, or null for the placeholder rows; the documented ones are psgc.silver_qc.null_level_codes
+-- in sources_geography.yaml, and geography_silver_qc.py GS08 warns when they change).
 --
 -- This file only VALIDATES. It does not assign codes (the area map does that) and it does not
 -- bring geography attributes (income class, urban/rural, population) into poverty silver.

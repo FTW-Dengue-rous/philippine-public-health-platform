@@ -1,174 +1,72 @@
-﻿# Socioeconomic Silver — Implementation and Evidence
+# Silver — socioeconomic
 
-## 1. Scope
+The conditions around care: official poverty by area, how health spending is financed, spending per person, and child mortality by background. Poverty is the only table placed on PSGC areas; the others are national or by survey characteristic.
 
-Transform the validated Socioeconomic Bronze datasets into four separate Silver tables following Jemma's latest Socioeconomic Silver Guide v1.2.
+Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), section 4.5. Back to the [silver overview](README.md).
 
-| Silver table | Grain | Expected rows (reference) |
+## Sources
+
+| Source | What it gives | Years |
 |---|---|---|
-| `socioeconomic_poverty_silver` | Area × year | 322 |
-| `socioeconomic_health_expenditure_share_silver` | Financing agent × year | 128 |
-| `socioeconomic_health_expenditure_per_capita_silver` | Year | 8 |
-| `socioeconomic_child_mortality_silver` | Characteristic group × characteristic × survey year | 60 |
+| PSA official poverty statistics (tab2, tab6) | Poverty threshold, incidence and poor population, among population, full year | 2021, 2023, 2025 |
+| PSA Yearbook 9.26 | Share of current health expenditure by financing agent | 2016–2023 |
+| PSA Yearbook 9.24 | Health expenditure per person and its growth | 2016–2023 |
+| PSA Yearbook 9.9 (NDHS) | Infant, child and under-five mortality by region, residence, education and wealth | Surveys 2017, 2022 |
 
-Expected row counts are reference values, not execution results from this branch.
+Settings: `config/sources_socioeconomic.yaml`, including the control values QC checks.
 
-PSGC Silver belongs to the Geography domain.
+## Tables
 
-## 2. Working Environment
+| Table | One row is | Rows (last build) |
+|---|---|---|
+| `socioeconomic_poverty_silver` (`01`) | One area and reporting year | 322 |
+| `socioeconomic_health_expenditure_share_silver` (`02`) | One financing agent and year | 128 |
+| `socioeconomic_health_expenditure_per_capita_silver` (`03`) | One national year | 8 |
+| `socioeconomic_child_mortality_silver` (`04`) | One background characteristic and survey | 60 |
 
-- Repository: `FTW-Dengue-rous/philippine-public-health-platform`
-- Development branch: `feature/socioeconomic-silver`
-- Pull-request target: `dev`
-- Local development: VSCode and PowerShell
-- Target execution environment: Databricks
+`05` is a check, not a table: it compares every code of the poverty area map with geography and lists name differences for review.
 
-## 3. Files
+## How it is built
 
-- `config/sources_socioeconomic.yaml` — Bronze source configuration
-- `src/03_silver/socioeconomic/socioeconomic_poverty_silver_pattern.sql` — locally tested Poverty transformation reference
-- `src/05_quality/dq_utils.py` — shared data-quality framework
-- `docs/evidence/socioeconomic_silver.md` — implementation decisions and test evidence
+| Step | File | What happens |
+|---|---|---|
+| Reference load | `00` | The reviewed poverty area map: key, PSGC code, level, coverage basis, first estimate year, comparison eligibility |
+| Poverty | `01` | A row is data because its area is in the map, never because its values look like numbers. Cell status `ok`, `not_published`, `not_computed` or `parse_error`. The two sheets are joined by area and year. Poor population converted from thousands to persons. Coefficient of variation → precision class (`ok`, `use_with_caution`, `unknown`) |
+| Expenditure share | `02` | An approved list of 16 financing agents in a 3-level hierarchy; `a/` (below 0.05%) → 0.0 with `is_below_0_05` |
+| Per capita | `03` | Rows found by label and position; the growth rate under a year is the growth into that year |
+| Child mortality | `04` | An approved list of 30 characteristics; `*` → `suppressed` (null), a value in parentheses → `low_precision` |
 
-## 4. Implementation Decisions
+Report years, the precision cut-off and the share tolerance are named settings recorded with each build. New-file protection: a bronze year column that the settings do not list stops the build.
 
-### D01 — Reuse existing Bronze ingestion
+## Quality checks
 
-**Decision:** Read from `public_health.bronze.socioeconomic_psa_poverty_bronze`.
+`socioeconomic_silver_qc.py`, codes S01–S10 and S80–S96. Highlights:
 
-**Reason:** This is the configured Bronze table used by current Socioeconomic ingestion. Older standalone Poverty Bronze SQL files follow a different structure and will not be reused.
+| Code | Check |
+|---|---|
+| S83 | Silver was built from the bronze loads and area map that are there now |
+| S84 | Control values from the YAML |
+| S86, S87 | Hard limits; value agrees with its flag or status |
+| S88 | Exactly the expected rows (years and counts from the build settings) |
+| S90 | Area attributes match the area map |
+| S91 | Level-1 financing shares add up to the total |
+| S93 | Every poverty PSGC code exists once in geography, at the same level |
 
-### D02 — Preserve source meaning and lineage
+**Expected WARNs:** S94 (incidence fell by more than 15 points or reached zero), S95 (areas not eligible for comparison with PSGC-based data), S96 (child mortality reference period not confirmed).
 
-**Decision:** Keep source sheet, row number, file version, load identifiers, statistical measures, and relevant source flags.
+## Rules for users
 
-**Reason:** Silver must remain traceable to Bronze without losing information needed for auditing.
+- Poverty is among **population**, **full year**. Do not mix it with family-based or first-semester figures.
+- Province rows with `comparison_eligible = false` cover a different population than PSGC province figures (they may include or leave out highly urbanized cities). See `exclusion_reason`.
+- Financing agents form a hierarchy: never add a parent to its children. Only level-1 agents add up to the total.
+- Child mortality regions are the 17 regions of the old definition (no Negros Island Region): regional context only.
+- `survey_year` is the survey, not the year deaths occurred.
 
-### D03 — Use a reviewed geographic mapping
+## Limitations
 
-**Decision:** Do not invent PSGC codes. The Poverty reference depends on a reviewed 108-row area map. Coordinate geographic definitions with the Geography domain.
-
-**Reason:** Source areas include national, regional, provincial, and NCR-specific geographic units. Their coverage is not automatically comparable.
-
-### D04 — Validate before publishing
-
-**Decision:** Require successful input validation, numeric parsing, row classification, source reconciliation, and uniqueness checks before publishing the target Silver table.
-
-**Reason:** Prevent incomplete or incorrect transformations from replacing valid Silver data.
-
-### D05 — Reuse shared quality infrastructure
-
-**Decision:** Integrate Silver QC with the existing `DQRun` framework and agreed S-series checks. Avoid changing shared quality tables without team approval.
-
-**Reason:** Maintain consistent QC reporting across domains.
-
-## 5. Current Status
-
-- [x] Bronze ingestion previously completed
-- [x] Bronze QC previously completed
-- [x] Created Silver working branch
-- [x] Reviewed Poverty Silver SQL reference
-- [x] Confirmed current Bronze configuration and QC conventions
-- [x] Created Socioeconomic Silver documentation
-- [ ] Resolve reviewed Poverty area mapping
-- [ ] Implement guarded Poverty Silver publishing
-- [ ] Integrate Silver QC and lineage accounting
-- [ ] Execute and validate in Databricks
-- [ ] Implement remaining three Silver transformations
-- [ ] Prepare PR targeting `dev`
-
-## 6. Test Evidence
-
-No Silver execution has been performed on this branch yet.
-
-The provided Poverty SQL reference reports a previous local Spark test of 322 rows and zero failed validation gates. This result must be independently reproduced before claiming the implementation passes.
-
-## 7. Open Dependencies
-
-1. Reviewed Poverty area mapping and alignment with Geography.
-2. Confirmation of the shared build-input and row-disposition contract, including target table schemas.
-3. Databricks execution and Silver QC results.
-
-## 8. Change Log
-
-**2026-10-08 — Initial preparation**
-
-- Created `feature/socioeconomic-silver` from `origin/dev`.
-- Created the Socioeconomic Silver working directory.
-- Saved the Poverty Silver SQL reference.
-- Reviewed repository Silver and documentation conventions.
-- Established implementation decisions and documented unresolved dependencies.
-## 9. Health Expenditure Share Silver — Preparation (2026-10-08)
-
-### Scope and files
-
-- Source: `public_health.bronze.socioeconomic_psa_health_expenditure_share_bronze`; source key `psa_health_expenditure_share_national_annual`.
-- Config: `config/sources_socioeconomic.yaml` (PSA Statistical Yearbook 2025, Table 9.26).
-- Working SQL: `src/03_silver/socioeconomic/socioeconomic_health_expenditure_share_silver.sql` (draft v3).
-- Planned Silver table: `public_health.silver.socioeconomic_health_expenditure_share_silver`.
-- Grain: one distinct financing-agent path per year (2016–2023). Candidate count: 16 agent rows × 8 years = 128 cells.
-
-### Source evidence and row classification
-
-A read-only Databricks SQL query of the Bronze source returned 18 physical rows at positions 5, 7–21, 23 and 25. The 16 substantive financing-agent rows are 5 and 7–21; position 23 is the `a/` footnote and 25 is a source credit. These two metadata/text rows must be explicitly recorded as intentionally filtered, not interpreted as financing agents. These are observed Bronze facts; the 128 candidate Silver rows are **expected**, not yet an executed result.
-
-Source controls observed: 2023 `Households` share = 44.4%; `Total Current Health Expenditure` = 100.0%. Source `a/` means share below 0.05%, and is represented as a nonnumeric missing amount with an explicit status and retained raw text, **not** an imputed zero.
-
-### Transformation and engineering decisions
-
-1. Preserve source physical order (`_source_row_num`) and distinguish parent/child rows; parent names are carried forward using a window ordered by physical row number. Preserve the top-level parent and, when indentation signals deeper nesting, a subgroup (e.g., General Government > Central Government > Department of Health).
-2. Preserve distinct hierarchy paths as `financing_agent` so that identical labels under different parents do not collide. Never sum a parent share together with its child/subagent breakdown: the source is hierarchical and overlapping.
-3. Unpivot eight annual share columns into a long-form 2016–2023 dataset, with numeric parsing, `share_status`, source value, original source-column name and Bronze lineage.
-4. Validate source row counts/classification, duplicate and missing physical positions, file-version consistency, hierarchy completeness, parsing and range constraints, target grain and PSA national controls before publication. SQL draft v3 adds these safeguards; none have been executed or passed yet.
-5. The SQL produces temporary views only; it contains **no Delta production-table write**. Execution requires a single fail-on-error SQL session. Shared lineage disposition/build-input ledgers and `DQRun` Silver QC are still pending team-contract alignment.
-
-### Execution environments, actions and status
-
-- **Databricks SQL Editor (read-only):** inspected `_source_row_num`, `agent_level1`, `agent_level2`, `share_2023` for the configured Bronze `_source_key`; evidence above confirmed the source structure, without writing to tables.
-- **Local VSCode Terminal (PowerShell, read-only):** inspected YAML, reviewed v1/v2 SQL, confirmed draft-v3 file header. Used `Copy-Item` to replace the working SQL with the downloaded v3 file. No Spark transformation executed against Bronze and no Delta target written.
-- **Local development environment:** created project `.venv` (Python 3.14.7), installed PySpark 4.2.0 and confirmed Java 17. Local Spark launched successfully and returned `SELECT 1 = 1`, but produced Windows process-cleanup warnings; this smoke test does **not** validate the Silver transformation. Avoid unnecessary repeated local Spark startup.
-
-### Outstanding actions
-
-- Execute draft-v3 temporary-view SQL using a controlled session and review all validation-gate results, output grain/values, and hierarchy. Do not claim PASS before actual execution.
-- Confirm Bronze-to-Silver row disposition and build-input lineage with team contract; integrate shared `DQRun` QC and guarded publication.
-- Poverty Silver remains blocked on the reviewed 108-row area map and shared lineage/QC publication requirements. Do not invent PSGC mappings.
-- Keep work on `feature/socioeconomic-silver`; open PR against `dev` when ready, with reviewer auto-assignment unchanged.
-
-
-## 10. Health Expenditure Share Silver — Databricks Validation Evidence (2026-10-08)
-
-### Execution and scope
-
-- Environment: Databricks SQL Editor, existing SQL warehouse; source `public_health.bronze.socioeconomic_psa_health_expenditure_share_bronze` filtered to `_source_key = 'psa_health_expenditure_share_national_annual'`.
-- Executed a validation-only multi-statement SQL script (draft v3 logic) using temporary views `share_source`, `share_hierarchy`, `share_hierarchy_detail`, `share_cells`, `share_gates`, `share_final`. No production Delta CREATE TABLE, INSERT, MERGE or overwrite was performed.
-- User-provided Databricks results: **17 of 17 gates PASS**, **0 reported gate failures**, **128 candidate agent-year rows**. These are confirmed execution results, replacing the previously pending test status for this transformation only.
-- Independently reviewed the 2023 `share_final` result: **16 agent rows** with hierarchy paths and status columns.
-
-### Observed 2023 controls and hierarchy examples
-
-| Financing agent / path | Level | Share (%) | Status |
-|---|---|---:|---|
-| Total Current Health Expenditure | parent | 100.0 | ok |
-| General Government | parent | 42.5 | ok |
-| General Government / Central Government | child | 23.0 | ok |
-| General Government / Central Government / Department of Health | subagent | 19.3 | ok |
-| General Government / Social security agency / Social Health Insurance Agency (PHIC) | subagent | 10.2 | ok |
-| Households | parent | 44.4 | ok |
-| General Government / Other social security agency (GSIS, SSS) | child | NULL | below_0_05_pct |
-| Rest of the World | parent | NULL | below_0_05_pct |
-
-- PSA `a/` markers remain NULL percentages with `below_0_05_pct` status, not imputed zero.
-- Hierarchical rows represent overlapping parent/subgroup breakdowns; **do not sum all rows as mutually exclusive categories**.
-- One source label (`Other ministries and public units` with continuation text) retains an embedded newline and extra whitespace in the displayed financing-agent path; consider cosmetic normalization with source text preserved, subject to regression validation.
-
-### Remaining before Silver publication
-
-- Confirm team-agreed build-input and source-row disposition/lineage contract; reconcile the 18 Bronze rows (16 data, 2 intentional metadata exclusions).
-- Implement guarded production Delta publication and Silver `DQRun` checks; rerun validations after any code change.
-- Review full year-level business semantics if required by team; this test confirms configured gates and sampled 2023 output, not every possible semantic invariant.
-- Poverty Silver still awaits the reviewed 108-row area mapping. PR to `dev` when ready; do not alter auto-assigned reviewers.
-
+- Coverage of some poverty provinces that include highly urbanized cities is not confirmed by PSA.
+- The child mortality reference period is not confirmed (`reference_period` is null).
+- Per capita spending changes population basis in 2020 and 2021, so growth across those years is not like for like.
 
 ### 2026-10-08 — PSA health expenditure per capita: Bronze inspection and draft Silver design
 

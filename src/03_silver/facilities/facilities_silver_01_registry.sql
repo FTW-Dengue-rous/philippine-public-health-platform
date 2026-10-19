@@ -1,6 +1,5 @@
 -- =============================================================================
 -- Builds two Silver facility registry tables in one validated build:
---
 --   public_health.silver.facilities_id_map_silver
 --     Grain: one source facility identifier.
 --     Key: (_source_key, source_record_id).
@@ -48,6 +47,10 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
+-- An NHFR code match whose places differ is accepted only when the two names share at least this
+-- share of tokens (plan 2.4). Was typed three times as 0.5 until 2026-10-19 (rule 2a); recorded in
+-- build_log.parameters.
+DECLARE OR REPLACE VARIABLE code_match_min_name_similarity DOUBLE DEFAULT 0.5;
 -- geography snapshot: the latest one in geography silver (psgc_code is unique per snapshot)
 DECLARE OR REPLACE VARIABLE geography_checksum STRING;
 SET VARIABLE geography_checksum =
@@ -103,6 +106,7 @@ RETURN CASE WHEN size(fac_name_tokens(a)) = 0 OR size(fac_name_tokens(b)) = 0 TH
 
 -- LGU of a city / municipality / sub-municipality code: a Manila district (1380601000 Tondo)
 -- belongs to its city (1380600000). Codes of other levels are returned unchanged.
+-- Assumption (gate 'fac_lgu: ...'): the City of Manila is the only city with sub-municipalities.
 CREATE OR REPLACE TEMPORARY FUNCTION fac_lgu(code STRING) RETURNS STRING
 RETURN CASE WHEN code RLIKE '^13806[0-9]{2}000$' THEN '1380600000' ELSE code END;
 
@@ -585,13 +589,13 @@ hfsrb AS (
 code_match AS (
   SELECT h.* EXCEPT (usable_nhfr_id),
          CASE WHEN n.nhfr_id IS NOT NULL AND NOT (fac_lgu(n.psgc_code) <=> fac_lgu(h.psgc_code))
-                   AND coalesce(fac_name_similarity(n.facility_name, h.facility_name), 0) < 0.5
+                   AND coalesce(fac_name_similarity(n.facility_name, h.facility_name), 0) < code_match_min_name_similarity
               THEN NULL ELSE h.usable_nhfr_id END AS usable_nhfr_id,
          CASE WHEN n.nhfr_id IS NOT NULL AND NOT (fac_lgu(n.psgc_code) <=> fac_lgu(h.psgc_code))
-                   AND coalesce(fac_name_similarity(n.facility_name, h.facility_name), 0) < 0.5
+                   AND coalesce(fac_name_similarity(n.facility_name, h.facility_name), 0) < code_match_min_name_similarity
               THEN NULL ELSE n.nhfr_id END AS matched_nhfr_id,
          (n.nhfr_id IS NOT NULL AND NOT (fac_lgu(n.psgc_code) <=> fac_lgu(h.psgc_code))
-          AND coalesce(fac_name_similarity(n.facility_name, h.facility_name), 0) < 0.5) AS code_rejected
+          AND coalesce(fac_name_similarity(n.facility_name, h.facility_name), 0) < code_match_min_name_similarity) AS code_rejected
   FROM hfsrb h LEFT JOIN nhfr n ON n.nhfr_id = h.usable_nhfr_id
 ),
 -- d. name + municipality match for hospital-list rows without a code match
@@ -976,6 +980,19 @@ SELECT 'HFSRB: region label not recognised', count(*)
   FROM public_health.silver.facilities_registry_silver__classified
   WHERE _source_key <> 'doh_nhfr' AND row_class = 'data' AND fac_region_psgc(region_label) IS NULL
 UNION ALL
+-- rule 2a (2026-10-19): the region codes typed in fac_region_psgc must still be regions of geography
+SELECT 'region rule gives a code that is not a region of the geography snapshot', count(*) FROM (
+  SELECT DISTINCT fac_region_psgc(region_label) AS region_psgc
+  FROM public_health.silver.facilities_registry_silver__classified
+  WHERE _source_key <> 'doh_nhfr' AND row_class = 'data') r
+  LEFT ANTI JOIN fac_geo g ON g.psgc_code = r.region_psgc AND g.geo_level = 'region'
+  WHERE r.region_psgc IS NOT NULL
+UNION ALL
+-- rule 2a (2026-10-19): fac_lgu assumes every sub-municipality is a Manila district of 1380600000
+SELECT 'fac_lgu: a sub-municipality outside the City of Manila, or 1380600000 is not a city', count(*)
+       + CASE WHEN (SELECT count(*) FROM fac_geo WHERE psgc_code = '1380600000' AND geo_level = 'city') = 1 THEN 0 ELSE 1 END
+  FROM fac_geo WHERE geo_level = 'submunicipality' AND NOT psgc_code RLIKE '^13806[0-9]{2}000$'
+UNION ALL
 SELECT 'HFSRB: record without an NHFR match whose place does not resolve (add an area exception)', count(*)
   FROM public_health.silver.facilities_registry_silver__records WHERE record_class = 'quarantined' AND reason = 'geo_unresolved'
 UNION ALL
@@ -1044,6 +1061,8 @@ SELECT 'output: hospitals <> NHFR hospitals + HFSRB hospital records that joined
          - (SELECT count(*) FROM public_health.silver.facilities_registry_silver__records
             WHERE _source_key = 'doh_hfsrb_hospitals' AND record_class = 'data' AND joined_nhfr_id IS NULL))
 UNION ALL
+-- control for doh_nhfr_hospitals_facility_asof_20260929.csv: same value as sources_facilities.yaml
+-- (doh_nhfr qc.control_values, bronze B11). SQL cannot read the YAML: a new NHFR file changes both.
 SELECT 'control: NHFR bed capacity = 119,862 (bronze QC control)',
        CASE WHEN (SELECT sum(nhfr_reported_beds) FROM public_health.silver.facilities_registry_silver__candidate
                   WHERE in_nhfr AND _silver_build_id = registry_build_id) = 119862 THEN 0 ELSE 1 END
@@ -1094,6 +1113,7 @@ SELECT b.build_id, 'silver' AS layer, 'facilities' AS domain, b.target_table,
        CAST(NULL AS BIGINT) AS target_table_version,
        code_version AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup, 'geography_checksum', geography_checksum,
+                            'code_match_min_name_similarity', code_match_min_name_similarity,
                             'companion_build_id', b.companion,
                             'moved_facilities', mv.moved, 'dropped_without_id_map', mv.no_id_map)) AS parameters,
        job_run_id AS run_id,

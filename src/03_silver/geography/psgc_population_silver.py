@@ -349,8 +349,10 @@ LIMIT 20
 
 # -----------------------------------------------------------------------------
 # 11. Reconciliation: province total vs sum of its cities and municipalities
-#     Inspection only. Known exceptions (2026-10-11): Maguindanao del Norte 2015 and 2020
-#     (province total excludes Cotabato City) and Benguet 2015 (444,224 vs 446,224 in source).
+#     Inspection only. The recorded check is S55 in psgc_population_silver_qc.py; its
+#     qc_results detail is the live list. Exceptions seen 2026-10-11 (PSGC Q2_2024 payload):
+#     Maguindanao del Norte 2015 and 2020 (province total excludes Cotabato City) and
+#     Benguet 2015 (444,224 vs 446,224 in source).
 # -----------------------------------------------------------------------------
 reconciliation = spark.sql(f"""
 WITH p AS (

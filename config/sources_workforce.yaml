@@ -43,6 +43,13 @@
 #
 # Items marked CONFIRM were not verified against the actual file.
 # header_check: entries 1-2 filled and verified 2026-10-07. Entry 3 relies on required_columns.
+#
+# Control values used by silver QC (rule 2a, 2026-10-19)
+#   - A qc.control_values item may carry a `silver:` block; bronze QC ignores it and
+#     workforce_silver_qc.py reads the same number from silver: {year, profession} for the national
+#     headcount (S64, area ph), {total: <column>} for the PSMO listed total (S78).
+#   - doh_fhsis_demographic.silver_qc.area_controls: area checks (S65) that have no bronze
+#     equivalent. One number, written once.
 # =============================================================================
 
 version: 1
@@ -322,14 +329,14 @@ sources:
       null_tokens: ["*", "#DIV/0!"]
       max_non_numeric_rows_per_file: 6     # legend lines at the bottom of each sheet
       control_values:                      # national doctors per year; match PSA Table 9.14 for 2018-2023
-        - {label: "2018 Philippines doctors", column: doctors_total, expected: 3131, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2018.%'"}
-        - {label: "2019 Philippines doctors", column: doctors_total, expected: 3001, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2019.%'"}
-        - {label: "2020 Philippines doctors", column: doctors_total, expected: 3351, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2020.%'"}
-        - {label: "2021 Philippines doctors", column: doctors_total, expected: 4046, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2021.%'"}
-        - {label: "2022 Philippines doctors", column: doctors_total, expected: 4289, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2022.%'"}
-        - {label: "2023 Philippines doctors", column: doctors_total, expected: 4416, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2023.%'"}
-        - {label: "2024 Philippines doctors", column: doctors_total, expected: 5099, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'"}
-        - {label: "2025 Philippines doctors", column: doctors_total, expected: 5150, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2025.%'"}
+        - {label: "2018 Philippines doctors", column: doctors_total, expected: 3131, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2018.%'", silver: {year: 2018, profession: doctors}}
+        - {label: "2019 Philippines doctors", column: doctors_total, expected: 3001, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2019.%'", silver: {year: 2019, profession: doctors}}
+        - {label: "2020 Philippines doctors", column: doctors_total, expected: 3351, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2020.%'", silver: {year: 2020, profession: doctors}}
+        - {label: "2021 Philippines doctors", column: doctors_total, expected: 4046, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2021.%'", silver: {year: 2021, profession: doctors}}
+        - {label: "2022 Philippines doctors", column: doctors_total, expected: 4289, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2022.%'", silver: {year: 2022, profession: doctors}}
+        - {label: "2023 Philippines doctors", column: doctors_total, expected: 4416, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2023.%'", silver: {year: 2023, profession: doctors}}
+        - {label: "2024 Philippines doctors", column: doctors_total, expected: 5099, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'", silver: {year: 2024, profession: doctors}}
+        - {label: "2025 Philippines doctors", column: doctors_total, expected: 5150, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2025.%'", silver: {year: 2025, profession: doctors}}
     notes:
       - One workbook per year. Year is not a column; silver reads it from _source_file.
       - Each sheet loads as its own rows (part 1, 2, 3 of the same area are separate rows). Silver combines them by area and year.
@@ -347,6 +354,16 @@ sources:
       - 2024 has DOH-hired BHWs; 2025 has LGU-hired BHWs only.
       - The BGY & BHS tab of these workbooks belongs to the facilities domain (sources_facilities.yaml).
       - "2019 Health Workers Part2 has 6 identical rows with a blank area_name below the table. Bronze QC B08 shows them as WARN (checked 2026-10-19); silver drops blank-area rows."
+    # Read by workforce_silver_qc.py only (bronze QC reads `qc`). Area controls (S65) are kept
+    # here, not in qc.control_values, because the bronze labels of these areas differ by file;
+    # silver checks them on the resolved area_key. Doctors, verified against the FHSIS workbooks.
+    silver_qc:
+      area_controls:
+        - {label: "Pangasinan 2022 doctors", area_key: "psgc:0105500000", year: 2022, profession: doctors, expected: 76}
+        - {label: "Pangasinan 2023 doctors", area_key: "psgc:0105500000", year: 2023, profession: doctors, expected: 97}
+        - {label: "City of Dagupan 2023 doctors", area_key: "psgc:0105518000", year: 2023, profession: doctors, expected: 5}
+        - {label: "City of Manila 2021 doctors", area_key: "psgc:1380600000", year: 2021, profession: doctors, expected: 304}
+        - {label: "BARMM 2024 doctors", area_key: "psgc:1900000000", year: 2024, profession: doctors, expected: 109}
 
   # ---------------------------------------------------------------------------
   # 2. PSA Table 9.14: government medical practitioners, region x year, 2012-2023  (OPEN)
@@ -389,8 +406,8 @@ sources:
       expected_rows: 72                    # (Philippines + 17 regions) x 4 professions
       numeric_columns: ["2012", "2019", "2023"]
       control_values:
-        - {label: "2023 Philippines doctors", column: "2023", expected: 4416, where: "trim(Region) = 'Philippines' AND trim(Professionals) = 'Doctors'"}
-        - {label: "2012 Philippines midwives", column: "2012", expected: 16948, where: "trim(Region) = 'Philippines' AND trim(Professionals) = 'Midwives'"}
+        - {label: "2023 Philippines doctors", column: "2023", expected: 4416, where: "trim(Region) = 'Philippines' AND trim(Professionals) = 'Doctors'", silver: {year: 2023, profession: doctors}}
+        - {label: "2012 Philippines midwives", column: "2012", expected: 16948, where: "trim(Region) = 'Philippines' AND trim(Professionals) = 'Midwives'", silver: {year: 2012, profession: midwives}}
     notes:
       - Use for 2012-2017 only. 2018-2023 national doctor totals equal FHSIS exactly; source_priority picks FHSIS.
       - Region names carry a ".." indent prefix (..NCR, ..IV-A). Strip it in silver.
@@ -429,7 +446,7 @@ sources:
       expected_rows: 52
       numeric_columns: [doctor_count]
       control_values:
-        - {label: "PSMO oncologists total", column: doctor_count, expected: 419, where: "1 = 1"}
+        - {label: "PSMO oncologists total", column: doctor_count, expected: 419, where: "1 = 1", silver: {total: listed_oncologist_count}}
     notes:
       - PSMO members only (medical oncology); excludes radiation and surgical oncologists.
       - Mixed geography - provinces, cities (Baguio, Bacolod, Tacloban), NCR districts, and one region name used as an area (Cagayan Valley). Map to PSGC via the geo name crosswalk.

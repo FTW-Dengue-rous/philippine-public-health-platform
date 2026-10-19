@@ -44,6 +44,14 @@
 #     Set replace on an entry to load anyway; replaced bytes are counted and logged.
 #   - Each file must give at least one data row. After the write, rows in the table
 #     per file must equal rows read. Any failure stops that source.
+#
+# Control values used by silver QC (rule 2a, 2026-10-19)
+#   - A qc.control_values item may carry a `silver:` block. Bronze QC ignores it;
+#     socioeconomic_silver_qc.py S84 reads the same number from the silver table:
+#       silver: {column: <silver column>, where: {<silver column>: <value>, ...}, scale: <n>}
+#     scale (default 1) converts the bronze unit to the silver one (poor population: '000 -> persons).
+#     Every socioeconomic table needs at least one item with a silver: block, or S84 records S00.
+#     One number, written once.
 # =============================================================================
 
 version: 1
@@ -139,9 +147,12 @@ sources:
       numeric_columns: [incidence_2025, threshold_2025, poor_pop_2025]
       max_non_numeric_rows_per_file: 10    # footnote lines at the bottom of each sheet
       control_values:
-        - {label: "2025 Philippines poverty incidence (population)", column: incidence_2025, expected: 9.7, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'tab2'"}
-        - {label: "2025 Philippines poverty threshold", column: threshold_2025, expected: 35120.89, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'tab2'"}
-        - {label: "2025 Philippines poor population ('000)", column: poor_pop_2025, expected: 11083.03, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'tab6'"}
+        - {label: "2025 Philippines poverty incidence (population)", column: incidence_2025, expected: 9.7, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'tab2'",
+           silver: {column: poverty_incidence_pct, where: {area_key: ph, year: 2025}}}
+        - {label: "2025 Philippines poverty threshold", column: threshold_2025, expected: 35120.89, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'tab2'",
+           silver: {column: annual_per_capita_poverty_threshold_php, where: {area_key: ph, year: 2025}}}
+        - {label: "2025 Philippines poor population ('000)", column: poor_pop_2025, expected: 11083.03, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'tab6'",
+           silver: {column: poor_population, scale: 1000, where: {area_key: ph, year: 2025}}}   # silver is in persons
     notes:
       - Only tab2 (incidence among population) and tab6 (magnitude of poor population) are loaded. tab1 and tab5 are the same measures for families; tab15 groups provinces into clusters (derived).
       - Use population-based incidence (tab2) for the equity questions (C1-C4).
@@ -185,8 +196,12 @@ sources:
       null_tokens: ["a/"]
       max_non_numeric_rows_per_file: 3     # footnote and source lines
       control_values:
-        - {label: "2023 households (out-of-pocket) share", column: share_2023, expected: 44.4, where: "trim(agent_level1) = 'Households'"}
-        - {label: "2023 total", column: share_2023, expected: 100.0, where: "trim(agent_level1) = 'Total Current Health Expenditure'"}
+        - {label: "2023 households (out-of-pocket) share", column: share_2023, expected: 44.4, where: "trim(agent_level1) = 'Households'",
+           silver: {column: share_pct, where: {financing_agent: Households, year: 2023}}}
+        - {label: "2016 households (out-of-pocket) share", column: share_2016, expected: 50.5, where: "trim(agent_level1) = 'Households'",
+           silver: {column: share_pct, where: {financing_agent: Households, year: 2016}}}   # was a silver-only control until 2026-10-19
+        - {label: "2023 total", column: share_2023, expected: 100.0, where: "trim(agent_level1) = 'Total Current Health Expenditure'",
+           silver: {column: share_pct, where: {financing_agent: Total Current Health Expenditure, year: 2023}}}
     notes:
       - Households = out-of-pocket payments. 44.4% in 2023 (50.5% in 2016). This is the evidence for the "costly" point.
       - Two-level hierarchy. Level 1 in agent_level1; sub-agents in agent_level2 with agent_level1 blank. Carry level 1 down in silver; never add a parent to its children.
@@ -229,7 +244,10 @@ sources:
     qc:
       expected_rows: 8                     # amount, growth header x2, growth, 3 note lines, source line
       control_values:
-        - {label: "2023 per capita health expenditure (PHP)", column: value_2023, expected: 11082.68, where: "trim(indicator) = 'Per Capita Health Expenditure'"}
+        - {label: "2023 per capita health expenditure (PHP)", column: value_2023, expected: 11082.68, where: "trim(indicator) = 'Per Capita Health Expenditure'",
+           silver: {column: per_capita_health_expenditure_php, where: {year: 2023}}}
+        - {label: "2016 per capita health expenditure (PHP)", column: value_2016, expected: 5836.93, where: "trim(indicator) = 'Per Capita Health Expenditure'",
+           silver: {column: per_capita_health_expenditure_php, where: {year: 2016}}}   # was a silver-only control until 2026-10-19
     notes:
       - Row 4 (0-based) = per capita amount (pesos). Row 7 = growth rate for the period ending that year (8.3% in value_2016 is 2015-16). Rows 5-6 are the growth-rate sub-header and load as rows; keep only rows 4 and 7 in silver (_source_row_num).
       - The source header row puts 2016 one column left of its value; columns here follow the values, not that header.
@@ -268,8 +286,10 @@ sources:
     qc:
       expected_rows: 39
       control_values:
-        - {label: "2022 NCR infant mortality", column: imr_2022, expected: 8, where: "trim(characteristic) = 'NCR'"}
-        - {label: "2017 BARMM under-five mortality", column: u5mr_2017, expected: 55, where: "trim(characteristic) = 'BARMM'"}
+        - {label: "2022 NCR infant mortality", column: imr_2022, expected: 8, where: "trim(characteristic) = 'NCR'",
+           silver: {column: infant_mortality_rate, where: {characteristic: NCR, survey_year: 2022}}}
+        - {label: "2017 BARMM under-five mortality", column: u5mr_2017, expected: 55, where: "trim(characteristic) = 'BARMM'",
+           silver: {column: under5_mortality_rate, where: {characteristic: BARMM, survey_year: 2017}}}
     notes:
       - NDHS survey years 2017 and 2022; rates for the 10 years before each survey. Rates per 1,000 live births.
       - Group header rows (Region, Residence, Mother's Education, Wealth quintile) have only characteristic_group filled; carry it down in silver.

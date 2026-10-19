@@ -1,6 +1,5 @@
 # =============================================================================
 # sources_facilities.yaml — facilities domain
-# Philippine Public Health Platform (FTW Capstone)
 #
 # Same structure and conventions as sources_diseases.yaml and sources_workforce.yaml.
 #   - Entry name = source_key = folder name (nested folders joined by "_":
@@ -593,7 +592,7 @@ sources:
     load_mode: upsert
     silver_enabled: false                  # superseded 2026-10-14 by doh_foi_hospital_beds (12a); bronze rows kept for lineage
     superseded_by: doh_foi_hospital_beds
-    sharing: restricted                    # permission to quote still to confirm
+    sharing: restricted                    # D-47 handling (aggregates only); source and permission to quote not recorded. Superseded, silver does not read it
     qc:
       expected_rows: 1977                  # 174 + 184 + 174 + 160 + 123 + 1,162 (one file, six sheets)
       skip_checks: [B08]                  # no hospital id: identical rows are different hospitals (3 cases)
@@ -633,7 +632,7 @@ sources:
     bronze_table: "public_health.bronze.facilities_bed_occupancy_bronze"   # same table as entry 12; new columns are added
     as_of_date: 2026-10-14
     load_mode: upsert
-    sharing: restricted                  # FOI release, no terms stated: aggregates only, small cells suppressed
+    sharing: restricted                  # D-47: FOI release, academic use, aggregates only, cells < 3 suppressed (our commitment in the request; HFSRB stated no terms)
     silver_target: "public_health.silver.facilities_bed_occupancy_silver"
     # Two headers do not describe their column: "Service Capability" holds General / Specialty,
     # "General" holds the hospital level. The check stops the load if the layout moves.

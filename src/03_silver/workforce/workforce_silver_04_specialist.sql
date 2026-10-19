@@ -63,7 +63,8 @@ RETURN CASE WHEN regexp_replace(trim(x), '[ ,]', '') RLIKE '^-?[0-9]+([.][0-9]+)
 --       geographic_level Reg / Prov / City / Mun -> region / province / city / municipality
 --       1999900000 Special Geographic Area (no level in PSGC) -> special_geographic_area
 --       0990100000 'City of Isabela (Not a Province)' (no level) is a placeholder and is left out;
---       the city is 0990101000. SubMun and Bgy are left out.
+--       the city is 0990101000. SubMun and Bgy are left out. Both codes are the documented
+--       null-level codes in sources_geography.yaml; geography_silver_qc.py GS08 warns if they change.
 --       parent province: municipalities and component cities (city_class not HUC / ICC) whose
 --       5-digit prefix is a province (or the SGA) in geography; everything else hangs on its region.
 DECLARE OR REPLACE VARIABLE geography_checksum STRING;
@@ -268,6 +269,12 @@ SELECT 'PSMO exception code or component code not found in geography', count(*) 
   SELECT psgc_code AS code FROM wf_psmo_exc WHERE psgc_code IS NOT NULL
   UNION SELECT code FROM (SELECT explode(component_psgc_codes) AS code FROM wf_psmo_exc WHERE component_psgc_codes IS NOT NULL)) x
   LEFT ANTI JOIN wf_geo g ON g.psgc_code = x.code
+UNION ALL
+-- added 2026-10-19 (rule 2a, same gate as workforce_silver_01)
+SELECT 'PSMO exceptions: child_region_codes that are not a region of the geography snapshot', count(*) FROM (
+  SELECT DISTINCT code FROM (SELECT explode(child_region_codes) AS code FROM wf_psmo_exc
+                             WHERE child_region_codes IS NOT NULL)) x
+  LEFT ANTI JOIN (SELECT substr(psgc_code, 1, 2) AS code FROM wf_geo WHERE geo_level = 'region') g ON g.code = x.code
 UNION ALL
 SELECT 'count that is not a whole number', count(*)
   FROM public_health.silver.workforce_specialist_silver__candidate WHERE count_status = 'parse_error'

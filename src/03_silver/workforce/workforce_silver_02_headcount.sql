@@ -11,7 +11,7 @@
 --                           geography and reference tables with their versions
 --   Step 2, transform
 --     [3]  FHSIS rows: one per data row and declared profession, a status per field
---     [4]  PSA T9.14 rows: 12 year columns unpivoted
+--     [4]  PSA T9.14 rows: the psa_years columns unpivoted
 --     [5]  ..__candidate    eligibility rules, series, review flags; saved to a staging table
 --   Step 3, validate
 --     [6]  ..__gates        every row must have failures = 0
@@ -36,6 +36,20 @@
 -- Differences from the contract, because this is plain SQL (same as the diseases files)
 --   * Bronze is read at its current version, not pinned with VERSION AS OF. A gate stops the build
 --     if the FHSIS bronze changed after workforce_silver_01 ran.
+--
+-- Rule 2a (2026-10-19)
+--   - fhsis_coded_years, province_coverage_change_year and nurse_definition_break_year are read
+--     from workforce_fhsis__settings (set once, in workforce_silver_01 [0]); a gate stops the
+--     build when that row is missing. They replace 2025, 2022 / 2023 and 2019 typed below.
+--   - psa_years (2012 to 2023) is a setting; rows per PSA bronze row = size(psa_years) (was 12).
+--     The unpivot in wf_psa_long names the bronze columns, so a new gate stops the build when PSA
+--     bronze holds a year column the setting does not list, or the reverse.
+--   - large_change_ratio (0.5): province year-on-year change flagged for review.
+--   - PSA is the preferred source only before the first FHSIS year in wf_layout (was year <= 2017).
+--   - New gate: a profession without a printed label for its year (wf_source_labels), so a new
+--     FHSIS year cannot load with a null source_label.
+--   - Recorded in build_log.parameters for workforce_silver_qc.py: the settings above, the FHSIS
+--     years of wf_layout, the professions and the eligibility rule ids.
 -- =============================================================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -47,6 +61,17 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
+-- PSA Table 9.14 years of the file loaded (one column per year).
+DECLARE OR REPLACE VARIABLE psa_years ARRAY<INT> DEFAULT sequence(2012, 2023);
+-- Province change from one year to the next above this share of the previous value is flagged.
+DECLARE OR REPLACE VARIABLE large_change_ratio DECIMAL(4,2) DEFAULT 0.5;
+-- Shared FHSIS settings, written by workforce_silver_01 (gate 'settings missing' if absent).
+DECLARE OR REPLACE VARIABLE fhsis_coded_years ARRAY<INT>;
+DECLARE OR REPLACE VARIABLE province_coverage_change_year INT;
+DECLARE OR REPLACE VARIABLE nurse_definition_break_year INT;
+SET VARIABLE fhsis_coded_years = (SELECT max(fhsis_coded_years) FROM public_health.silver.workforce_fhsis__settings);
+SET VARIABLE province_coverage_change_year = (SELECT max(province_coverage_change_year) FROM public_health.silver.workforce_fhsis__settings);
+SET VARIABLE nurse_definition_break_year = (SELECT max(nurse_definition_break_year) FROM public_health.silver.workforce_fhsis__settings);
 
 -- Upper case, accents folded, punctuation to spaces, single spaces. A damaged n-tilde ('Ã±', the
 -- form geography_silver had before its repair) is read as 'ñ' first.
@@ -195,7 +220,9 @@ SELECT * FROM VALUES
    'total_zero_split_positive', 'Total 0 while a split field is above 0')
 AS t(rule_id, source_key, area_key, year, profession, condition, description);
 
--- PSA area labels: the exceptions file only (every PSA label is a region or the country)
+-- PSA area labels: the exceptions file only (every PSA label is a region or the country).
+-- The stack below names the PSA bronze year columns; the gate 'PSA bronze year columns differ
+-- from psa_years' keeps it and the setting in step.
 CREATE OR REPLACE TEMP VIEW wf_exc_psa AS
 SELECT CAST(year_from AS INT) AS year_from, CAST(year_to AS INT) AS year_to, match_role, area_label_norm,
        CASE WHEN nullif(trim(psgc_code), '') IS NOT NULL THEN lpad(trim(psgc_code), 10, '0') END AS psgc_code,
@@ -268,7 +295,7 @@ SELECT 'public_health.bronze.workforce_psa_gov_practitioners_bronze',
        CASE WHEN bool_and(n_match = 1) AND bool_and(profession IS NOT NULL) THEN 'data' ELSE 'unclassified' END,
        CASE WHEN NOT bool_and(profession IS NOT NULL) THEN 'profession_unknown'
             WHEN NOT bool_and(n_match = 1) THEN concat('area_label_not_in_exceptions: ', max(area_label_source)) END,
-       12
+       size(psa_years)
 FROM wf_psa_resolved
 GROUP BY _source_key, _source_file, _source_sheet, _source_row_num, _ingested_at;
 
@@ -365,7 +392,7 @@ LEFT JOIN wf_source_labels lb ON lb.profession = s.profession AND s.year BETWEEN
 
 
 -- =============================================================================
--- [4] PSA T9.14: 72 rows x 12 years (plan 5)
+-- [4] PSA T9.14: one row per bronze row and year of psa_years (72 rows x 12 years in the 2012-2023 file)
 -- =============================================================================
 CREATE OR REPLACE TEMP VIEW wf_hc_psa AS
 SELECT p._source_key, p._source_file, p._source_sheet, p._source_row_num, p._as_of_date,
@@ -437,8 +464,10 @@ rule_hit AS (
   GROUP BY f0._source_key, f0.area_key, f0.year, f0.profession),
 f AS (
   SELECT f0.*, rh.rule_id AS exclusion_rule,
-         CASE WHEN f0.profession = 'nurses' THEN CASE WHEN f0.year < 2019 THEN 'reported_public_health_nurses_to_2018'
-                                                      ELSE 'reported_public_health_nurses_from_2019' END
+         CASE WHEN f0.profession = 'nurses'
+              THEN CASE WHEN f0.year < nurse_definition_break_year
+                        THEN concat('reported_public_health_nurses_to_', nurse_definition_break_year - 1)
+                        ELSE concat('reported_public_health_nurses_from_', nurse_definition_break_year) END
               ELSE concat('reported_public_health_', f0.profession) END                          AS series_definition,
          lag(f0.year) OVER (PARTITION BY f0._source_key, f0.area_key, f0.profession ORDER BY f0.year)            AS prev_year,
          lag(f0.headcount_total) OVER (PARTITION BY f0._source_key, f0.area_key, f0.profession ORDER BY f0.year) AS prev_total,
@@ -448,16 +477,18 @@ f AS (
     ON rh._source_key = f0._source_key AND rh.area_key = f0.area_key AND rh.year = f0.year AND rh.profession = f0.profession),
 g AS (
   SELECT f.*,
-         (f.profession = 'nurses' AND f.year = 2019)                                         AS is_break_year,
+         (f.profession = 'nurses' AND f.year = nurse_definition_break_year)                  AS is_break_year,
          CASE f.geo_level
-              WHEN 'province' THEN CASE WHEN f.year <= 2022 THEN 'province_excl_listed_cities' ELSE 'province_excl_huc_icc' END
+              WHEN 'province' THEN CASE WHEN f.year < province_coverage_change_year THEN 'province_excl_listed_cities'
+                                        ELSE 'province_excl_huc_icc' END
               ELSE f.geo_level END                                                          AS geo_coverage_basis,
          CASE f.split_basis
               WHEN 'sex'      THEN f.male_status = 'ok' AND f.female_status = 'ok'
               WHEN 'employer' THEN f.lgu_hired_status = 'ok' AND f.doh_hired_status = 'ok'
               ELSE false END                                                                AS split_complete,
+         -- PSA is preferred only for years before the first FHSIS year
          CASE WHEN f._source_key = 'doh_fhsis_demographic' THEN 1
-              WHEN f.year <= 2017 THEN 1 ELSE 2 END                                         AS source_priority,
+              WHEN f.year < (SELECT min(year) FROM wf_layout) THEN 1 ELSE 2 END             AS source_priority,
          CASE WHEN f.total_status = 'zero_no_data'     THEN 'source_zero_means_no_data'
               WHEN f.total_status = 'no_report'        THEN 'no_report'
               WHEN f.total_status = 'not_published'    THEN 'not_published'
@@ -501,13 +532,13 @@ SELECT g.area_key, g.area_label_source, g.geo_level, g.psgc_code, g.parent_area_
                    AND g.total_status = 'ok' AND g.prev_status = 'ok' AND g.headcount_total > 0
                    AND g.headcount_total = g.prev_total THEN 'repeated_value' END,
          CASE WHEN g.geo_level = 'province' AND g.prev_year = g.year - 1 AND NOT g.is_break_year
-                   AND NOT (g._source_key = 'doh_fhsis_demographic' AND g.year = 2023)   -- coverage change (G1)
+                   AND NOT (g._source_key = 'doh_fhsis_demographic' AND g.year = province_coverage_change_year)   -- coverage change (G1)
                    AND g.total_status = 'ok' AND g.prev_status = 'ok' AND g.prev_total > 0
-                   AND abs(g.headcount_total - g.prev_total) > 0.5 * g.prev_total THEN 'large_change' END,
-         CASE WHEN g.year = 2025 AND g.geo_level = 'province' AND g.total_status = 'ok' AND g.n_children > 0
+                   AND abs(g.headcount_total - g.prev_total) > large_change_ratio * g.prev_total THEN 'large_change' END,
+         CASE WHEN array_contains(fhsis_coded_years, g.year) AND g.geo_level = 'province' AND g.total_status = 'ok' AND g.n_children > 0
                    AND g.n_children = g.n_children_ok AND g.children_total <> g.headcount_total
                    THEN 'province_vs_municipality_sum' END,
-         CASE WHEN g.year = 2025 AND g.geo_level IN ('city', 'municipality') AND g.total_status = 'ok'
+         CASE WHEN array_contains(fhsis_coded_years, g.year) AND g.geo_level IN ('city', 'municipality') AND g.total_status = 'ok'
                    AND g.headcount_total = 0 AND g.profession IN ('doctors', 'nurses', 'midwives')
                    THEN 'zero_reported' END
        ))                                                                                    AS review_flags,
@@ -523,6 +554,23 @@ FROM g;
 CREATE OR REPLACE TABLE public_health.silver.workforce_headcount_silver__gates AS
 SELECT 'workforce_silver_01 gates are not all 0: rerun 01' AS gate, count(*) AS failures
   FROM public_health.silver.workforce_fhsis__gates WHERE failures <> 0
+UNION ALL
+SELECT 'settings from workforce_fhsis__settings missing: rerun 01',
+       CASE WHEN fhsis_coded_years IS NULL OR province_coverage_change_year IS NULL
+                 OR nurse_definition_break_year IS NULL THEN 1 ELSE 0 END
+UNION ALL
+-- Years in the PSA bronze column names (`2012`, ...) vs psa_years, from one row of the source.
+SELECT 'PSA bronze year columns differ from psa_years (update the setting and the stack in wf_psa_long)',
+       size(array_except(y.bronze_years, psa_years)) + size(array_except(psa_years, y.bronze_years))
+FROM (SELECT array_distinct(collect_list(CAST(k AS INT))) AS bronze_years
+      FROM (SELECT explode(json_object_keys(to_json(struct(*), map('ignoreNullFields', 'false')))) AS k
+            FROM (SELECT * FROM public_health.bronze.workforce_psa_gov_practitioners_bronze
+                  WHERE _source_key = 'psa_gov_practitioners' LIMIT 1))
+      WHERE k RLIKE '^[0-9]{4}$') y
+UNION ALL
+SELECT 'profession without a printed label for its year (add it to wf_source_labels)', count(*)
+  FROM public_health.silver.workforce_headcount_silver__candidate
+  WHERE _source_key = 'doh_fhsis_demographic' AND source_label IS NULL
 UNION ALL
 SELECT 'FHSIS bronze changed after workforce_silver_01 ran: rerun 01', count(*) FROM (
   SELECT coalesce(b._source_file, r._source_file) AS f
@@ -613,7 +661,7 @@ SELECT concat(c.source_key, ': classified rows <> bronze rows read'), abs(c.n - 
   LEFT JOIN (SELECT source_key, sum(input_rows) AS n FROM public_health.silver.workforce_headcount_silver__inputs
              WHERE input_kind = 'bronze_source' GROUP BY source_key) i ON i.source_key = c.source_key
 UNION ALL
-SELECT concat(c.source_key, ': silver rows <> data rows x declared professions (FHSIS) or 12 years (PSA)'),
+SELECT concat(c.source_key, ': silver rows <> data rows x declared professions (FHSIS) or psa_years (PSA)'),
        abs(c.expected_rows - coalesce(s.n, 0))
   FROM (SELECT _source_key AS source_key, sum(CASE WHEN row_class = 'data' THEN measures_per_row ELSE 0 END) AS expected_rows
         FROM public_health.silver.workforce_headcount_silver__classified GROUP BY _source_key) c
@@ -648,6 +696,14 @@ SELECT silver_build_id                                      AS build_id,
        CAST(NULL AS BIGINT)                                 AS target_table_version,     -- filled in [9]
        code_version                                         AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup,
+                            'fhsis_years', (SELECT sort_array(collect_set(year)) FROM wf_layout),
+                            'psa_years', psa_years,
+                            'fhsis_coded_years', fhsis_coded_years,
+                            'province_coverage_change_year', province_coverage_change_year,
+                            'nurse_definition_break_year', nurse_definition_break_year,
+                            'large_change_ratio', large_change_ratio,
+                            'professions', (SELECT sort_array(collect_set(profession)) FROM wf_layout),
+                            'eligibility_rule_ids', (SELECT sort_array(collect_set(rule_id)) FROM wf_eligibility_rules),
                             'inputs_without_load_log',
                             (SELECT count(*) FROM public_health.silver.workforce_headcount_silver__inputs
                              WHERE input_kind = 'bronze_source' AND metadata_matches = 0))) AS parameters,
