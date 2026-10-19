@@ -47,6 +47,9 @@
 #   Without --handoff_path, require the latest HDX run to be fully prepared under YAML landing_path.
 #   This does NOT perform fresh source ingestion; it reuses an upstream completed run.
 #   This is the INGESTION handoff, not bronze_handoff.json (QC's input).
+#   Optional: --plan true validates the handoff and prints the load action (LOAD or
+#   ALREADY_COMPLETE) without writing Bronze or bronze_handoff.json. run_bronze.py
+#   uses it for its --plan mode.
 
 #   Target catalog/schema must exist. Requires Spark with Delta support.
 
@@ -79,11 +82,9 @@ from pyspark.sql import functions as F
 
 
 
-LOADER_VERSION = "2026-10-15.2"
+LOADER_VERSION = "2026-10-19.1"
 SOURCE_CONFIG_KEY = "hdx_phl_admin"
 EXPECTED_BRONZE_TABLE = "public_health.bronze.admin_boundaries_bronze"
-
-
 
 
 
@@ -141,7 +142,7 @@ def validate_table_name(value):
 
 
 
-def ingest_source(spark, handoff_path):
+def ingest_source(spark, handoff_path, plan=False):
 
     HANDOFF_PATH = handoff_path
 
@@ -480,6 +481,11 @@ def ingest_source(spark, handoff_path):
 
     print("Load action:", LOAD_ACTION)
 
+    if plan:
+        print("Plan only: no Bronze rows and no bronze_handoff.json were written.")
+        return {"plan": True, "load_action": LOAD_ACTION, "source_key": SOURCE_KEY,
+                "source_version": SOURCE_VERSION, "expected_rows": EXPECTED_TOTAL}
+
     if LOAD_ACTION == "LOAD":
 
         print("Writing new source version to Bronze...")
@@ -784,6 +790,12 @@ def parse_args(argv=None):
         help="Optional path to config/sources_geography.yaml or sources.yaml "
              "(used only when --handoff_path is omitted).",
     )
+    parser.add_argument(
+        "--plan",
+        choices=("true", "false"),
+        default="false",
+        help="true: print the load action only; write nothing.",
+    )
     return parser.parse_args(argv)
 
 
@@ -798,7 +810,7 @@ def main(argv=None):
 
     path = args.handoff_path or discover_handoff(args.config_path)
     spark = SparkSession.builder.getOrCreate()
-    return ingest_source(spark, path)
+    return ingest_source(spark, path, plan=args.plan == "true")
 
 
 if __name__ == "__main__":

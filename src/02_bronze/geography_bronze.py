@@ -47,7 +47,8 @@
 #         Safe to rerun: an unchanged snapshot writes no Bronze rows, only a
 #         'skipped_duplicate' audit row.
 #   python geography_bronze.py --write_to_bronze no
-#       - Validate and preview only; no Bronze or metadata writes.
+#       - Validate and preview only; no Bronze or metadata writes. main() returns the
+#         planned action ({"preview": True, "action": ...}); run_bronze.py --plan reads it.
 #   python geography_bronze.py --config_path /Workspace/.../sources_geography.yaml
 #       - Use an explicit configuration file.
 #   python geography_bronze.py --landing_batch_path /Volumes/.../run_id=...
@@ -79,7 +80,7 @@ import yaml
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-LOADER_VERSION = "2026-10-15.4"
+LOADER_VERSION = "2026-10-19.1"
 DEFAULT_METADATA_TABLE = "public_health.bronze.ingestion_metadata"
 
 LINEAGE_COLUMNS = [
@@ -531,7 +532,9 @@ def ingest_source(spark, args):
     if WRITE_TO_BRONZE != "yes":
         print("Preview complete. No Bronze or metadata rows were written.")
         print("To load, set write_to_bronze to yes (the default) and Run All again.")
-        return None
+        # Planned action for run_bronze.py --plan (load | unchanged | backfill_audit | repair | blocked).
+        return {"preview": True, "action": ACTION, "load_issue": LOAD_ISSUE, "batch_id": BATCH_ID,
+                "expected_record_count": RECORD_COUNT}
 
     if ACTION == "blocked":
         raise RuntimeError(LOAD_ISSUE + " No Bronze or metadata rows were written.")
