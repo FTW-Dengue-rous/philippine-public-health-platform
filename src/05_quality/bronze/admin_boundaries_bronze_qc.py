@@ -374,7 +374,9 @@ def run_checks(spark, dq, h, expected, profile):
         raise ValueError("Bronze table does not exist")
     version = int(spark.sql(f"DESCRIBE HISTORY {BRONZE_TABLE} LIMIT 1").first()["version"])
     snapshot = spark.sql(f"SELECT * FROM {BRONZE_TABLE} VERSION AS OF {version}")
-    missing = sorted(set(REQUIRED_COLUMNS) - set(snapshot.columns))
+    # Compute schema once to avoid repeated Analyze RPCs (SCPAP001)
+    snapshot_columns = snapshot.columns
+    missing = sorted(set(REQUIRED_COLUMNS) - set(snapshot_columns))
     if missing:
         raise ValueError(f"Required Bronze columns are missing: {missing}")
     snapshot.filter(snapshot["_source_version"] == h["source_version"]).createOrReplaceTempView(
