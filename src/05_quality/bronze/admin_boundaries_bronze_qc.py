@@ -54,9 +54,6 @@
 # preserving the original stale-marker protection. No Bronze rows are changed.
 # Runs on Python 3.10+ (no datetime.UTC dependency).
 # =============================================================================
-import os
-os.environ["BRONZE_HANDOFF_PATH"] = "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2/bronze_handoff.json"
-
 import argparse
 import json
 import os
@@ -113,7 +110,7 @@ def _add_dq_utils_to_path():
 DOMAIN = "admin_boundaries"
 SOURCE_KEY = "hdx_phl_admin"
 SCRIPT_NAME = "admin_boundaries_bronze_qc.py"
-LOADER_VERSION = "2026-10-15.3"
+LOADER_VERSION = "2026-10-19.1"
 BRONZE_TABLE = "public_health.bronze.admin_boundaries_bronze"
 CHECKS = {
     "HB00": ("QC ran without error", "EXECUTION", "FAIL"),

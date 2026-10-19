@@ -20,6 +20,15 @@
 #
 # File/sheet checks are skipped because PSGC is an API source.
 # Business rules belong to Silver QC.
+#
+# qc_results.batch_id = psgc_population:<content_checksum> of the snapshot checked
+# (lineage-qc-contract.md, section 8). The loader's own batch id (a run UUID) is in B01 detail.
+# YAML qc.skip_checks / qc.severity: known codes only (not B00), WARN or FAIL only; they are
+# written into the B01 detail so a switched-off check stays visible.
+#
+# Changes 2026-10-19: batch_id in the contract form (was the loader's run UUID); YAML
+# overrides validated and recorded; a crash writes one B00 row (it was written twice: once
+# here and once by DQRun on the re-raise).
 # =============================================================================
 
 import argparse
@@ -416,6 +425,14 @@ def run_checks(
     skip = set(qc.get("skip_checks") or [])
 
     overrides = {str(k): str(v).upper() for k, v in (qc.get("severity") or {}).items()}
+    bad_skip = sorted(c for c in skip if c not in CHECKS or c == "B00")
+    bad_sev = {c: v for c, v in overrides.items() if c not in CHECKS or v not in ("WARN", "FAIL")}
+    if bad_skip or bad_sev:
+        raise ValueError(f"invalid qc block in the YAML: skip_checks {bad_skip}, severity {bad_sev}. "
+                         "Use known check codes (not B00) and WARN or FAIL only.")
+    yaml_qc = "; ".join(x for x in (f"skip_checks={sorted(skip)}" if skip else "",
+                                     f"severity={dict(sorted(overrides.items()))}" if overrides else "") if x)
+    state = {"qc_batch": None}                        # set once the snapshot is known
 
     def rec(
         check_id,
@@ -431,6 +448,7 @@ def run_checks(
 
         if ok is not None:
             kwargs["status"] = "PASS" if ok else severity
+        kwargs["batch_id"] = state["qc_batch"]         # contract form, same for every check
 
         return dq.record(
             check_id,
@@ -468,7 +486,8 @@ def run_checks(
 
         return
 
-    batch_id = batch["batch_id"]
+    batch_id = batch["batch_id"]                      # loader run id: selects the snapshot rows
+    state["qc_batch"] = f"{SOURCE_KEY}:{batch['content_checksum']}"
 
     df = spark.table(table_name).where(
         (q_col("source_system") == source_system)
@@ -488,7 +507,8 @@ def run_checks(
         ok=total > 0,
         observed=total,
         expected="> 0",
-        batch_id=batch_id,
+        detail="; ".join(x for x in (f"loader batch_id={batch_id}",
+                                     f"YAML qc overrides: {yaml_qc}" if yaml_qc else "") if x),
     )
 
     # ------------------------------------------------------------------
@@ -507,7 +527,6 @@ def run_checks(
         observed=len(missing),
         expected=0,
         detail=(f"missing={missing}" if missing else None),
-        batch_id=batch_id,
     )
 
     # ------------------------------------------------------------------
@@ -533,7 +552,6 @@ def run_checks(
             observed=len(missing_lineage),
             expected=0,
             detail=(f"missing lineage columns: {missing_lineage}"),
-            batch_id=batch_id,
         )
     else:
         null_conditions = " OR ".join(f"{q(column)} IS NULL" for column in lineage_columns)
@@ -552,7 +570,6 @@ def run_checks(
             ok=null_count == 0,
             fail_count=null_count,
             total_count=total,
-            batch_id=batch_id,
         )
 
     # ------------------------------------------------------------------
@@ -585,7 +602,6 @@ def run_checks(
         "B07",
         fail_count=blank,
         total_count=total,
-        batch_id=batch_id,
     )
 
     # ------------------------------------------------------------------
@@ -601,7 +617,6 @@ def run_checks(
             observed=total,
             expected=("processed ingestion_metadata row"),
             detail=(f"metadata table not found: {metadata_table}"),
-            batch_id=batch_id,
         )
 
     else:
@@ -632,7 +647,6 @@ def run_checks(
                 observed=total,
                 expected=("processed ingestion_metadata row"),
                 detail=(f"No processed metadata row for batch {batch_id}"),
-                batch_id=batch_id,
             )
 
         else:
@@ -644,7 +658,6 @@ def run_checks(
                 observed=total,
                 expected=expected_count,
                 detail=(f"batch_id={batch_id}"),
-                batch_id=batch_id,
             )
 
     # ------------------------------------------------------------------
@@ -663,7 +676,6 @@ def run_checks(
         observed=(len(data_columns) - len(not_string)),
         expected=len(data_columns),
         detail=(f"not string: {not_string}" if not_string else None),
-        batch_id=batch_id,
     )
 
     # ------------------------------------------------------------------
@@ -706,7 +718,6 @@ def run_checks(
             "that could not be parsed as "
             "ARRAY<STRUCT<id,population,psgc,year>>"
         ),
-        batch_id=batch_id,
     )
 
     # ------------------------------------------------------------------
@@ -744,7 +755,6 @@ def run_checks(
         total_count=observation_total,
         column_name=("populations_json.population"),
         detail=("Nested population values with non-null raw text that cannot be parsed as BIGINT"),
-        batch_id=batch_id,
     )
 
     # ------------------------------------------------------------------
@@ -852,9 +862,8 @@ def main():
                 severity=severity,
                 detail=repr(exc),
             )
-
-            if args.fail_on_error == "true":
-                raise
+            # No re-raise: DQRun(fail_on_error=True) raises on exit because B00 is a FAIL.
+            # Re-raising made DQRun write a second B00 row and an ERROR run_log row.
 
 
 if __name__ == "__main__":

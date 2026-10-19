@@ -29,10 +29,21 @@
 #   B11 control totals / control values match (verified numbers) FAIL
 #   B12 a total column equals the sum of its parts (qc.row_sum) WARN
 #   B13 rows per file match the ingestion metadata (same load)  FAIL
+#       (also FAIL when it cannot be verified: no log table, no processed log row for the
+#       file, or the table rows come from a different load than the latest log row)
 #   B14 table holds no files outside the YAML (stale loads)     WARN
 #   B15 every data column is STRING                             FAIL
 #   A source can switch a check off with qc.skip_checks: [B08], or change what a
-#   failed check produces with qc.severity: {B03: WARN}.
+#   failed check produces with qc.severity: {B03: WARN}. Only known codes (not B00) can be
+#   skipped and only WARN or FAIL are accepted as severities; anything else stops this
+#   source with B00. Every skip and override is written into the source's B01 detail, so a
+#   switched-off check is visible in qc_results.
+#
+# qc_results.batch_id = <source_key>:<sha256 of the file> (lineage-qc-contract.md, section 8),
+# the form quality.v_qc_results_identity reads the file checksum from.
+#
+# Changes 2026-10-19: YAML overrides validated and recorded; B13 FAIL when the load cannot
+# be verified (was WARN); facilities batch_id back to the contract form.
 #
 # Severity policy
 #   FAIL = the load itself is wrong or cannot be traced (missing file, wrong row count,
@@ -271,16 +282,13 @@ def latest_metadata(cfg, entry):
     # Returns {relative_file: {"rows", "batch_id", "loaded_at"}}, or None if the log cannot be read.
     # The latest load is picked by its loader batch_id (not by timestamp alone), and the rows
     # of that one load are summed (a workbook has one log row per sheet).
-    # Per the lineage and QC contract: qc_results.batch_id is the loader's load id
-    # (ingestion_metadata.batch_id; _load_batch_id in silver lineage) — WHICH LOAD was checked.
-    # Which bytes were checked stays separate: source_key (qc_results.source_key) plus
-    # content_checksum (ingestion_metadata). The identities are never merged into one string.
+    # batch_id for QC = source_key:sha256 of the file, i.e. the exact file version checked.
     table = entry.get("metadata_table")
     if not table or not spark.catalog.tableExists(table):
         return None
     rows = spark.sql(f"""
         WITH ok AS (
-          SELECT batch_id, raw_file_path, record_count, retrieved_at
+          SELECT batch_id, raw_file_path, content_checksum, record_count, retrieved_at
           FROM {table}
           WHERE source_name = {sql_str(entry["source_key"])}
             AND bronze_table = {sql_str(entry["bronze_table"])}
@@ -288,7 +296,7 @@ def latest_metadata(cfg, entry):
         last AS (
           SELECT raw_file_path, max_by(batch_id, retrieved_at) AS batch_id
           FROM ok GROUP BY raw_file_path)
-        SELECT o.raw_file_path, max(o.batch_id) AS load_batch_id, sum(o.record_count) AS n,
+        SELECT o.raw_file_path, max(o.content_checksum) AS checksum, sum(o.record_count) AS n,
                max(o.retrieved_at) AS loaded_at
         FROM ok o JOIN last l ON o.raw_file_path = l.raw_file_path AND o.batch_id <=> l.batch_id
         GROUP BY o.raw_file_path""").collect()
@@ -303,7 +311,7 @@ def latest_metadata(cfg, entry):
         out[rel] = {
             "rows": r["n"],
             "loaded_at": r["loaded_at"],
-            "batch_id": r["load_batch_id"],
+            "batch_id": f"{entry['source_key']}:{r['checksum']}" if r["checksum"] else None,
         }
     return out
 
@@ -319,6 +327,15 @@ def run_checks(dq, cfg, entry, profile):
     qc = entry.get("qc", {}) or {}
     skip = qc.get("skip_checks") or []
     overrides = qc.get("severity") or {}  # e.g. severity: {B03: WARN}
+    bad_skip = [c for c in skip if c not in CHECKS or c == "B00"]
+    bad_sev = {c: v for c, v in overrides.items()
+               if c not in CHECKS or str(v).upper() not in ("WARN", "FAIL")}
+    if bad_skip or bad_sev:
+        # Raised before any check runs: main() records it as B00 FAIL for this source.
+        raise ValueError(f"invalid qc block in the YAML: skip_checks {bad_skip}, severity {bad_sev}. "
+                         "Use known check codes (not B00) and WARN or FAIL only.")
+    yaml_qc = "; ".join(x for x in (f"skip_checks={sorted(skip)}" if skip else "",
+                                     f"severity={dict(sorted(overrides.items()))}" if overrides else "") if x)
 
     def rec(check_id, ok=None, **kw):
         # One result row. Name and type come from CHECKS; severity from CHECKS or qc.severity.
@@ -350,7 +367,8 @@ def run_checks(dq, cfg, entry, profile):
     v = "_qc_scope"
     df.where(f"_source_key = {sql_str(key)}").createOrReplaceTempView(v)
     total = scalar(f"SELECT count(*) FROM {v}")
-    rec("B01", ok=total > 0, observed=total, expected="> 0")
+    rec("B01", ok=total > 0, observed=total, expected="> 0",
+        detail=f"YAML qc overrides: {yaml_qc}" if yaml_qc else None)
     try:  # stats are extra; an error here must not stop the checks
         dq.capture_table_stats(t)
     except Exception as e:
@@ -552,10 +570,12 @@ def run_checks(dq, cfg, entry, profile):
             )
 
     # B13 rows per file equal what the loader logged for the SAME load. The load is matched on
-    #     _ingested_at = retrieved_at; if table and log come from different loads, the counts
-    #     are not comparable and the result is WARN, not FAIL.
+    #     _ingested_at = retrieved_at. A load that cannot be verified is a FAIL too (severity
+    #     overridable): silver's lineage lookup needs exactly that one processed log row per
+    #     file, so a missing or mismatched row would break the silver build later anyway.
     if meta is None:
-        rec("B13", status="WARN", detail=f"metadata log not found: {entry.get('metadata_table')}")
+        rec("B13", ok=False, observed="no log", expected="ingestion metadata table",
+            detail=f"metadata log not found: {entry.get('metadata_table')}")
     else:
         for f, (n, loaded_at) in sorted(loaded.items()):
             if files is not None and f not in files:
@@ -564,7 +584,7 @@ def run_checks(dq, cfg, entry, profile):
             if m is None:
                 rec(
                     "B13",
-                    status="WARN",
+                    ok=False,
                     observed=n,
                     expected="a processed row in the log",
                     detail=f,
@@ -572,7 +592,7 @@ def run_checks(dq, cfg, entry, profile):
             elif m["loaded_at"] != loaded_at:
                 rec(
                     "B13",
-                    status="WARN",
+                    ok=False,
                     observed=n,
                     expected=m["rows"],
                     batch_id=m["batch_id"],
