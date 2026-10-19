@@ -1,4 +1,5 @@
 # =============================================================================
+#
 # Runs QC on the published diseases Silver tables.
 #
 # All results go through dq_utils.DQRun into public_health.quality:
@@ -112,6 +113,16 @@
 #
 #   - S49 and S50 use the latest geography snapshot only.
 #
+#   - S34 control values come from sources_diseases.yaml (2026-10-19, rule 2a), the same
+#     numbers bronze QC B11 checks, so a number is written once:
+#       doh_foi_dengue, philhealth_foi_claims_hospital   qc.control_totals.expected (per year)
+#       psa_deaths_national_monthly, doh_fhsis_tb,
+#       doh_fhsis_tb_tpt, doh_fhsis_tb_treatment_success qc.control_values items that carry a
+#                                                        `silver:` block (year, and for TB
+#                                                        programme the indicator and drug_resistance)
+#     Bronze QC ignores the `silver:` key. A missing or empty control set is S00 FAIL for that
+#     table, so a YAML edit cannot switch S34 off without notice.
+#
 #   - S08 checks weekly rows as ISO weeks (2026-10-19, D-44 and D-46):
 #       HDX      period_basis iso_week_ending_date, period_key = the date that closes the week
 #       UP NOAH  period_basis iso_week, period_key yyyy-Www
@@ -120,9 +131,11 @@
 # =============================================================================
 
 import argparse
+import functools
 import os
 import sys
 
+import yaml
 from pyspark.sql import SparkSession
 
 
@@ -179,6 +192,8 @@ def parse_args():
     p.add_argument("--profile", default="true", help="Also write a column profile (never for restricted tables)")
     p.add_argument("--geography_table", default="silver.geography_silver",
                    help="schema.table of the PSGC geography table, without the catalog")
+    p.add_argument("--config_path", default=None,
+                   help="Full path to sources_diseases.yaml (found automatically if omitted)")
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--code_version", default=None)
     a, _ = p.parse_known_args()
@@ -235,22 +250,6 @@ CHECKS = {
     "S50": ("source-printed area codes agree with geography silver", "CONSISTENCY", "WARN"),
 }
 
-# Control values: the same numbers bronze QC checks (sources_diseases.yaml), read from silver.
-CONTROLS = [
-    # (label, sql returning one number, expected)
-    *[(f"DOH FOI dengue cases {y}",
-       f"SELECT sum(value) FROM {METRIC} WHERE _source_key = 'doh_foi_dengue' AND measure = 'cases' AND year = {y}", n)
-      for y, n in [(2021, 80919), (2022, 264390), (2023, 214638), (2024, 413960), (2025, 240540)]],
-    *[(f"PSA all-cause deaths {y} (monthly table, year row)",
-       f"SELECT value FROM {METRIC} WHERE _source_key = 'psa_deaths_national_monthly' AND disease_key = 'all_causes' "
-       f"AND period_grain = 'year' AND year = {y}", n)
-      for y, n in [(2020, 613936), (2021, 879429), (2022, 679766), (2023, 694821), (2024, 701884)]],
-    *[(f"FHSIS TB notifications, all forms, Philippines {y}",
-       f"SELECT value FROM {METRIC} WHERE _source_key = 'doh_fhsis' AND disease_key = 'tb_all_forms' "
-       f"AND area_key = 'ph' AND year = {y}", n)
-      for y, n in [(2024, 544948), (2025, 535254)]],
-]
-
 # Expected inputs per silver table: (bronze table, _source_key). Step 1 of the freshness check.
 DECLARED_INPUTS = {
     METRIC: [("diseases_doh_foi_dengue_bronze", "doh_foi_dengue"),
@@ -268,19 +267,7 @@ DECLARED_INPUTS = {
     CLM: [("diseases_philhealth_claims_hospital_bronze", "philhealth_foi_claims_hospital")],
 }
 
-# TB programme controls: Philippines, all ages, both sexes (FHSIS 2025 workbook, verified against
-# the printed national rows on 2026-10-14). The year belongs to the control, not to the SQL.
-TBP_CONTROL_YEAR = 2025
-TBP_CONTROLS = [("tpt_given", "not_applicable", 120108), ("tpt_eligible_contacts", "not_applicable", 1498711.2),
-                ("treatment_cohort", "drug_susceptible", 414185), ("treatment_success", "drug_susceptible", 382547),
-                ("treatment_cohort", "drug_resistant", 7721), ("treatment_success", "drug_resistant", 5030)]
-# TODO (rule 2a): CONTROLS, TBP_CONTROLS and CLM_CONTROLS repeat values that bronze QC reads from
-# sources_diseases.yaml. Read them from the YAML instead (pending the current repo copy of the file).
-
-# PhilHealth claims: sum of Claims Count per admission year, all rows (sources_diseases.yaml entry 19,
-# qc.control_totals). Silver holds these minus the quarantined rows (blank illness).
-CLM_CONTROLS = {2016: 1709849, 2017: 1626227, 2018: 1706320, 2019: 2018226, 2020: 804669,
-                2021: 622815, 2022: 920348, 2023: 1177840, 2024: 1451867, 2025: 1540811}
+# Control values (S34) are read from sources_diseases.yaml: see load_controls() below.
 
 LINEAGE_ALWAYS = ["_silver_build_id", "_source_key", "_source_file", "_source_row_num", "_as_of_date"]
 
@@ -308,6 +295,99 @@ GEO_LEVELS = {"region": ("Reg",), "province": ("Prov",), "city": ("City",), "mun
 def scalar(sql):
     rows = spark.sql(sql).collect()
     return rows[0][0] if rows else None
+
+
+CONFIG_NAME = "sources_diseases.yaml"
+
+
+def find_config(explicit=None):
+    # Same search as the bronze QC scripts: --config_path, else this file's folder and the working
+    # directory, and their config/ folders, up to five levels above each.
+    if explicit:
+        if not os.path.isfile(explicit):
+            raise FileNotFoundError(f"--config_path does not exist: {explicit}")
+        return os.path.abspath(explicit)
+    starts = [os.getcwd()]
+    try:
+        starts.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    except NameError:
+        pass
+    searched = []
+    for start in starts:
+        folder = start
+        for _ in range(6):
+            for sub in ("", "config", "configs", "conf"):
+                candidate = os.path.join(folder, sub, CONFIG_NAME)
+                searched.append(candidate)
+                if os.path.isfile(candidate):
+                    return candidate
+            parent = os.path.dirname(folder)
+            if parent == folder:
+                break
+            folder = parent
+    raise FileNotFoundError(f"{CONFIG_NAME} not found. Pass --config_path. Looked in:\n  "
+                            + "\n  ".join(dict.fromkeys(searched)))
+
+
+@functools.lru_cache(maxsize=1)
+def load_controls():
+    """S34 control values from sources_diseases.yaml. Returns
+         metric : [(label, sql, expected, source_key)]
+         tbp    : [(indicator, drug_resistance, year, expected, label)]
+         clm    : {year: expected}
+    Raises (S00 FAIL for the table being checked) when the YAML or a control set is missing,
+    so a YAML edit cannot silently remove S34."""
+    path = find_config(ARGS.config_path)
+    with open(path, encoding="utf-8") as f:
+        sources = (yaml.safe_load(f) or {}).get("sources") or {}
+
+    def qc(key):
+        if key not in sources:
+            raise KeyError(f"{CONFIG_NAME}: source {key} missing (needed for S34 controls)")
+        return sources[key].get("qc") or {}
+
+    def totals(key, group_by, column):
+        ct = qc(key).get("control_totals") or {}
+        if ct.get("group_by") != group_by or ct.get("sum") != column or not ct.get("expected"):
+            raise ValueError(f"{CONFIG_NAME}: {key} qc.control_totals must group by {group_by!r}, "
+                             f"sum {column!r} and list expected values")
+        return {int(y): n for y, n in ct["expected"].items()}
+
+    def silver_items(key):
+        items = [cv for cv in qc(key).get("control_values") or [] if cv.get("silver")]
+        if not items:
+            raise ValueError(f"{CONFIG_NAME}: {key} has no qc.control_values with a silver: block")
+        return items
+
+    metric = []
+    for y, n in sorted(totals("doh_foi_dengue", "Year", "Cases").items()):
+        metric.append((f"DOH FOI dengue cases {y}",
+                       f"SELECT sum(value) FROM {METRIC} WHERE _source_key = 'doh_foi_dengue' "
+                       f"AND measure = 'cases' AND year = {y}", n, "doh_foi_dengue"))
+    for cv in silver_items("psa_deaths_national_monthly"):
+        y = int(cv["silver"]["year"])
+        metric.append((f"PSA all-cause deaths {y} (monthly table, year row)",
+                       f"SELECT value FROM {METRIC} WHERE _source_key = 'psa_deaths_national_monthly' "
+                       f"AND disease_key = 'all_causes' AND period_grain = 'year' AND year = {y}",
+                       cv["expected"], "psa_deaths_national_monthly"))
+    for cv in silver_items("doh_fhsis_tb"):
+        y = int(cv["silver"]["year"])
+        metric.append((f"FHSIS TB notifications, all forms, Philippines {y}",
+                       f"SELECT value FROM {METRIC} WHERE _source_key = 'doh_fhsis' "
+                       f"AND disease_key = 'tb_all_forms' AND area_key = 'ph' AND year = {y}",
+                       cv["expected"], "doh_fhsis"))
+
+    tbp = []
+    for key in ("doh_fhsis_tb_tpt", "doh_fhsis_tb_treatment_success"):
+        for cv in silver_items(key):
+            m = cv["silver"]
+            missing = [k for k in ("indicator", "drug_resistance", "year") if k not in m]
+            if missing:
+                raise ValueError(f"{CONFIG_NAME}: {key} control {cv.get('label')!r}: silver block lacks {missing}")
+            tbp.append((m["indicator"], m["drug_resistance"], int(m["year"]), cv["expected"], cv["label"]))
+
+    clm = totals("philhealth_foi_claims_hospital", "Admit Year", "Claims Count")
+    return {"metric": metric, "tbp": tbp, "clm": clm, "path": path}
 
 
 def same_number(a, b):
@@ -570,8 +650,9 @@ def check_metric(dq, profile):
         t.value("S10", s, b, source_key=source_key, column_name=f"{measure} (bronze column {col})")
 
     # S34: verified control values
-    for label, sql, expected in CONTROLS:
-        t.value("S34", scalar(sql), expected, detail=label)
+    for label, sql, expected, source_key in load_controls()["metric"]:
+        t.value("S34", scalar(sql), expected, source_key=source_key,
+                detail=f"{label} (control from {CONFIG_NAME})")
 
     # S45: the only accepted quarantine is the reviewed special-area list (finding F9)
     if t.build_id:
@@ -800,11 +881,12 @@ def check_tb_programme(dq, profile):
             column_name="disease_key, area_key")
     # S50 (WARN): FHSIS prints its own codes; the build already quarantines codes not in geography
     t.geography()
-    for indicator, resistance, expected in TBP_CONTROLS:
-        t.value("S34", scalar(f"""SELECT sum(value) FROM {TBP} WHERE area_key = 'ph' AND year = {TBP_CONTROL_YEAR}
+    for indicator, resistance, year, expected, label in load_controls()["tbp"]:
+        t.value("S34", scalar(f"""SELECT sum(value) FROM {TBP} WHERE area_key = 'ph' AND year = {year}
                                   AND indicator = '{indicator}' AND drug_resistance = '{resistance}'
                                   AND age_group = 'all_ages' AND sex = 'both_sexes'"""), expected,
-                source_key="doh_fhsis", detail=f"Philippines {TBP_CONTROL_YEAR} {indicator} {resistance}")
+                source_key="doh_fhsis",
+                detail=f"Philippines {year} {indicator} {resistance} (control from {CONFIG_NAME}: {label})")
     if t.build_id:
         q = spark.sql(f"""SELECT count(*) AS n, count_if(coalesce(reason, '') <> 'psgc_not_in_geography') AS other
                           FROM {QUALITY}.row_disposition
@@ -874,7 +956,7 @@ def check_hospital_claims(dq, profile):
         SELECT s.year, s.n + coalesce(q.n, 0) AS n
         FROM (SELECT year, sum(claims_count) AS n FROM {CLM} GROUP BY year) s
         LEFT JOIN ({quarantined}) q ON q.year = s.year""").collect()}
-    for year, expected in CLM_CONTROLS.items():
+    for year, expected in sorted(load_controls()["clm"].items()):
         t.value("S34", by_year.get(year), expected, source_key="philhealth_foi_claims_hospital",
                 detail=f"claims filed {year}, all statuses (silver + quarantined rows)")
     if t.build_id:

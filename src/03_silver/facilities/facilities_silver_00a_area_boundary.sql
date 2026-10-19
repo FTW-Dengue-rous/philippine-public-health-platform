@@ -63,6 +63,11 @@ RETURN replace(fac_place(regexp_replace(s, '\\([^)]*\\)', ' ')), ' ', '');
 CREATE OR REPLACE TEMPORARY FUNCTION fac_boundary_alt_key (s STRING) RETURNS STRING
 RETURN nullif(replace(fac_place(regexp_extract(s, '\\(([^)]*)\\)', 1)), ' ', ''), '');
 
+-- Philippine bounding box (lon_min, lat_min, lon_max, lat_max) for the centroid gate. Same box as
+-- PH_BBOX in facilities_silver_04a_osm_locate.py and ph_bbox in 04; was typed in the gate until
+-- 2026-10-19 (rule 2a).
+DECLARE OR REPLACE VARIABLE fab_ph_bbox ARRAY<DOUBLE> DEFAULT array(114D, 4D, 127D, 21.5D);
+
 -- [1] inputs: the only place that names columns of the two source tables
 DECLARE OR REPLACE VARIABLE fab_geography_checksum STRING;
 SET VAR fab_geography_checksum
@@ -200,7 +205,8 @@ FROM fab_candidate
 WHERE
     boundary_rule = 'hdx'
     AND (
-        coalesce(centroid_lon, 0) NOT BETWEEN 114 AND 127 OR coalesce(centroid_lat, 0) NOT BETWEEN 4 AND 21.5
+        coalesce(centroid_lon, 0) NOT BETWEEN fab_ph_bbox[0] AND fab_ph_bbox[2]
+        OR coalesce(centroid_lat, 0) NOT BETWEEN fab_ph_bbox[1] AND fab_ph_bbox[3]
         OR coalesce(area_km2, 0) <= 0
     )
 UNION ALL

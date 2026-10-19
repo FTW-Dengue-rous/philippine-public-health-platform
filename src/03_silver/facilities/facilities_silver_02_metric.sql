@@ -26,6 +26,10 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;
+-- PSA hospital definition change (plan 4.4): up to the year before, hospitals include infirmaries.
+-- Was typed as 2012 / 2013 until 2026-10-19 (rule 2a). A warn gate checks the break is still
+-- visible in the national series; recorded in build_log.parameters.
+DECLARE OR REPLACE VARIABLE hospital_definition_break_year INT DEFAULT 2013;
 DECLARE OR REPLACE VARIABLE geography_checksum STRING;
 SET VARIABLE geography_checksum =
   (SELECT max_by(content_checksum, silver_processed_at) FROM public_health.silver.geography_silver);
@@ -104,9 +108,9 @@ SELECT psgc_code, area_name,
 FROM public_health.silver.geography_silver
 WHERE content_checksum = geography_checksum;
 
--- Hospital counts before and after the 2013 definition change (plan 4.4)
-CREATE OR REPLACE TEMPORARY FUNCTION fac_hosp_series(y INT) RETURNS STRING
-RETURN CASE WHEN y <= 2012 THEN 'hospitals_incl_infirmaries' ELSE 'general_and_specialty_hospitals' END;
+-- Hospital counts before and after the definition change (plan 4.4; break year = setting in [0])
+CREATE OR REPLACE TEMPORARY FUNCTION fac_hosp_series(y INT, break_year INT) RETURNS STRING
+RETURN CASE WHEN y < break_year THEN 'hospitals_incl_infirmaries' ELSE 'general_and_specialty_hospitals' END;
 
 
 -- =============================================================================
@@ -438,7 +442,7 @@ SELECT -- 9.17 labels its national BED row "Total Number of Hospitals" (source e
        CAST(NULL AS STRING) AS raw_bhs, CAST(NULL AS STRING) AS raw_rhu, CAST(NULL AS STRING) AS raw_mhc,
        CAST(NULL AS STRING) AS raw_chc, CAST(NULL AS STRING) AS raw_health_centers_total,
        CAST(NULL AS STRING) AS raw_barangays, CAST(NULL AS STRING) AS raw_population,
-       CASE WHEN measure = 'hospitals' THEN fac_hosp_series(year) END AS series_definition,
+       CASE WHEN measure = 'hospitals' THEN fac_hosp_series(year, hospital_definition_break_year) END AS series_definition,
        false AS is_break_year,
        'regions_17_old_definition' AS region_definition,
        _source_key, _source_file, _source_sheet, _source_row_num, _as_of_date,
@@ -475,7 +479,7 @@ SELECT 'ph', CAST(NULL AS STRING), 'Philippines', 'national_row', CAST(NULL AS S
        y, ownership, raw_h, raw_b,
        CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING),
        CAST(NULL AS STRING), CAST(NULL AS STRING),
-       fac_hosp_series(y), (y = 2013), 'national',
+       fac_hosp_series(y, hospital_definition_break_year), (y = hospital_definition_break_year), 'national',
        _source_key, _source_file, _source_sheet, _source_row_num, _as_of_date,
        CASE WHEN col_b IS NULL THEN map('hospitals', col_h) ELSE map('hospitals', col_h, 'authorized_beds', col_b) END
 FROM u;
@@ -505,7 +509,7 @@ SELECT CASE WHEN area_label = 'Philippines' THEN 'ph' ELSE concat('psgc:', fac_r
        block_year, lower(trim(col_0)), raw, CAST(NULL AS STRING),
        CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING), CAST(NULL AS STRING),
        CAST(NULL AS STRING), CAST(NULL AS STRING),
-       fac_hosp_series(block_year), (block_year = 2013),
+       fac_hosp_series(block_year, hospital_definition_break_year), (block_year = hospital_definition_break_year),
        CASE WHEN area_label = 'Philippines' THEN 'national' ELSE 'regions_17_old_definition' END,
        _source_key, _source_file, _source_sheet, _source_row_num, _as_of_date,
        map('hospitals', src_col)
@@ -533,6 +537,7 @@ SELECT CASE WHEN area_label = 'Philippines' THEN 'ph' ELSE concat('psgc:', fac_r
        area_label,
        CASE WHEN area_label = 'Philippines' THEN 'national_row' ELSE 'column_position' END,
        CASE WHEN area_label = 'Philippines' THEN NULL
+            -- BARMM replaced ARMM in 2019 (RA 11054): a fixed fact of geography history, not a setting
             WHEN area_label = 'BARMM' AND CAST(trim(year) AS INT) < 2019 THEN 'ARMM' ELSE area_label END,
        CAST(trim(year) AS INT), 'total',
        CAST(NULL AS STRING), CAST(NULL AS STRING), raw,
@@ -702,6 +707,23 @@ SELECT 'PSA 9.17 legacy: data row without a year above it', 'fail', count(*)
 UNION ALL
 SELECT 'PSA 9.19 BHS: header row is not Year / Philippines / Region', 'fail', 0   -- checked by bronze header_check
 UNION ALL
+-- rule 2a (2026-10-19): [4a] unpivots exactly 15 columns (Total / Government / Private x 2020-2024).
+-- A newer PSA file with another year column would load to bronze and be silently ignored here.
+SELECT 'PSA 9.18 / 9.17: year columns in bronze are not the 15 that [4a] unpivots (2020-2024)', 'fail',
+       (SELECT coalesce(max(size(filter(json_object_keys(to_json(struct(*), map('ignoreNullFields', 'false'))),
+                                         k -> k RLIKE '^(Total|Government|Private)_[0-9]{4}$'
+                                              AND NOT k RLIKE '_(2020|2021|2022|2023|2024)$'))), 0)
+        FROM public_health.bronze.facilities_psa_hospitals_region_annual_bronze WHERE _source_key = 'psa_hospitals_region_annual')
+     + (SELECT coalesce(max(size(filter(json_object_keys(to_json(struct(*), map('ignoreNullFields', 'false'))),
+                                         k -> k RLIKE '^(Total|Government|Private)_[0-9]{4}$'
+                                              AND NOT k RLIKE '_(2020|2021|2022|2023|2024)$'))), 0)
+        FROM public_health.bronze.facilities_psa_beds_region_annual_bronze WHERE _source_key = 'psa_beds_region_annual')
+UNION ALL
+-- rule 2a (2026-10-19): [4e] knows the column layouts of the 2018, 2019-2024 and 2025 FHSIS files
+-- (sources_facilities.yaml bgy_* layouts). A file of another year would get no rhu / health centre values.
+SELECT 'FHSIS: data row from a file year without a known column layout (2018-2025)', 'fail', count(*)
+  FROM cls_fhsis WHERE row_class = 'data' AND (file_year IS NULL OR file_year NOT BETWEEN 2018 AND 2025)
+UNION ALL
 SELECT 'region label not recognised', 'fail', count(*)
   FROM public_health.silver.facilities_metric_silver__candidate WHERE area_key IS NULL OR area_key = 'psgc:'
 UNION ALL
@@ -770,7 +792,8 @@ SELECT concat(c.source_key, ': bronze rows referenced by silver lineage <> data 
              FROM (SELECT DISTINCT _source_key, _source_file, _source_sheet, _source_row_num FROM public_health.silver.facilities_metric_silver__candidate)
              GROUP BY _source_key) s ON s.source_key = c.source_key
 UNION ALL
--- control values (the same numbers bronze QC uses)
+-- control values (the same numbers bronze QC uses: sources_facilities.yaml qc.control_values of each
+-- source, checked against the published tables). SQL cannot read the YAML: a new file changes both.
 SELECT concat('control: ', t.label), 'fail', CASE WHEN a.v = t.expected THEN 0 ELSE 1 END
 FROM (SELECT * FROM VALUES
   ('PSA 9.18 hospitals 2024 = 1,312', 'psa_hospitals_region_annual', 2024, 'hospitals', 1312),
@@ -793,6 +816,15 @@ LEFT JOIN (SELECT _source_key, year, measure, v
                  FROM public_health.silver.facilities_metric_silver__candidate
                  WHERE area_key = 'ph' AND ownership = 'total')) a
   ON a._source_key = t.k AND a.year = t.y AND a.measure = t.measure
+UNION ALL
+-- rule 2a (2026-10-19): the hospital definition break is still where the setting says
+-- (national hospitals fall at hospital_definition_break_year: 1,825 to 1,454 in 2012-2013, OpenSTAT file)
+SELECT 'warn: national hospital count does not fall at hospital_definition_break_year (check the setting)', 'warn',
+       CASE WHEN (SELECT max(CASE WHEN year = hospital_definition_break_year THEN hospitals END)
+                       < 0.9 * max(CASE WHEN year = hospital_definition_break_year - 1 THEN hospitals END)
+                  FROM public_health.silver.facilities_metric_silver__candidate
+                  WHERE _source_key = 'psa_hospitals_national_annual' AND area_key = 'ph' AND ownership = 'total')
+            THEN 0 ELSE 1 END
 UNION ALL
 -- consistency (reported, not blocking): a region equals its provinces plus its listed cities
 SELECT 'warn: FHSIS region BHS <> sum of the rows listed under it (region-years)', 'warn', count(*) FROM (
@@ -827,6 +859,7 @@ SELECT metric_build_id AS build_id, 'silver' AS layer, 'facilities' AS domain,
        CASE WHEN g.failed_gates = 0 THEN (SELECT count(*) FROM public_health.silver.facilities_metric_silver__candidate) END AS row_count,
        CAST(NULL AS BIGINT) AS target_table_version, code_version AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup, 'geography_checksum', geography_checksum,
+                            'hospital_definition_break_year', hospital_definition_break_year,
                             'warnings', g.warn_names)) AS parameters,
        job_run_id AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message

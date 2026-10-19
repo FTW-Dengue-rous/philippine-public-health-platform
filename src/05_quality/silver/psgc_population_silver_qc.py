@@ -428,6 +428,7 @@ def run_checks(dq, entry):
         overrides,
         status="PASS" if duplicate_grains == 0 else "FAIL",
         fail_count=duplicate_grains,
+        total_count=silver_count,  # was missing: the log printed fail=0/None (fixed 2026-10-19)
         detail=("Duplicate groups at grain (psgc_code, population_year, source_version)"),
     )
 

@@ -17,8 +17,8 @@
 # addr:city tag, validates, writes facilities_osm_point_silver and records the build. Run 04a and 04
 # in the same job, right after each other; 04 stops if bronze or the boundaries changed in between.
 #
-# Why Python: point-in-polygon needs a geometry library (shapely). 16,000 points x 1,600 polygons
-# take a few seconds on the driver with an STRtree index. On a runtime with Databricks spatial SQL
+# Why Python: point-in-polygon needs a geometry library (shapely). About 16,000 points x 1,600 polygons
+# (2026-10-14 file) take a few seconds on the driver with an STRtree index. On a runtime with Databricks spatial SQL
 # (ST_Contains, ST_GeomFromWKT) this step could be SQL instead; the output columns would not change.
 #
 # Rules
@@ -36,6 +36,8 @@
 # Args : --catalog public_health (use '' for two-part names in local tests)
 # 2026-10-14: reads only the newest Healthsites file (latest _as_of_date).
 # =============================================================================
+%pip install shapely
+%restart_python
 
 import argparse
 import json
@@ -52,6 +54,8 @@ try:
 except ImportError as e:   # make the cause obvious in the job log
     raise ImportError("shapely is required for the point-in-polygon step: %pip install shapely") from e
 
+# Settings. Written to the staging table, so 04 records them in build_log.parameters (rule 2a, 2026-10-19).
+# PH_BBOX is the same box as ph_bbox in facilities_silver_04_osm_point.sql and the 00a centroid gate.
 NEAREST_MAX_KM = 1.0
 PH_BBOX = (114.0, 4.0, 127.0, 21.5)     # lon_min, lat_min, lon_max, lat_max
 
@@ -163,11 +167,12 @@ schema = StructType([
     StructField("latitude", DoubleType()), StructField("coordinate_status", StringType()),
     StructField("located_psgc", StringType()), StructField("locate_method", StringType()),
     StructField("boundary_candidates", IntegerType()), StructField("distance_to_boundary_km", DoubleType()),
-    StructField("boundary_table_version", LongType()), StructField("boundary_rows", LongType())])
+    StructField("boundary_table_version", LongType()), StructField("boundary_rows", LongType()),
+    StructField("nearest_max_km", DoubleType())])
 data = [(o["_source_key"], o["_source_file"], o["_source_sheet"], o["_source_row_num"], o["_ingested_at"],
          o["osm_type"], o["osm_id"], o["longitude"], o["latitude"], o["coordinate_status"],
          o["located_psgc"], o["locate_method"], o["boundary_candidates"], o["distance_to_boundary_km"],
-         bver, len(codes)) for o in out]
+         bver, len(codes), float(NEAREST_MAX_KM)) for o in out]
 (spark.createDataFrame(data, schema).write.mode("overwrite").option("overwriteSchema", "true")
       .saveAsTable(TARGET))
 

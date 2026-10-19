@@ -16,7 +16,8 @@
 -- in the same bronze table for lineage but are no longer read here.
 --   Every sheet: government and private hospitals, region / province / city-municipality,
 --   hospital type (General / Specialty), level, authorized beds, implementing beds, BOR (based on
---   authorized beds) and inpatient bed days. Reporting hospitals only (about 1,100-1,200 a year).
+--   authorized beds) and inpatient bed days. Reporting hospitals only (1,093 to 1,210 records a year in
+--   the 2018-2025 file, checked 2026-10-14; live counts in the summary at the end).
 --   BOR = bed days / (authorized beds x days in the year) x 100: a warn gate checks it per row.
 --   The 2025 records remain the preferred CANDIDATE occupancy baseline, subject to validation of
 --   bed definitions, duplicate records and reporting coverage (decision D6); 2018-2024 are now a
@@ -36,8 +37,14 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;
--- BOR above this value is kept and flagged but is not eligible for the baseline (plan 3.3)
+-- BOR above this value is kept and flagged but is not eligible for the baseline (plan 3.3).
+-- The exclusion_reason value is named 'bor_gt_150' (QC S24 and gold read it): a gate stops the build
+-- if this setting changes without renaming that value.
 DECLARE OR REPLACE VARIABLE bor_baseline_max DECIMAL(7,2) DEFAULT 150;
+-- Sheets (years) the release must hold, once each. Was typed inside the gate until 2026-10-19
+-- (rule 2a); a new release with another year range changes this setting and the YAML files: list.
+DECLARE OR REPLACE VARIABLE bor_expected_sheets ARRAY<STRING>
+  DEFAULT array('2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025');
 -- the bronze source this build reads (sources_facilities.yaml entry 12a)
 DECLARE OR REPLACE VARIABLE bor_source_key STRING DEFAULT 'doh_foi_hospital_beds';
 DECLARE OR REPLACE VARIABLE geography_checksum STRING;
@@ -353,12 +360,15 @@ WHERE g.quarantine_reason IS NOT NULL;
 -- [5] gates
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.facilities_bed_occupancy_silver__gates AS
-SELECT 'inputs: the eight sheets 2018-2025 are read, once each' AS gate, 'fail' AS severity,
+SELECT 'inputs: every sheet in bor_expected_sheets is read, once each, and no other' AS gate, 'fail' AS severity,
        CASE WHEN (SELECT count(DISTINCT source_sheet) FROM public_health.silver.facilities_bed_occupancy_silver__inputs
-                  WHERE input_kind = 'bronze_source'
-                    AND source_sheet IN ('2018','2019','2020','2021','2022','2023','2024','2025')) = 8
-             AND (SELECT count(*) FROM public_health.silver.facilities_bed_occupancy_silver__inputs WHERE input_kind = 'bronze_source') = 8
+                  WHERE input_kind = 'bronze_source' AND array_contains(bor_expected_sheets, source_sheet)) = size(bor_expected_sheets)
+             AND (SELECT count(*) FROM public_health.silver.facilities_bed_occupancy_silver__inputs WHERE input_kind = 'bronze_source')
+                 = size(bor_expected_sheets)
             THEN 0 ELSE 1 END AS failures
+UNION ALL
+SELECT 'setting: bor_baseline_max is not 150 but the exclusion reason is named bor_gt_150 (rename both)', 'fail',
+       CASE WHEN bor_baseline_max = 150 THEN 0 ELSE 1 END
 UNION ALL
 SELECT 'inputs: more than one ingestion log match', 'fail', count(*)
   FROM public_health.silver.facilities_bed_occupancy_silver__inputs WHERE input_kind = 'bronze_source' AND metadata_matches > 1
@@ -373,6 +383,13 @@ UNION ALL
 SELECT 'region label not recognised', 'fail', count(*)
   FROM public_health.silver.facilities_bed_occupancy_silver__classified
   WHERE row_class = 'data' AND fac_region_psgc(Region) IS NULL
+UNION ALL
+-- rule 2a (2026-10-19): the region codes typed in fac_region_psgc must still be regions of geography
+SELECT 'region rule gives a code that is not a region of the geography snapshot', 'fail', count(*) FROM (
+  SELECT DISTINCT fac_region_psgc(Region) AS region_psgc
+  FROM public_health.silver.facilities_bed_occupancy_silver__classified WHERE row_class = 'data') r
+  LEFT ANTI JOIN fac_geo g ON g.psgc_code = r.region_psgc AND g.geo_level = 'region'
+  WHERE r.region_psgc IS NOT NULL
 UNION ALL
 SELECT 'province / district not resolved (add a bor province_label exception)', 'fail', count(*)
   FROM public_health.silver.facilities_bed_occupancy_silver__candidate2 WHERE province_unit_key IS NULL
@@ -422,6 +439,9 @@ SELECT 'output: silver rows <> bronze data rows', 'fail',
          - (SELECT count_if(row_class = 'data') FROM public_health.silver.facilities_bed_occupancy_silver__classified)
          + (SELECT count(*) FROM public_health.silver.facilities_bed_occupancy_silver__geo WHERE quarantine_reason IS NOT NULL))
 UNION ALL
+-- controls for doh_foi_hospital_beds_municipality_annual_2018_2025.xlsx (FOI DOH-984883683631): the
+-- per-sheet counts add up to the YAML qc.expected_rows (9,145); the 2025 control is in the YAML notes.
+-- They belong to this file: a new release changes them with the YAML.
 SELECT 'control: data rows per sheet (2018 1,098 ... 2025 1,209; silver + quarantined)', 'fail', count(*)
   FROM (SELECT * FROM VALUES (2018, 1098), (2019, 1093), (2020, 1101), (2021, 1127), (2022, 1128), (2023, 1179),
                              (2024, 1210), (2025, 1209) AS t(y, n)) e
@@ -465,6 +485,7 @@ SELECT bor_build_id AS build_id, 'silver' AS layer, 'facilities' AS domain,
        CASE WHEN g.failed_gates = 0 THEN (SELECT count(*) FROM public_health.silver.facilities_bed_occupancy_silver__candidate2) END AS row_count,
        CAST(NULL AS BIGINT) AS target_table_version, code_version AS code_version,
        to_json(named_struct('strict_load_lookup', strict_load_lookup, 'bor_baseline_max', bor_baseline_max,
+                            'bor_expected_sheets', bor_expected_sheets,
                             'geography_checksum', geography_checksum, 'warnings', g.warn_names)) AS parameters,
        job_run_id AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
