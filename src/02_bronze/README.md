@@ -359,6 +359,8 @@ This script checks the population JSON nested in the latest PSGC batch:
 | B16 | `populations_json` parses |
 | B10 | Population values are numbers |
 
+**Expected WARN:** B10, 94 of 127,945 nested values (2026-10-19). The raw text has thousands separators, a leading bracketed note (`(excluding CITY OF ANGELES) 1,234`) or `-`, so it does not cast as it stands. `population_silver` parses these (VALID, VALID_WITH_NOTE, MISSING); silver QC S52 and S53 check the result.
+
 It runs inside `run_bronze.py`, in the geography domain (section 5.3). It writes `run_log` rows with domain `population`. It uses `strict_registry=True`, so every code must exist in `check_registry`.
 
 ### 6.5 Reading the results
@@ -516,7 +518,10 @@ Scenarios 5–7 were gaps before 2026-10-19 and are closed by the re-queue and t
 | WARN 2: `doh_fhsis_demographic` B08 (workforce table) | 6 identical rows with a blank `area_name` in the 2019 workbook, sheet *Health Workers Part2*. Silver drops blank-area rows |
 | `run_bronze.py`, first run (geography, admin boundaries, diseases) | All unchanged. Diseases re-queued the 4 `doh_fhsis` entries; their QC passed (75 checks, 0 FAIL), but the run reported FAIL because it looked them up by entry name, and stopped. Fixed the same day (section 5.1) |
 | `run_bronze.py`, second run (override fix, before the population QC change), all 6 domains | 46 sources unchanged (geography 1, admin boundaries 1, diseases 19, facilities 16, workforce 3, socioeconomic 5; `doh_fhsis_demographic` counted in both facilities and workforce). 0 loaded, 0 failed, 0 QC re-queued: every source was already cleared. About 13 minutes in total; the geography loader took about 5 of them, validating the full landing batch even when unchanged |
-| Next | Run the current `run_bronze.py` once: expect `psgc_population` to be re-queued (its QC predates the latest PSGC load). Then the full job, so the `gate_<domain>` tasks run before silver |
+| `run_bronze.py`, third run (16:25 PHT; file loaders `2026-10-19.1`, timezone-aware load time), all 6 domains | 46 sources unchanged, 0 loaded, 0 failed, 0 QC re-queued. The new load times matched every existing load, so no file reloaded. `psgc_population` was not re-queued: its QC was already cleared. `run_bronze` now prints its state on the geography line even when it is not re-run |
+| `run_bronze.py`, fourth run (16:42 PHT; current `run_bronze.py`) | Same result as the third run. The geography line now reports the population state: `psgc_population: WARN (cleared, not re-run)`, so the run log shows it was checked |
+| **Bronze closed, 2026-10-19** | Code, QC and docs done. Open WARNs are all explained: B08 `philhealth_foi_claims_hospital` (source repeats), B08 `doh_fhsis_demographic` workforce (blank-area rows), B10 `psgc_population` (text silver parses). The job run (gate tasks before silver) is recorded with the silver revisions |
+| Next | The full job, so the six `gate_<domain>` tasks run before silver. Expect `doh_fhsis_demographic` on two gate lines (workforce, facilities) and `psgc_population` under geography |
 
 ---
 

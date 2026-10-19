@@ -1,5 +1,4 @@
 # =============================================================================
-# run_bronze.py
 # One command for the bronze layer: runs each domain's loader (incremental: only new or
 # changed files load), then that domain's bronze QC for the sources that loaded, plus the
 # unchanged sources whose QC is not cleared yet (re-queue).
@@ -387,7 +386,7 @@ def main():
                 print(f"  re-queue QC: {k} is {st[k]['state']} ({gate['reason'](st[k])})")
 
         # Population payload QC (geography only): re-queue when its own state is not cleared.
-        pop_requeue = False
+        pop_requeue, pst = False, None
         if d == GEO and gate:
             pst = pop_state()
             if pst["state"] in gate["BLOCKING"]:
@@ -446,6 +445,8 @@ def main():
                 else:
                     pop_status = "WARN" if pst["state"] == "WARN" else "PASS"
             qc_status = f"{qc_status} | {POP_KEY}: {pop_status}"
+        elif d == GEO and pst is not None:               # not re-run: show its state, so the run log proves it was checked
+            qc_status = f"{qc_status} | {POP_KEY}: {pst['state']} (cleared, not re-run)"
         summary.append({"domain": d, "loaded": loaded, "unchanged": unchanged, "failed": r.get("failed") or [],
                         "requeued": shown_requeued, "qc": qc_status})
         print(f"   {d} done in {time.time() - started:.0f}s\n")
