@@ -359,7 +359,7 @@ This script checks the population JSON nested in the latest PSGC batch:
 | B16 | `populations_json` parses |
 | B10 | Population values are numbers |
 
-**Expected WARN:** B10, 94 of 127,945 nested values (2026-10-19). The raw text has thousands separators, a leading bracketed note (`(excluding CITY OF ANGELES) 1,234`) or `-`, so it does not cast as it stands. `population_silver` parses these (VALID, VALID_WITH_NOTE, MISSING); silver QC S52 and S53 check the result.
+**Expected WARN:** B10 (94 of 127,945 nested values when reviewed on 2026-10-19; the current count is `fail_count` in `qc_results`). The raw text has thousands separators, a leading bracketed note (`(excluding CITY OF ANGELES) 1,234`) or `-`, so it does not cast as it stands. `population_silver` parses these (VALID, VALID_WITH_NOTE, MISSING); silver QC S52 and S53 check the result.
 
 It runs inside `run_bronze.py`, in the geography domain (section 5.3). It writes `run_log` rows with domain `population`. It uses `strict_registry=True`, so every code must exist in `check_registry`.
 
