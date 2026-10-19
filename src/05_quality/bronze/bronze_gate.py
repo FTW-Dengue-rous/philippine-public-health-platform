@@ -27,14 +27,20 @@
 #   (b) catches a source that was turned off in the YAML but is still read by silver.
 #   --exclude_keys drops a source the silver build does not read (e.g. psa_psgc).
 #   --source_keys checks only the listed sources.
-#   geography (psgc) and admin_boundaries (hdx_phl_admin) are not YAML file sources; they
-#   are listed in FIXED_SOURCES below, so --domains geography / admin_boundaries works.
+#   geography (psgc, and psgc_population: the population payload in the same bronze rows) and
+#   admin_boundaries (hdx_phl_admin) are not YAML file sources; they are listed in
+#   FIXED_SOURCES below, so --domains geography / admin_boundaries works. psgc_population
+#   shares the PSGC load log name, so a new PSGC load makes it STALE too.
 #
 # How to run (preload gate)
 #   Databricks job, Python script task before the silver tasks of a domain:
 #     bronze_gate.py --domains diseases
 #     bronze_gate.py --domains admin_boundaries
 #     bronze_gate.py --domains geography
+#   By hand (notebook or terminal): no arguments, or --domains all, checks every domain.
+#     Notebook cell:  import runpy, sys
+#                     sys.argv = ["bronze_gate.py", "--domains", "diseases"]   # optional
+#                     runpy.run_path("<repo>/src/05_quality/bronze/bronze_gate.py", run_name="__main__")
 #   Exit: raises RuntimeError when a source is blocking, so the silver tasks after it
 #   do not start. It writes nothing; the job run shows the reason.
 #   Until a fix: fix the file or YAML, run run_bronze.py (it re-queues the QC), then rerun.
@@ -57,13 +63,14 @@ BLOCKING = ("FAIL", "CRASHED", "STALE", "NOT_CHECKED")
 # Sources that are not YAML file sources of their own domain, and the domain their
 # bronze QC writes to run_log (the crash lookup matches on it).
 FIXED_SOURCES = {
-    "geography": {"psgc": "geography"},
+    "geography": {"psgc": "geography", "psgc_population": "population"},
     "admin_boundaries": {"hdx_phl_admin": "admin_boundaries"},
 }
 
 # A source whose ingestion_metadata.source_name is not its source_key. The PSGC loader logs
 # the YAML psgc.source_name; metadata_names() reads it from config/sources_geography.yaml.
-METADATA_NAME_KEYS = {"psgc": ("sources_geography.yaml", "psgc", "source_name")}
+METADATA_NAME_KEYS = {"psgc": ("sources_geography.yaml", "psgc", "source_name"),
+                      "psgc_population": ("sources_population.yaml", "psgc_population", "source_name")}
 
 
 # -----------------------------------------------------------------------------

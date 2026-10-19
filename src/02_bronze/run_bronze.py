@@ -1,4 +1,5 @@
 # =============================================================================
+# run_bronze.py
 # One command for the bronze layer: runs each domain's loader (incremental: only new or
 # changed files load), then that domain's bronze QC for the sources that loaded, plus the
 # unchanged sources whose QC is not cleared yet (re-queue).
@@ -8,6 +9,9 @@
 #                                 config/sources_geography.yaml, source psgc)
 #             admin_boundaries   (admin_boundaries_bronze.py, admin_boundaries_bronze_qc.py,
 #                                 config/sources_geography.yaml, source hdx_phl_admin)
+#   geography also runs psgc_population_bronze_qc.py (config/sources_population.yaml): the
+#   population payload sits in the same geography_bronze rows. It runs after a geography load
+#   (once geography QC has cleared), or when its own state is not cleared (re-queue).
 #   geography and admin_boundaries have their own loader contracts (a landing snapshot / an
 #   ingestion handoff instead of YAML file entries). A thin wrapper here calls each one and
 #   maps its outcome to the same result as the file loaders, so all domains behave alike.
@@ -59,8 +63,8 @@
 # 2026-10-19.1 or later (DQRun; accepts --job_run_id, --fail_on_error, --code_version).
 # bronze_gate.py in the quality folder.
 #
-# Job note: geography and admin_boundaries run only here; the job has no separate bronze load
-# or bronze QC task for them. Their loaders are safe only with one writer at a time.
+# Job note: geography (with the population payload QC) and admin_boundaries run only here; the
+# job has no separate bronze load or bronze QC task for them. Their loaders are safe only with one writer at a time.
 # =============================================================================
 
 import argparse
@@ -78,6 +82,7 @@ FILE_DOMAINS = ("diseases", "facilities", "workforce", "socioeconomic")
 GEO, GEO_KEY = "geography", "psgc"
 ADMIN, ADMIN_KEY = "admin_boundaries", "hdx_phl_admin"
 FIXED = {GEO: GEO_KEY, ADMIN: ADMIN_KEY}           # domain -> its one source key
+POP_KEY, POP_DOMAIN = "psgc_population", "population"   # QC of the population payload in geography_bronze
 DOMAINS = (GEO, ADMIN) + FILE_DOMAINS              # geography first: every silver domain reads it
 
 
@@ -142,8 +147,35 @@ def run_script(path, args):
         sys.argv = saved
 
 
+def load_gate(path, attempts=3, wait_s=2):
+    """Load bronze_gate.py. Retries a FileNotFoundError: right after a file is moved or
+    uploaded, the workspace can list it before it can be opened. A notebook saved under the
+    name bronze_gate.py is never readable as a file; the error says so."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return runpy.run_path(path, run_name="bronze_gate")
+        except FileNotFoundError:
+            if attempt == attempts:
+                raise SystemExit(f"STOPPED: {path} is listed but cannot be opened after {attempts} tries. "
+                                 "If it is a notebook, replace it with a plain .py file (Import -> File).")
+            time.sleep(wait_s)
+
+
 def yaml_keys(cfg_path):
     return set((yaml.safe_load(open(cfg_path, encoding="utf-8")) or {}).get("sources") or {})
+
+
+def qc_source_keys(cfg_path):
+    """{YAML entry name: source_key its QC results are written under}. Same rule as the QC
+    scripts and bronze_gate.yaml_sources: source_key_override, else the entry name.
+    Several entries can share one source_key (doh_fhsis_tb, doh_fhsis_morbidity, ... -> doh_fhsis)."""
+    cfg = yaml.safe_load(open(cfg_path, encoding="utf-8")) or {}
+    defaults = cfg.get("defaults") or {}
+    out = {}
+    for key, entry in (cfg.get("sources") or {}).items():
+        e = {**defaults, **(entry or {})}
+        out[key] = {"source_key": e.get("source_key_override", key), "enabled": bool(e.get("enabled", True))}
+    return out
 
 
 # -----------------------------------------------------------------------------
@@ -226,12 +258,17 @@ def load_geography(p, a):
     return r, None
 
 
-def qc_args(d, p, a, keys, r):
+def common_qc_args(a):
     common = ["--fail_on_error", a.fail_on_qc]
     if a.job_run_id:
         common += ["--job_run_id", a.job_run_id]
     if a.code_version:
         common += ["--code_version", a.code_version]
+    return common
+
+
+def qc_args(d, p, a, keys, r):
+    common = common_qc_args(a)
     if d == ADMIN:
         return ["--bronze_handoff_path", r["handoff"]] + common
     if d == GEO:                                       # the loader's handoff identifies the snapshot
@@ -266,7 +303,11 @@ def main():
             cfg_path = find_one(root, "config", f"sources_{d}.yaml")
             keys = yaml_keys(cfg_path)
         plan[d] = {"bronze": find_one(root, "src", f"{d}_bronze.py"), "qc": find_one(root, "src", f"{d}_bronze_qc.py"),
-                   "config": cfg_path, "keys": keys}
+                   "config": cfg_path, "keys": keys,
+                   "qc_keys": {} if d in FIXED else qc_source_keys(cfg_path)}
+        if d == GEO:
+            plan[d]["pop_qc"] = find_one(root, "src", "psgc_population_bronze_qc.py")
+            plan[d]["pop_config"] = find_one(root, "config", "sources_population.yaml")
     wanted, forced = csv_list(a.source_keys), csv_list(a.force_keys)
     for k in wanted + forced:
         owners = [d for d in plan if k in plan[d]["keys"]]
@@ -279,14 +320,35 @@ def main():
     # QC state lookup (bronze_gate.py), only when QC or the plan needs it.
     gate, spark = None, None
     if a.qc == "true":
-        gate = runpy.run_path(find_one(root, "src", "bronze_gate.py"), run_name="bronze_gate")
+        gate = load_gate(find_one(root, "src", "bronze_gate.py"))
         from pyspark.sql import SparkSession
         spark = SparkSession.builder.getOrCreate()
 
+    # {source_key: ingestion_metadata.source_name} where they differ (psgc, psgc_population ->
+    # 'PSA PSGC'). The STALE check needs it. Keep this line with the gate load above.
     meta_names = gate["metadata_names"](root) if gate else {}
 
-    def states_of(d, keys):
-        return gate["source_states"](spark, {k: d for k in keys}, metadata_names=meta_names) if keys else {}
+    def states_of(d, keys, p):
+        """State per YAML entry name. QC results are stored under the entry's source_key
+        (source_key_override), so look that key up and give its state to every entry."""
+        if not keys:
+            return {}
+        sk = {k: (p["qc_keys"].get(k) or {}).get("source_key", k) for k in keys}
+        st = gate["source_states"](spark, {sk[k]: d for k in keys}, metadata_names=meta_names)
+        return {k: st[sk[k]] for k in keys}
+
+    def pop_state():
+        """State of the population payload QC. Its run_log domain is 'population'."""
+        return gate["source_states"](spark, {POP_KEY: POP_DOMAIN}, metadata_names=meta_names)[POP_KEY]
+
+    def with_shared_key(keys, p):
+        """Add the enabled entries that share a source_key with one in keys. The gate reads the
+        latest QC run of a source_key, so that run must cover every entry under it, or an older
+        FAIL of a sibling entry would be hidden."""
+        info = p["qc_keys"]
+        shared = {(info.get(k) or {}).get("source_key") for k in keys} - {None}
+        siblings = [k for k, v in sorted(info.items()) if v["source_key"] in shared and v["enabled"]]
+        return list(dict.fromkeys(keys + siblings))
 
     print(f"repo root: {root}\nmode: {'PLAN (nothing written)' if a.plan == 'true' else 'load'}"
           f"{' | force all' if a.force == 'true' else ''}\n")
@@ -319,17 +381,31 @@ def main():
         unchanged = r.get("unchanged") or []
         requeued = []
         if gate and unchanged:
-            st = states_of(d, unchanged)
+            st = states_of(d, unchanged, p)
             requeued = [k for k in unchanged if st[k]["state"] in gate["BLOCKING"]]
             for k in requeued:
                 print(f"  re-queue QC: {k} is {st[k]['state']} ({gate['reason'](st[k])})")
 
+        # Population payload QC (geography only): re-queue when its own state is not cleared.
+        pop_requeue = False
+        if d == GEO and gate:
+            pst = pop_state()
+            if pst["state"] in gate["BLOCKING"]:
+                pop_requeue = True
+                print(f"  re-queue QC: {POP_KEY} is {pst['state']} ({gate['reason'](pst)})")
+        shown_requeued = requeued + ([POP_KEY] if pop_requeue else [])
+
         if a.plan == "true":
-            summary.append({"domain": d, "would_load": r.get("would_load") or [], "requeued": requeued})
+            summary.append({"domain": d, "would_load": r.get("would_load") or [], "requeued": shown_requeued})
             continue
 
         loaded = r.get("loaded") or []
         qc_keys = list(dict.fromkeys(loaded + requeued))
+        if qc_keys:
+            expanded = with_shared_key(qc_keys, p)
+            if len(expanded) > len(qc_keys):
+                print(f"  QC also for {[k for k in expanded if k not in qc_keys]} (same source_key)")
+            qc_keys = expanded
         qc_status = "not run"
         if qc_keys and gate:
             if d in FIXED and not r.get("handoff"):
@@ -338,7 +414,7 @@ def main():
             else:
                 print(f"\n========== {d}: bronze QC for {qc_keys}")
                 qc_err = run_script(p["qc"], qc_args(d, p, a, qc_keys, r))
-                st = states_of(d, qc_keys)
+                st = states_of(d, qc_keys, p)
                 stop = gate["blocking"](st)
                 warns = [k for k in qc_keys if st[k]["state"] == "WARN"]
                 if stop:
@@ -351,8 +427,27 @@ def main():
                     qc_status = f"WARN ({', '.join(warns)})" if warns else "PASS"
         elif not qc_keys:
             qc_status = "nothing loaded, nothing to re-check"
+
+        # Population payload QC: after a geography load, or when re-queued. Not when geography
+        # QC did not clear: the snapshot itself is in question, and the run stops there anyway.
+        if d == GEO and gate and (loaded or pop_requeue):
+            if qc_status.startswith(("FAIL", "not run")):
+                pop_status = "not run: geography QC not cleared"
+            else:
+                print(f"\n========== {d}: bronze QC for {POP_KEY} (population payload)")
+                pop_err = run_script(p["pop_qc"], ["--config_path", p["pop_config"]] + common_qc_args(a))
+                pst = pop_state()
+                if pst["state"] in gate["BLOCKING"]:
+                    pop_status = f"FAIL {gate['reason'](pst)}"
+                    (qc_failed if a.fail_on_qc == "true" else qc_not_blocking).append(d)
+                elif pop_err:
+                    pop_status = f"FAIL (QC script: {pop_err[:120]})"
+                    (qc_failed if a.fail_on_qc == "true" else qc_not_blocking).append(d)
+                else:
+                    pop_status = "WARN" if pst["state"] == "WARN" else "PASS"
+            qc_status = f"{qc_status} | {POP_KEY}: {pop_status}"
         summary.append({"domain": d, "loaded": loaded, "unchanged": unchanged, "failed": r.get("failed") or [],
-                        "requeued": requeued, "qc": qc_status})
+                        "requeued": shown_requeued, "qc": qc_status})
         print(f"   {d} done in {time.time() - started:.0f}s\n")
         if qc_failed and a.fail_on_qc == "true":
             break                                       # stop before the next domain

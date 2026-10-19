@@ -1,304 +1,579 @@
-# Bronze ingestion
+# Bronze layer (`src/02_bronze`)
 
-This page explains how source files move into `public_health.bronze` for the diseases, facilities, workforce and socioeconomic domains.
+The bronze layer copies every source file into the lakehouse exactly as it arrived. It changes no values: a cell that says "1,234" stays the text "1,234". What bronze adds is a label on every row: which source, which file, which sheet, which row, and when it was loaded.
 
-It covers:
+Bronze has two jobs:
 
-- landing folders and file naming
-- the config-driven Bronze loaders
-- Bronze row structure and lineage columns
-- `ingestion_metadata`
-- Bronze QC
-- the Bronze table inventory
+- **Trust.** Every number on the dashboard can be traced back to the file and row it came from.
+- **Safe reruns.** Unchanged files are skipped, changed files are reloaded, and silver never builds on a load that failed or skipped its checks.
 
-Teammates own the geography (PSGC and HDX boundaries) and population Bronze pipelines, so this page does not cover them. See [silver-geography-population.md](silver-geography-population.md).
+Cleaning, matching and calculations happen later, in silver and gold. The original data is never lost.
 
-## Status
+| Setting | What you need to know |
+|---|---|
+| Catalog / schema | `public_health.bronze` |
+| Landing root | `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing` |
+| Configuration | One YAML file per domain: `config/sources_<domain>.yaml`. Adding a dataset means adding an entry, not code |
+| One command | `run_bronze.py` loads every domain, then runs its bronze QC. See [section 5](#5-run_bronzepy-one-command-for-bronze) |
+| Load log | `public_health.bronze.ingestion_metadata`, one row per file or sheet per run |
+| Quality results | `public_health.quality.qc_results`, written through `dq_utils.DQRun`. See [section 6](#6-bronze-qc) |
+| Gate before silver | `bronze_gate.py` stops a domain's silver build when one of its bronze sources is not cleared. See [section 7](#7-preload-gate-bronze_gatepy) |
 
-| Item | Status |
-| --- | --- |
-| Config-driven loader design (one `sources_<domain>.yaml` per domain) | Designed on 2026-10-06. All four domains moved away from per-dataset loader code on this date |
-| Loaders `<domain>_bronze.py` (version `2026-10-06.2`) | Tested on local Spark on 2026-10-05 and 2026-10-06 using Parquet as a stand-in for Delta |
-| Diseases Bronze, 16 tables, 26 files | Earlier loader ran on Databricks for 20 files across 12 tables. 6 files were still pending on 2026-10-06 |
-| Facilities Bronze, 15 tables, 32 files | Earlier loader ran on Databricks for 30 files. 2 files were still pending on 2026-10-06 |
-| Workforce Bronze, 3 tables, 10 files | Earlier loader ran on Databricks for 9 files. 1 file was still pending on 2026-10-06 |
-| Socioeconomic Bronze, 5 tables, 5 files | Tested on local Spark on 2026-10-05. No Databricks run was recorded as of 2026-10-06 |
-| Diseases Bronze, later state | Team record says Bronze was complete on 2026-10-05. Bronze QC ran on Databricks for 16 sources on 2026-10-07. See [validation.md](validation.md) |
-| Facilities Bronze, later state | Team record says the config-driven rerun finished for all 15 sources on 2026-10-07 |
-| Workforce Bronze, later state | Team record says Workforce Bronze was complete on 2026-10-05 |
-| All domains, later state | Team record from 2026-10-07 says all Bronze files were believed loaded. This page does not confirm that per table. Owners should replace these notes with dated run results after confirmation |
-| `ingestion_metadata.sql` (shared 15-column table) | SQL written on 2026-10-05. No Databricks run status was recorded |
-| Bronze QC scripts `<domain>_bronze_qc.py` | Tested on local Spark on 2026-10-05. No Databricks run status was recorded |
-| Bronze tables frozen | Team decision on 2026-10-08: no more changes to the Bronze table design |
-| Incremental loading (loader `2026-10-14.1`) and `run_bronze.py` | Written on 2026-10-14. Tested on local Spark with Parquet as a stand-in for Delta. Tests used the real 2025 FHSIS TB workbook and Healthsites files and covered new, unchanged, changed, re-dated, forced, failed-then-fixed, deleted-row, missing-checksum and YAML-removed-file cases. Not yet run on Databricks |
+If you are rebuilding bronze, start with section 1. If a run failed, go to section 8.
 
-## Sources
+---
 
-Each row below represents one or more entries in a `sources_<domain>.yaml` file. The YAML entry name is the `source_key`.
+## 1. Folder layout and run order
 
-| Domain | Source key(s) | What it holds | Notes |
-| --- | --- | --- | --- |
-| Diseases | `doh_foi_dengue` | DOH dengue cases and deaths, region by month, Jan 2021 to Sep 2025 | Restricted (eFOI). 2025 is a partial year |
-| Diseases | `upnoah` | UP NOAH dengue, region by week, 2016 to 2019 and 2022 to 2025 | Open, ODbL. Sheet `Regional Data` |
-| Diseases | `hdx_dengue` | HDX dengue cases and deaths, province by week, 2016 to 2021 | Open, CC BY. Two files; the 2021 file repeats rows from the first |
-| Diseases | `doh_foi_tb_region2` | DOH Region II TB tables, 2020 to 2025 | Restricted (eFOI). Seven stacked tables. Bronze only |
-| Diseases | `psa_deaths_national_monthly`, `psa_deaths_region_annual`, `psa_deaths_national_annual`, `psa_deaths_province_annual` | PSA registered deaths by cause, with one YAML entry per layout | Open. Year comes from `_source_file` |
-| Diseases | `psa_deaths_allcause_region_annual`, `psa_notifiable_national_annual`, `psa_morbidity_leading_national_annual` | PSA yearbook tables 9.5, 9.15, 9.12 and 9.13 | Open. Stacked or wide layouts |
-| Diseases | `doh_fhsis_tb`, `doh_fhsis_morbidity` | FHSIS TB notifications for 2024 to 2025, plus heart disease and pneumonia for 2024 | Public. Both write `_source_key = doh_fhsis` |
-| Diseases | `davao_hospital_pneumonia` | Pneumonia admissions from one government hospital, patient level | Restricted. De-identified extract |
-| Diseases | `philhealth_foi_tb_claims` | PhilHealth TB claims, 2017 to 2019 | Restricted (eFOI). Bronze only |
-| Diseases | `ihme_gbd` | IHME GBD 2023 modelled deaths and prevalence, province by year, 2019 to 2023 | Restricted by licence. Non-commercial use only; no redistribution |
-| Facilities | `doh_nhfr` | NHFR active hospitals with PSGC codes, as of 2026-09-29 | Public. Hospitals only |
-| Facilities | `doh_hfsrb_hospitals`, `doh_hfsrb_infirmaries`, `doh_hfsrb_primary_care`, `doh_hfsrb_dialysis_clinics`, `doh_hfsrb_blood_service` | DOH HFSRB licensed facility lists, as of 2026-06-30 | Public. Government and Private sheets only |
-| Facilities | `hdx_healthsites` | OpenStreetMap health facility points from healthsites.io | Open, ODbL. Has coordinates but no PSGC |
-| Facilities | `psa_hospitals_region_annual`, `psa_beds_region_annual`, `psa_hospitals_national_annual`, `psa_bhs_region_annual`, `psa_hospitals_beds_national_annual`, `psa_hospitals_region_annual_legacy` | PSA hospital, bed and barangay health station tables | Open. Two layouts exist for hospitals by region |
-| Facilities | `bed_occupancy` | Bed occupancy rate by hospital, 2020 to 2025 | Restricted. Source and permission are still marked CONFIRM |
-| Facilities | `doh_fhsis_demographic` | FHSIS `BGY & BHS` tab, 2018 to 2025 | Public. Reads workbooks landed under `workforce/` |
-| Workforce | `doh_fhsis_demographic` | FHSIS health worker tabs, 2018 to 2025, 18 sheets | Public. Layout changes by year |
-| Workforce | `psa_gov_practitioners` | PSA Table 9.14 government practitioners, region by year, 2012 to 2023 | Open. Used as the history source for 2012 to 2017 |
-| Workforce | `psmo_oncologists` | PSMO medical oncologist counts by area, one snapshot | Open. Pull date is marked CONFIRM |
-| Socioeconomic | `psa_poverty` | PSA poverty threshold, poverty incidence and poor population, 2021, 2023 and 2025 | Open. Sheets `tab2` and `tab6` |
-| Socioeconomic | `psa_health_expenditure_share_national_annual`, `psa_health_expenditure_per_capita_national_annual` | PSA yearbook tables 9.26 and 9.24, 2016 to 2023 | Open |
-| Socioeconomic | `psa_child_mortality` | PSA Table 9.9, NDHS 2017 and 2022 | Open. Encoding: cp1252 |
-| Socioeconomic | `psa_psgc` | PSGC datafile with income class, urban/rural classification and 2024 population | Open. Geography owns the file. It is landed under `geography/psa_psgc/` |
+```
+config/
+├── sources_diseases.yaml        sources_facilities.yaml
+├── sources_workforce.yaml       sources_socioeconomic.yaml
+├── sources_geography.yaml       (PSGC snapshot: psgc, HDX boundaries: hdx_phl_admin)
+└── sources_population.yaml      (psgc_population: QC settings only)
+src/
+├── 00_setup/
+│   ├── ingestion_metadata.sql   creates the shared load log
+│   └── quality_setup.sql        creates public_health.quality
+├── 02_bronze/
+│   ├── run_bronze.py            loader -> QC for every domain
+│   ├── diseases_bronze.py       facilities_bronze.py
+│   ├── workforce_bronze.py      socioeconomic_bronze.py      (file loaders, same code)
+│   ├── geography_bronze.py      (PSGC API snapshot)
+│   └── admin_boundaries_bronze.py (HDX administrative boundaries)
+└── 05_quality/
+    ├── dq_utils.py              DQRun: writes every QC result
+    └── bronze/
+        ├── diseases_bronze_qc.py  facilities_bronze_qc.py
+        ├── workforce_bronze_qc.py socioeconomic_bronze_qc.py   (B00–B15, same code)
+        ├── geography_bronze_qc.py          (GB00–GB13)
+        ├── admin_boundaries_bronze_qc.py   (HB00–HB14)
+        ├── psgc_population_bronze_qc.py    (population payload in the PSGC table)
+        └── bronze_gate.py                  (preload gate before silver)
+```
 
-## Tables
+**Run order on a fresh workspace**
 
-### Landing layout and naming
+1. Run `ingestion_metadata.sql` and `quality_setup.sql`. The setup job does both.
+2. Land the files and add or update their YAML entries.
+3. For admin boundaries, run the HDX ingestion notebook first. It writes the `_runs/<run_id>/handoff.json` the loader reads.
+4. Run `run_bronze.py --plan true`. It lists what would load and which QC would rerun, and writes nothing.
+5. Run `run_bronze.py`.
 
-- Landing root: `/Volumes/workspace/default/ftw-b12-de/groups/g5_landing`
-- Folder pattern: `<domain>/<source>/[<geo>_<grain>/]`
-- One folder represents one layout and one Bronze table.
-- Restricted files stay under `<domain>/restricted/`. Do not commit them to GitHub.
-- Table-by-period files use `{source}_{content}_{geo}_{grain}_{years}.{ext}`.
-- Snapshot files use `{source}_{content}_{geo}_asof_{yyyymmdd}.{ext}`.
-- Bronze tables use `public_health.bronze.<domain>_<source>_<content>_bronze`.
-- Example: `diseases_upnoah_dengue_regional_bronze`
-- Config files: `config/sources_<domain>.yaml`
-- Loader code: `src/02_bronze/<domain>_bronze.py`
-- QC code: `src/02_bronze/<domain>_bronze_qc.py`
+**In the pipeline job** (`resources/ph_public_health_job.yml`)
 
-### Bronze row shape
+| Task | Runs | Waits for |
+|---|---|---|
+| `bronze_<domain>`, one per domain (6) | `run_bronze.py --domains <domain> --job_run_id {{job.run_id}}`. `bronze_geography` also runs the population payload QC | `setup` |
+| `gate_<domain>`, one per domain (6) | `bronze_gate.py --domains <domain>` | `bronze_<domain>` |
+| first silver tasks of each domain | silver builds | `gate_<domain>` (population silver: after geography silver QC) |
 
-One Bronze row represents one data row from one source file or sheet.
+The job allows one run at a time (`max_concurrent_runs: 1`). The geography and admin boundaries loaders are only safe with one writer.
 
-Bronze has no business key. The combination of `_source_key`, `_source_file`, `_source_sheet` and `_source_row_num` identifies the source row.
+---
 
-The loader keeps every data column as a string and adds these lineage columns:
+## 2. Landing
 
-| Column | Holds |
-| --- | --- |
-| `_source_key` | YAML entry key, or `source_key_override` |
-| `_source_file` | File path under the landing root. The loader also uses this as the replacement unit on reruns |
-| `_source_sheet` | Excel sheet name. Null for CSV files |
+- **Folder = layout = bronze table.** Path: `<domain>/<source>/[<geo>_<grain>/]`.
+- **File names:**
+  - Period tables: `{source}_{content}_{geo}_{grain}_{years}.{ext}`.
+  - Snapshots: `{source}_{content}_{geo}_asof_{yyyymmdd}.{ext}`.
+- **Never edit a landed file.** A newer release is a new file in the same folder. A different layout gets its own folder and table.
+- **Restricted files** sit under `<domain>/restricted/`. These are FOI releases, the patient-level hospital extract, bed occupancy and IHME GBD. They are never committed to GitHub.
+- **PSGC:** the PSGC API job lands a completed snapshot under `geography/psgc_api/raw/version=<version>/run_id=<id>/`: API pages, record files, `manifest.json` and `_SUCCESS`.
+- **HDX boundaries:** the HDX ingestion notebook writes prepared files and a `handoff.json` under `admin_boundaries/_runs/<run_id>/`.
+
+---
+
+## 3. The loaders
+
+There are three kinds of loader. Each one writes its own bronze table and checks its own write, but they read different inputs.
+
+| | File loaders (diseases, facilities, workforce, socioeconomic) | `geography_bronze.py` (PSGC) | `admin_boundaries_bronze.py` (HDX) |
+|---|---|---|---|
+| Reads | The files listed in the domain YAML | The newest completed PSGC landing snapshot | The latest HDX ingestion run's `handoff.json` |
+| Writes | One table per source: `<domain>_<source>_<content>_bronze` | The PSGC bronze table (`psgc.bronze_table` in the YAML) | `public_health.bronze.admin_boundaries_bronze` |
+| Rerun rule | Only new or changed files load (section 3.4) | Same snapshot already in bronze → no write | Same source version already complete → no write |
+| Write | Delta `replaceWhere` per file (`_source_key` + `_source_file`) | Insert-only `MERGE` on the snapshot key | Append of a new source version |
+| Load log | One `ingestion_metadata` row per file or sheet | One `ingestion_metadata` row per run | None (limit L4) |
+| Lineage columns | `_source_key`, `_source_file`, `_source_sheet`, `_source_row_num`, `_as_of_date`, `_ingested_at`, `_rescued_data` | `source_system`, `source_version`, `source_endpoint`, `batch_id`, `content_checksum`, `raw_path`, `ingested_at` | `_source_key`, `_dataset_id`, `_source_version`, `_batch_id`, `_admin_level`, `_source_file`, `_source_file_sha256`, `_record_sha256` and more |
+| Plan mode | `--plan true` | `--write_to_bronze no` (returns the planned action) | `--plan true` (returns LOAD or ALREADY_COMPLETE) |
+
+The four file loaders are the same code. Only `DOMAIN` and the config name differ. The team started with one script per dataset. It moved every domain to this YAML pattern on 2026-10-06, once the file count made per-dataset code unmanageable.
+
+### 3.1 YAML entry (file loaders)
+
+Each dataset is one entry in `config/sources_<domain>.yaml`:
+
+- **Identity:** `source_key`, source name, `as_of_date`, `sharing` (`open`, `public` or `restricted`).
+- **Location:** landing path, files and sheets.
+- **Reading settings:**
+  - `header_mode`: `single` uses the file's header; `names` takes names from the YAML by position; `none` gives `col_0, col_1…` for stacked tables.
+  - `data_start_row` and encoding.
+- **Contract checks before the write:** `header_check` (expected text at expected positions) and `required_columns`.
+- **Target:** the bronze table name.
+- **`qc` block:** expected row counts, control totals and values, numeric columns, `skip_checks` and severity overrides. See section 6.1.
+
+### 3.2 Row shape (file loaders)
+
+One bronze row is one data row of one source file or sheet. There is no business key. **Every data column is STRING.**
+
+| Column | Meaning |
+|---|---|
+| `_source_key` | YAML entry key |
+| `_source_file` | Path under the landing root. Also the unit that is replaced on a reload |
+| `_source_sheet` | Excel sheet; null for CSV |
 | `_source_row_num` | 0-based row number in the file or sheet |
-| `_as_of_date` | Release or download date from the YAML. This is not the load time |
-| `_ingested_at` | Load timestamp in UTC. The same timestamp is used for the whole run |
-| `_rescued_data` | Values found beyond the last named column, with their positions |
+| `_as_of_date` | Release or download date from the YAML, not the load time |
+| `_ingested_at` | Load time (UTC). The same for the whole run |
+| `_rescued_data` | Cells beyond the last named column, with their positions |
 
-### `public_health.bronze.ingestion_metadata`
+**Extraction rules**
 
-`ingestion_metadata` is append-only.
+- **Values:** empty cells become null. Excel dates become ISO text. Whole-number floats lose their `.0`. Formulas are read as their saved results.
+- **Rows:** fully empty rows are skipped and counted. Footer and note lines are loaded; silver drops them.
+- **Column names:** cleaned only for characters Delta does not allow, and made unique ignoring case.
 
-For file ingestion, one row represents one file or sheet that the loader processed or attempted to process. The table is also shared with the API ingestion job.
+The PSGC loader keeps each original record as JSON (`source_record_json`) plus the nested population JSON. The HDX loader keeps each feature, its properties and its geometry as JSON.
 
-Silver reads this table to get the load id and file checksum.
+### 3.3 Load sequence (file loaders, per source)
 
-| Column | File loads write |
-| --- | --- |
-| `batch_id` | One id per loader run. All files in the run share it |
-| `source_name`, `source_version` | YAML source key and the file's `as_of_date` as text |
-| `endpoint`, `page_count` | Used by API loads only. Null for file loads |
-| `content_checksum` | SHA-256 checksum of the file |
-| `raw_file_path` | File path in the landing area |
-| `record_count` | Rows written to Bronze after reconciliation |
-| `retrieved_at` | Load time in UTC |
-| `status` | `processed`, `failed` or `skipped_duplicate`. `skipped_duplicate` means the file has not changed since its last load; `error_message` identifies that earlier load. The API job also uses `in_progress` |
-| `bronze_table`, `source_sheet`, `column_count`, `file_size_bytes` | Target table, sheet, number of data columns and file size |
-| `error_message` | Error details on failure, or a warning attached to a processed row such as replaced bytes |
+1. **Check before writing**, for every file of the source: `header_check`, `required_columns`, strict decoding, and at least one data row. If any check fails, nothing is written for that source.
+2. **Write.** Each file's rows are replaced in one transaction: Delta `replaceWhere` on `_source_key` + `_source_file`, with `mergeSchema`.
+3. **Reconcile.** The rows per file in the table must equal the rows read.
+4. **Log.** Append one `ingestion_metadata` row per file or sheet. If this write fails, the data stays committed and the run fails. The next run detects it and reloads (section 8).
 
-### Inventory (39 tables, 73 files)
+### 3.4 Incremental loading (file loaders, version `2026-10-14.1`)
 
-The table names below omit the `public_health.bronze.` prefix.
-
-`Sharing` comes from the YAML `sharing` field.
-
-| Domain | Bronze table | Source | Grain or note | Sharing |
-| --- | --- | --- | --- | --- |
-| Diseases | `diseases_doh_foi_dengue_bronze` | DOH eFOI | Region by month | restricted |
-| Diseases | `diseases_upnoah_dengue_regional_bronze` | UP NOAH | Region by week | open |
-| Diseases | `diseases_hdx_dengue_bronze` | HDX | Province by week, 2 files | open |
-| Diseases | `diseases_doh_foi_tb_region2_bronze` | DOH eFOI | Stacked tables, `col_n` names, Bronze only | restricted |
-| Diseases | `diseases_psa_deaths_national_monthly_bronze` | PSA | National by month, 5 files | open |
-| Diseases | `diseases_psa_deaths_region_annual_bronze` | PSA OpenSTAT | Region by year, with age groups | open |
-| Diseases | `diseases_psa_deaths_national_annual_bronze` | PSA | National by year, 2015 to 2020 | open |
-| Diseases | `diseases_psa_deaths_province_annual_bronze` | PSA | Province and region by year, by sex | open |
-| Diseases | `diseases_fhsis_tb_bronze` | DOH FHSIS | Municipality by year | public |
-| Diseases | `diseases_fhsis_morbidity_bronze` | DOH FHSIS | Province by year, 2024 | public |
-| Diseases | `diseases_davao_hospital_pneumonia_bronze` | Shared hospital extract | Patient level | restricted |
-| Diseases | `diseases_philhealth_tb_claims_bronze` | PhilHealth eFOI | Claims rows, Bronze only | restricted |
-| Diseases | `diseases_psa_deaths_allcause_region_annual_bronze` | PSA Table 9.5 | Region by year, two stacked blocks | open |
-| Diseases | `diseases_psa_notifiable_national_annual_bronze` | PSA Table 9.15 | National, years as columns | open |
-| Diseases | `diseases_psa_morbidity_leading_national_annual_bronze` | PSA Tables 9.12 and 9.13 | National, one block per year | open |
-| Diseases | `diseases_ihme_gbd_bronze` | IHME GBD 2023 | Province by year, modelled | restricted |
-| Facilities | `facilities_nhfr_bronze` | DOH NHFR | One row per hospital | public |
-| Facilities | `facilities_hfsrb_hospitals_bronze` | DOH HFSRB | One row per licensed hospital | public |
-| Facilities | `facilities_hfsrb_infirmaries_bronze` | DOH HFSRB | One row per infirmary | public |
-| Facilities | `facilities_hfsrb_primary_care_bronze` | DOH HFSRB | One row per primary care facility | public |
-| Facilities | `facilities_hfsrb_dialysis_clinics_bronze` | DOH HFSRB | One row per dialysis clinic | public |
-| Facilities | `facilities_hfsrb_blood_service_bronze` | DOH HFSRB | One row per blood service facility | public |
-| Facilities | `facilities_hdx_healthsites_bronze` | HDX, healthsites.io | One row per OSM point | open |
-| Facilities | `facilities_psa_hospitals_region_annual_bronze` | PSA Table 9.18 | Region, wide by ownership and year, 2020 to 2024 | open |
-| Facilities | `facilities_psa_beds_region_annual_bronze` | PSA Table 9.17 | Region, wide by ownership and year, 2020 to 2024 | open |
-| Facilities | `facilities_psa_hospitals_national_annual_bronze` | PSA OpenSTAT | National by year, 2006 to 2015 | open |
-| Facilities | `facilities_psa_bhs_region_annual_bronze` | PSA Table 9.19 | Year rows, one column per region | open |
-| Facilities | `facilities_bed_occupancy_bronze` | Source marked CONFIRM | One row per hospital; year is the sheet | restricted |
-| Facilities | `facilities_fhsis_primary_care_bronze` | DOH FHSIS | Area by year, 2018 to 2025 | public |
-| Facilities | `facilities_psa_hospitals_beds_national_annual_bronze` | PSA Table 9.16 | National by year, 1990 to 2015 | open |
-| Facilities | `facilities_psa_hospitals_region_annual_legacy_bronze` | PSA Table 9.17 (PSY 2024) | Transposed layout, 2005 to 2015 | open |
-| Workforce | `workforce_fhsis_health_workers_bronze` | DOH FHSIS | Area by year, one row set per sheet | public |
-| Workforce | `workforce_psa_gov_practitioners_bronze` | PSA Table 9.14 | Region by profession, years as columns | open |
-| Workforce | `workforce_psmo_oncologists_bronze` | PSMO directory | Area snapshot | open |
-| Socioeconomic | `socioeconomic_psa_poverty_bronze` | PSA poverty statistics | Region and province, 2 sheets | open |
-| Socioeconomic | `socioeconomic_psa_health_expenditure_share_bronze` | PSA Table 9.26 | National, financing agent rows | open |
-| Socioeconomic | `socioeconomic_psa_health_expenditure_per_capita_bronze` | PSA Table 9.24 | National, indicator rows | open |
-| Socioeconomic | `socioeconomic_psa_child_mortality_bronze` | PSA Table 9.9 | Region and background characteristic | open |
-| Socioeconomic | `socioeconomic_psa_psgc_bronze` | PSA PSGC datafile | One row per geographic unit | open |
-
-## Rules
-
-- **Keep source-specific settings in YAML, not in the loader code.** Each source has one YAML entry. It defines the source identity, file location, read settings, contract checks, target table, Silver hints, `sharing`, QC settings and notes. The four domain loaders use the same logic. Only `CONFIG_NAMES`, `DOMAIN` and domain-specific text differ.
-
-- **Keep source values as text in Bronze.** Bronze does not cast values, clean business fields, match geography or choose a preferred source. Silver and Gold handle those steps.
-
-- **Use real column names when the source layout allows it.**
-  - `header_mode: single` uses the file header.
-  - `names` uses YAML column names by position.
-  - `none` creates `col_0`, `col_1`, ... and is used only for stacked layouts.
-
-- **Clean column names only as needed for Delta.** Replace unsupported characters and `.` with `_`. Make duplicate names unique without relying on case.
-
-- **Use the same extraction rules across sources.** Convert empty cells to null. Skip and count fully empty rows. Store Excel dates as ISO text. Remove `.0` from whole-number floats. Read formulas from their saved results. Keep footer and note rows in Bronze; Silver removes them when needed.
-
-- **Never edit landing files.** Add a newer snapshot as a new file in the same folder. Put a different layout in its own folder and Bronze table.
-
-- **Run contract checks before writing.** Run `header_check`, `required_columns`, strict decoding and the non-empty-data check for all files in a source first. If any check fails, write nothing for that source.
-
-- **Replace only the affected source files.** Use Delta `replaceWhere` on `_source_key` and `_source_file`, with `mergeSchema`, in one transaction. The first write appends. Incremental loading writes only new or changed files.
-
-- **Reconcile after the write.** Count Bronze rows for each file and make sure they match the rows read. Then append one `ingestion_metadata` row per file or sheet. If metadata logging fails, keep the committed Bronze data but fail the run.
-
-- **Treat `load_mode` as a Silver hint.**
-  - `upsert`: Silver keeps the latest `_as_of_date` per merge key.
-  - `latest_file`: Silver keeps only the newest snapshot.
-  - Bronze still keeps every file listed in the YAML.
-
-- **Use `sharing` to record data-handling intent.** Allowed values are `open`, `public` and `restricted`. This field does not enforce access control by itself. Restricted sources include FOI files, the patient-level hospital extract, the bed occupancy file and IHME GBD. Do not copy record-level values from restricted tables into documentation or GitHub.
-
-- **Bronze table design is frozen as of 2026-10-08.** Bronze rows do not store a load id or checksum. Silver gets both from `ingestion_metadata` using `batch_id` and `content_checksum`. See [lineage-qc-contract.md](lineage-qc-contract.md).
-
-## Incremental loading
-
-Loader `2026-10-14.1` adds incremental loading.
-
-For each listed file or sheet, the loader checks the latest `processed` row in `ingestion_metadata`. It reloads only when something relevant changed.
-
-If a file has not changed, the loader keeps its existing Bronze rows and `_ingested_at`. This also lets Silver keep using the same source load.
-
-This replaces the 2026-10-06 decision to reload unchanged files. After the incident 3 fix, `ingestion_metadata` stores both `content_checksum` and `source_sheet`, so incremental loading does not need another Bronze column.
+Each run compares every listed file and sheet with its latest `processed` row in `ingestion_metadata`:
 
 | Reason | Detected by | Action |
-| --- | --- | --- |
-| `new` | No `processed` row exists for the same source, file path, sheet and Bronze table | Load |
-| `content_changed` | SHA-256 differs from the logged `content_checksum` | Reload that file |
-| `as_of_date_changed` | YAML `as_of_date` differs from the logged `source_version` | Reload that file |
-| `bronze_rows_differ` | Bronze no longer contains exactly the rows from that load | Reload that file |
-| `no_checksum_logged` | The previous processed row has no checksum, usually from loads before 2026-10-07 | Reload once |
-| `forced` | `--force true`, or the source is listed in `--force_keys` | Reload all files for that source |
-| unchanged | None of the reload conditions apply | Skip and log `skipped_duplicate` |
+|---|---|---|
+| `new` | No processed row for (source, path, sheet, table) | Load |
+| `content_changed` | File sha256 ≠ logged checksum | Reload the file |
+| `as_of_date_changed` | YAML `as_of_date` ≠ logged `source_version` | Reload the file |
+| `bronze_rows_differ` | Bronze no longer holds exactly that load's rows | Reload the file |
+| `no_checksum_logged` | Old log row without a checksum | Reload once |
+| `forced` | `--force true`, or the source is in `--force_keys` | Reload all its files |
+| unchanged | Everything matches | Skip; log `skipped_duplicate` |
 
-Additional rules:
+- **Unchanged files keep their rows and `_ingested_at`,** so silver built from them stays fresh.
+- **Not detected:** changes to an entry's parsing settings or to loader code. Use `--force_keys <source>` after such a change.
+- **A file removed from the YAML** is reported and kept in bronze.
 
-- Treat a workbook configured by sheet as one reload unit. Bronze replaces rows by file, so if one configured sheet needs a reload, reload all configured sheets for that workbook entry.
-- The loader does **not** detect changes to YAML parsing settings such as `columns`, `data_start_row` or `header_check`. It also does not detect loader code changes. Use `--force_keys` after these changes.
-- If you remove a file from the YAML, the loader reports it but keeps its existing Bronze rows. Delete those rows only as an intentional cleanup.
-- If a source fails before the write, Bronze does not change for that source. The next run tries it again.
-- Use `--plan true` to print `LOAD` or `skip` and the reason for each file without writing anything.
+### 3.5 PSGC and HDX loaders
 
-## Run order
+**`geography_bronze.py`** (version `2026-10-19.1`)
 
-1. Run `ingestion_metadata.sql` once to create the shared metadata table.
-2. Run `quality_setup.sql` once to create the `public_health.quality` tables used by `dq_utils.DQRun`.
-3. Upload source files to the landing folders and update `config/sources_<domain>.yaml`.
-4. Run `run_bronze.py --plan true` to preview the load.
-5. Run `run_bronze.py` to execute Bronze ingestion and QC.
-   - It runs `<domain>_bronze.py` incrementally for each selected domain.
-   - It then runs `<domain>_bronze_qc.py` for sources that loaded.
-   - Any QC `FAIL` stops the job before Silver.
-   - Available options include `--domains`, `--source_keys`, `--force_keys` and `--qc false`.
-6. You can also run a domain loader directly. Use `<domain>_bronze.py` with options such as `--source_keys`, `--plan true`, `--force_keys` or `--show_headers N`.
-7. If the summary shows that Bronze changed for a domain, rerun that domain's Silver reference/build steps and Silver QC. Then rerun Gold.
+- It loads the newest completed PSGC landing batch for the YAML `psgc.version`.
+- It first re-validates the batch: marker, manifest, files, record JSON, unique codes and content checksum.
+- One run does one of: `load`, `unchanged`, `backfill_audit` (the rows were there but the log row was missing), `repair` (rows partly there, no log row) or `blocked`.
+- It returns a handoff: `batch_id`, `content_checksum`, `landing_batch_path`, `expected_record_count`. `run_bronze.py` passes these to the geography QC.
 
-## Checks
+**`admin_boundaries_bronze.py`** (version `2026-10-19.1`)
 
-Loader checks run before or immediately after the write.
+- It reads the latest HDX ingestion attempt under the YAML `hdx_phl_admin.landing_path`.
+- If that attempt is incomplete, it stops. **It never falls back to an older run.**
+- It verifies the landing receipt and the staging manifest, then appends the source version, or does nothing if that version is already complete.
+- A partly loaded version stops the run. Delete it by hand before you reload.
+- It writes `bronze_handoff.json` next to the ingestion handoff. The admin QC reads that file.
 
-Bronze QC runs on the stored tables. It reads the `qc` settings from each YAML entry and writes results through `dq_utils.DQRun` into `public_health.quality`.
+---
 
-| Check | Severity | Quality attribute |
-| --- | --- | --- |
-| Loader: `header_check` (expected text at expected positions) | FAIL | validity |
-| Loader: `required_columns` present | FAIL | validity |
-| Loader: strict decoding | FAIL | accuracy |
-| Loader: at least one data row per file | FAIL | completeness |
-| Loader: rows in table equal rows read, per file | FAIL | completeness |
-| Loader: `ingestion_metadata` row written | FAIL | auditability |
-| `table_not_empty` | FAIL | completeness |
-| `all_files_loaded` | FAIL | completeness |
-| `row_count_match` | FAIL | completeness |
-| `required_column_present` | FAIL | validity |
-| `lineage_not_null` | FAIL | auditability |
-| `row_num_unique` | FAIL | uniqueness |
-| `no_empty_rows` | WARN | completeness |
-| `no_duplicate_rows` | WARN | uniqueness |
-| `no_rescued_data` | WARN | validity |
-| `numeric_parsable` | WARN | validity |
-| `control_total_match`, `control_value_match` | FAIL | accuracy |
-| `row_sum_match` | FAIL | consistency |
+## 4. `ingestion_metadata`: the shared load log
 
-A YAML entry can disable a check with `skip_checks`. For example, disable `B08` when repeated rows are expected. A YAML entry can also override the check severity.
+One append-only table with 15 columns. Every file loader and the PSGC loader write to it:
 
-## Results so far
+| Column | Meaning |
+|---|---|
+| `batch_id` | One per loader run. For PSGC, the landing run id. Equals the PSGC rows' `batch_id` |
+| `source_name` | The YAML source key for file sources. For PSGC, the YAML `psgc.source_name` |
+| `source_version` | `as_of_date` as text (files) or the PSGC version |
+| `content_checksum` | sha256 of the file (files) or the manifest checksum (PSGC) |
+| `raw_file_path`, `source_sheet` | What was read |
+| `record_count`, `column_count`, `file_size_bytes` | What was loaded |
+| `retrieved_at` | Load time (UTC). Equals the rows' `_ingested_at` / `ingested_at` for a `processed` row |
+| `status` | `processed`, `failed` or `skipped_duplicate` |
+| `endpoint`, `page_count` | API loads only |
+| `bronze_table`, `error_message` | Target and failure or skip note |
 
-- **2026-10-04:** First Databricks run for diseases, with 12 sources at that time. Five sources loaded. Five failed because `openpyxl` was missing. Two failed because files were missing. The run created tables under old names without the `diseases_` prefix.
-- **2026-10-05:** Local PySpark 4.2 test using Parquet instead of Delta. All 13 facilities sources available at that time loaded and passed QC. Socioeconomic control values also passed locally.
-- **2026-10-06:** The earlier loader loaded 59 of 73 files on Databricks. Fourteen files remained: 6 diseases, 2 facilities, 1 workforce and 5 socioeconomic.
-- **2026-10-06:** Local tests for the new diseases, facilities and PSMO entries passed `header_check`, reconciled successfully and reran without creating duplicates.
-- **2026-10-07:** `header_check` passed against the real files for diseases entries 13 to 16, workforce entries 1 and 2, and all 5 socioeconomic entries.
-- The expected diseases total after a full rerun is **16 tables and 184,737 rows**. This is an expected total, not a recorded Databricks result.
+Silver reads `batch_id` and `content_checksum` from here for lineage. That is why bronze rows carry no load id or checksum column (decision 2026-10-08).
 
-## Known limits
+---
 
-- The project does not record a complete Databricks rerun using the new loader. The 2026-10-06 plan was to drop the 12 diseases tables, rerun all diseases sources, then rerun `hdx_dengue`.
-- `replaceWhere` with `mergeSchema` was tested locally using Parquet. The project material does not confirm this behavior on Databricks Delta.
-- The project does not record a Databricks run for Bronze QC. This was still open on 2026-10-06.
-- `sharing: restricted` records intent only. Unity Catalog grants for restricted tables still need to be applied.
-- Facilities entries 1 to 13 do not yet have `header_check`. A shifted column in these `names` layouts could load under the wrong name.
-- `_as_of_date` is not fully consistent. Some entries use release dates and others use download dates. Many are still marked CONFIRM in the YAML.
-- The loaders read files on the driver. The largest file is the PhilHealth claims workbook at 245,405 rows and 12 MB.
-- On the first incremental run in a workspace, the loader reloads files whose latest `processed` row has no checksum or sheet. These are usually loads made before the incident 3 fix. Later unchanged runs are skipped.
-- The same loader logic is copied into four domain files. Apply shared fixes to all four.
-- Older handoff notes and newer configs do not always agree. The 2026-10-04 and 2026-10-05 notes list 12 diseases, 13 facilities and 2 workforce sources and describe a delete-then-append rerun. This page follows the newer design and YAML files: 16 diseases sources, 15 facilities sources, 3 workforce sources and `replaceWhere`.
-- `sources_facilities.yaml` still points to `public_health.bronze.qc_results` as its QC table and marks it CONFIRM. The other configs and the team decision use `dq_utils.DQRun` with `public_health.quality`. This page follows that newer approach.
-- Folder names are not fully consistent across project files. The facilities YAML uses `psa_hospitals/regional_annual_legacy` and `facilities/restricted`. The design and handoff notes use `region_annual_legacy` and `restricted/bed_occupancy/`.
-- `socioeconomic_psa_psgc_bronze` reads a geography-owned source file. Disable this YAML entry if the geography loader already ingests the same file.
+## 5. `run_bronze.py`: one command for bronze
 
-## Handoff to Gold
+`run_bronze.py` runs each domain's loader, then that domain's bronze QC. Domains run in this order: `geography`, `admin_boundaries`, `diseases`, `facilities`, `workforce`, `socioeconomic`. Geography goes first because every silver domain reads it.
 
-- Gold does not read Bronze directly.
-- Silver reads Bronze, keeps the required lineage and passes that lineage forward.
-- See [silver-diseases.md](silver-diseases.md), [silver-facilities.md](silver-facilities.md), [silver-workforce.md](silver-workforce.md), [silver-socioeconomic.md](silver-socioeconomic.md) and [gold-model.md](gold-model.md).
-- Gold must not read landing files again.
-- Gold must not recast the original source text.
-- Gold must not recreate load ids. Silver and `ingestion_metadata` provide them.
-- Gold must follow the `sharing` rules. Do not export row-level restricted data. Use IHME values only with the required attribution line.
+### 5.1 Which sources get QC in a run
+
+| Source in this run | QC runs? |
+|---|---|
+| Loaded (new or changed) | Yes |
+| Unchanged, and its bronze QC is **not cleared** (FAIL, CRASHED, STALE or NOT_CHECKED; section 7.1) | **Yes: re-queued** |
+| Unchanged and cleared (PASS or WARN) | No |
+| Loader failed | No; the run ends failed |
+
+**Shared source keys:** several YAML entries can write QC results under one `source_key` (`source_key_override`; e.g. `doh_fhsis_tb`, `doh_fhsis_tb_tpt`, `doh_fhsis_tb_treatment_success` and `doh_fhsis_morbidity` all write `doh_fhsis`). `run_bronze` looks up the state of that shared key for each entry. When one of them gets QC, all enabled entries under the same key get QC in the same run. The gate reads only the latest run of a key, so that run must cover every entry, or an older FAIL of one entry would be hidden.
+
+**Why the re-queue matters:** before 2026-10-19, an unchanged source was skipped, so a source whose last QC failed stayed failed while the run still reported "complete". Now it is checked again. Typical case: you fix `qc.expected_rows` in the YAML. The file has not changed, but its QC reruns and clears it.
+
+### 5.2 How the result is judged
+
+After QC, `run_bronze.py` reads each checked source's state back from `public_health.quality`. It does not trust the QC script's exit code alone. So `--fail_on_qc false` still reports a FAIL in the summary; it only stops the run from raising. The preload gate still stops that domain's silver.
+
+### 5.3 Geography and admin boundaries
+
+These two loaders have their own input contracts (section 3.5). A thin wrapper in `run_bronze.py` calls each one and maps its outcome to the same result as the file loaders:
+
+| Loader outcome | Counted as |
+|---|---|
+| PSGC `load`, `repair`, `backfill_audit` / HDX `loaded` | loaded |
+| PSGC `unchanged` / HDX `already_complete` | unchanged |
+| PSGC `blocked`, any error | failed |
+
+The wrapper then passes the loader's handoff to that domain's QC script.
+
+**Population payload QC.** The geography domain also runs `psgc_population_bronze_qc.py` (config `sources_population.yaml`, source key `psgc_population`). The population JSON sits in the same `geography_bronze` rows, so there is no separate loader. It runs:
+
+- after a geography load, once geography QC has cleared (if geography QC fails, the snapshot itself is in question and the run stops there); or
+- when its own state is not cleared (re-queue), even if geography is unchanged.
+
+Its result shows in the geography summary line as `psgc_population: PASS / WARN / FAIL`.
+
+`--force` does not apply to these two domains, and `--force_keys psgc` or `hdx_phl_admin` stops with a clear message. A new snapshot or source version loads by itself.
+
+### 5.4 Options
+
+| Option | Effect |
+|---|---|
+| `--domains` | `all` (default) or a comma list |
+| `--source_keys` | Only these sources. Each is sent to the domain that owns it |
+| `--plan true` | Print per file LOAD / skip and which QC would rerun. Writes nothing; runs no QC |
+| `--force_keys` | Reload these sources in full (after a parsing-setting or loader change) |
+| `--force true` | Reload every selected file source in full. This makes silver stale |
+| `--qc false` | Skip bronze QC and the re-queue |
+| `--fail_on_qc` | `true` (default): a QC FAIL stops the run before the next domain. `false`: record, report, continue |
+| `--job_run_id`, `--code_version` | Passed to every QC script, so `quality.run_log` links to the job run |
+| `--repo_root` | The repo folder; found automatically from the script's location |
+
+**Stops:** a failed source does not stop the other sources or domains. The run ends failed with the list. A QC FAIL stops the run before the next domain. The summary names the domains whose bronze changed, so their silver and gold can be rerun.
+
+---
+
+## 6. Bronze QC
+
+Bronze QC checks that each load is **complete and faithful to its source**. It checks no business rules; those belong to silver QC. Every script writes through `dq_utils.DQRun` into `public_health.quality`:
+
+| Table | What it gets |
+|---|---|
+| `qc_results` | One row per check |
+| `run_log` | One row per QC execution |
+| `table_stats` | Row count and Delta version of each table checked |
+| `profile` | Column profiles. Off for restricted sources, and off by default for geography and admin boundaries |
+
+**Severity policy**
+
+| Severity | Meaning |
+|---|---|
+| **FAIL** | The load itself is wrong or cannot be traced: missing file, wrong row count, double load, broken lineage, numbers that disagree with a verified control. A FAIL stops the job before silver. |
+| **WARN** | The load is faithful, but the source has something a person should look at: blank rows, duplicates, text in a number column, a total that does not add up. |
+
+Bronze keeps the rows in both cases.
+
+**`batch_id`** is `<source_key>:<sha256 of the file or snapshot>` (lineage-qc-contract.md, section 8). `quality.v_qc_results_identity` reads the checksum from it. HDX uses its own `dataset_id:source_version`, where the version is also a sha256.
+
+### 6.1 File domains: B00–B15
+
+The four `<domain>_bronze_qc.py` scripts are the same code.
+
+| Code | Check | Severity |
+|---|---|---|
+| B00 | QC ran without error (per source) | FAIL |
+| B01 | Table exists and has rows for the source | FAIL |
+| B02 | Every file listed in the YAML was loaded | FAIL |
+| B03 | Rows per file = `qc.expected_rows` | FAIL. **WARN if the file has no expected count yet** |
+| B04 | Required columns exist | FAIL |
+| B05 | Lineage columns are never null | FAIL |
+| B06 | `_source_row_num` unique per file and sheet (no double load) | FAIL |
+| B07 | No rows where every data column is empty | WARN |
+| B08 | No exact duplicate rows within a file and sheet | WARN |
+| B09 | No rescued (overflow) values | WARN |
+| B10 | `qc.numeric_columns` can be read as numbers | WARN |
+| B11 | Control totals and control values match verified numbers | FAIL |
+| B12 | A total column equals the sum of its parts (`qc.row_sum`) | WARN |
+| B13 | Rows per file = the loader's log row for the same load | FAIL, **also when it cannot be verified** (no log table, no `processed` row, rows from a different load) |
+| B14 | The table holds no files outside the YAML | WARN |
+| B15 | Every data column is STRING | FAIL |
+
+**YAML overrides: rules**
+
+- `qc.skip_checks: [B08]` switches a check off. `qc.severity: {B03: WARN}` changes what a failed check produces.
+- Only known codes can be used, and B00 cannot be skipped. Severities must be WARN or FAIL.
+- Anything else stops that source with B00. Before 2026-10-19, `severity: {B13: PASS}` silently disabled a check.
+- Every skip and override is written into that source's B01 `detail`, so a switched-off check stays visible in `qc_results`.
+
+### 6.2 Geography (PSGC): GB00–GB13
+
+`geography_bronze_qc.py` re-validates the landing batch on its own, then compares it with the bronze snapshot.
+
+It needs the loader's four handoff values. `run_bronze.py` passes them. Run on its own with none of them, it reads them from the latest `processed` `ingestion_metadata` row for `psgc` (`batch_id`, `content_checksum`, `raw_file_path`, `record_count`). Pass all four or none.
+
+Every check is FAIL:
+
+| Code | Check |
+|---|---|
+| GB00 | QC ran without error |
+| GB01 | Landing batch is complete and matches the loader's handoff |
+| GB02 | Bronze has every required column |
+| GB03 | Landing records parse to the expected count |
+| GB04, GB05 | Snapshot has rows; row count = landing count |
+| GB06, GB07 | `psgc_code` never blank; unique |
+| GB08, GB09 | No landing code missing from bronze; no extra bronze code |
+| GB10, GB11 | Stored JSON = landed JSON; projected attributes = the loader's extraction |
+| GB12 | Snapshot lineage is complete (batch id, raw path, load time) |
+| GB13 | Rows = the loader's `processed` log row. WARN if the log table cannot be read |
+
+`--write_results no` prints the results and writes nothing.
+
+### 6.3 Admin boundaries (HDX): HB00–HB14
+
+`admin_boundaries_bronze_qc.py` reads `bronze_handoff.json` and checks one source version at one Delta version. It checks:
+
+- row counts in total and per admin level;
+- lineage and fingerprints;
+- fingerprint integrity and JSON parsing;
+- p-codes and names: present and unique per level;
+- feature and geometry types;
+- parent references and required property keys.
+
+All are FAIL, and none can be skipped. It also writes `bronze_qc_summary.json` next to the handoff.
+
+### 6.4 Population payload: `psgc_population_bronze_qc.py`
+
+This script checks the population JSON nested in the latest PSGC batch:
+
+| Code | Check |
+|---|---|
+| B01, B04, B05, B07, B13, B15 | Shared bronze checks |
+| B16 | `populations_json` parses |
+| B10 | Population values are numbers |
+
+It runs inside `run_bronze.py`, in the geography domain (section 5.3). It writes `run_log` rows with domain `population`. It uses `strict_registry=True`, so every code must exist in `check_registry`.
+
+### 6.5 Reading the results
+
+| View | Use it for |
+|---|---|
+| `quality.v_open_issues` | Latest results that are not PASS |
+| `quality.v_table_health` | One status per table |
+| `quality.v_run_errors` | QC scripts whose latest run crashed |
+
+```sql
+-- what the gate would stop on, per source
+SELECT layer, table_name, source_key, check_id, status, observed, expected, detail
+FROM public_health.quality.v_open_issues
+WHERE layer = 'bronze' AND status <> 'WARN';
+
+-- files still without a verified row count (B03 is only WARN for these)
+SELECT source_key, detail FROM public_health.quality.v_open_issues
+WHERE check_id = 'B03' AND expected = 'not set';
+```
+
+---
+
+## 7. Preload gate: `bronze_gate.py`
+
+The gate runs before a domain's first silver task. It stops silver when a bronze source the domain reads is not cleared. It reads `public_health.quality` and writes nothing. If it stops, the job shows which source and why.
+
+### 7.1 Source states
+
+| State | Meaning | Blocks? |
+|---|---|---|
+| PASS | Every check of the latest QC run passed | No |
+| WARN | No FAIL, at least one WARN | No |
+| FAIL | The latest QC run has a FAIL, including B00 / GB00 / HB00 | **Yes** |
+| CRASHED | A bronze QC run of the same domain crashed (`run_log` status ERROR) at or after the source's latest result | **Yes** |
+| STALE | The source was loaded again after its latest QC, so QC never saw this load | **Yes** |
+| NOT_CHECKED | No bronze QC result at all | **Yes** (`--allow_unchecked true` lets it pass) |
+
+`run_bronze.py` re-queues the same blocking states (section 5.1).
+
+- **STALE needs a load log.** It is only detected for sources that write `ingestion_metadata`, so HDX is not covered (limit L4).
+- **PSGC name mapping.** PSGC is matched by its YAML `psgc.source_name`, the name its loader logs.
+
+### 7.2 Which sources it checks
+
+For `--domains <domain>`, the gate checks:
+
+- **(a)** the domain's enabled YAML file sources; and
+- **(b)** every bronze source that the domain's latest successful silver build read (`quality.build_log` + `build_inputs`, `input_kind = 'bronze_source'`).
+
+Part (b) catches a source that was switched off in the YAML but is still read by silver. Geography (`psgc` and `psgc_population`) and admin boundaries (`hdx_phl_admin`) are listed in the script. `psgc_population` uses the PSGC load log name, so a new PSGC load makes it STALE until its QC runs again.
+
+| Option | Use |
+|---|---|
+| `--exclude_keys <key>` | Drop a source the silver build does not read |
+| `--source_keys` | Check exactly these sources |
+
+```
+bronze_gate.py --domains diseases --repo_root <repo>
+bronze_gate.py --domains geography
+bronze_gate.py                      # no arguments, or --domains all: every domain (a manual check)
+```
+
+In a notebook, set `sys.argv` before `runpy.run_path(...)` to pass arguments. Without them, the gate checks every domain.
+
+### 7.3 What the gate does and does not protect
+
+| Protected | Not protected |
+|---|---|
+| Silver never builds on a bronze load that failed, crashed, was never checked, or was reloaded after its check | WARN results. These reach silver by design; silver parse statuses, quarantine and silver QC handle them |
+| A FAIL left by an earlier run, even if this run's loader changed nothing | Wrong but well-formed content (wrong year, mislabelled area). Bronze checks faithfulness, not correctness |
+| A run with `--fail_on_qc false` | A file with no `qc.expected_rows` and a plausible wrong count (B03 is WARN) |
+| | Silver run by hand outside the job, unless you run the gate first |
+
+---
+
+## 8. When a run fails: recovery
+
+"Rerun" means `run_bronze.py` again with no flags. Reruns are idempotent:
+
+- each file's rows are replaced, never appended twice;
+- the load log is append-only;
+- only new or changed files load;
+- sources that are not cleared get their QC again.
+
+| # | Scenario | What happens | Fix |
+|---|---|---|---|
+| 1 | A check before the write fails (header, required column, decoding, no rows) | Nothing written for that source; `failed` log row; other sources continue; run ends failed | Fix the YAML or the file, then rerun. It loads as `new` |
+| 2 | Write ok, reconciliation fails | Run fails | Rerun. `bronze_rows_differ` reloads the file; no duplicates |
+| 3 | Log row fails to write | Data committed; run fails | Rerun. No `processed` row, so the file reloads; no duplicates |
+| 4 | QC FAIL, the file is wrong | Rows stay; run stops; gate stops silver | Land a corrected file. Same name: `content_changed` reloads it. New name: update the YAML, delete the old file's rows on purpose, rerun |
+| 5 | QC FAIL caused by the YAML `qc` block (wrong control value) | Run stops; gate stops silver | Fix the YAML and rerun. **The source is re-queued** and its QC reruns, although the file is unchanged |
+| 6 | QC FAIL, nothing fixed, someone reruns | The source is re-queued, FAILs again, and the run fails | Fix the cause first |
+| 7 | QC script crashes | `run_bronze` reports FAIL; state CRASHED or FAIL; gate stops silver | Fix the environment and rerun; the source is re-queued |
+| 8 | Rerun with nothing changed | Every file `skipped_duplicate`; QC only for sources not cleared | Nothing to do |
+| 9 | Parsing setting changed in the YAML | Not detected | `--force_keys <source>`, then rerun that domain's silver |
+| 10 | Latest HDX ingestion run is incomplete | Admin boundaries task fails; never falls back | Finish or retry the HDX ingestion |
+| 11 | PSGC snapshot `blocked` (another snapshot for the same version, or a logged but incomplete batch) | Geography fails; nothing written | Follow the message: review, or delete the partial batch and reload |
+
+Scenarios 5–7 were gaps before 2026-10-19 and are closed by the re-queue and the gate.
+
+**Deliberately not done:**
+
+- writing a `qc_failed` status into `ingestion_metadata` (that would change a contract the API job also uses);
+- deleting bronze rows on a QC FAIL (that would lose the evidence).
+
+---
+
+## 9. Reliability in short
+
+| Property | How bronze provides it |
+|---|---|
+| **Idempotent** | The unit of write is one file or sheet, replaced in one transaction. PSGC uses an insert-only MERGE; HDX skips a complete version. Running twice never doubles rows |
+| **Incremental** | Only new, changed, re-dated or forced files load. Unchanged files keep their rows and load time |
+| **Gated** | Checks before the write, after the write, and on the stored table. A QC FAIL stops the run, and the gate stops silver |
+| **Recoverable** | Every failure has a rerun path (section 8). Landing files are never edited. Delta history keeps earlier versions |
+| **Auditable** | One log row per file per run; one QC row per check; QC runs linked to the job run id |
+
+---
+
+## 10. Sharing
+
+`sharing` is set per YAML entry: `open`, `public` or `restricted`.
+
+- **Restricted** covers the FOI files, the patient-level Davao extract, the bed occupancy file and IHME GBD (licence).
+- Restricted values are never copied into docs or GitHub, and bronze QC writes no column profile for them.
+- Gold publishes restricted data as aggregates only.
+- Unity Catalog grants are not applied yet (limit L6).
+
+---
+
+## 11. Inventory (summary)
+
+| Domain | Tables | Main sources |
+|---|---|---|
+| Diseases | 16 + 2026-10-14 entries (TB programme, PhilHealth claims) | DOH FOI dengue and TB, UP NOAH, HDX dengue, PSA deaths / morbidity / notifiable, FHSIS TB and morbidity, Davao hospital pneumonia, PhilHealth claims, IHME GBD |
+| Facilities | 15 | NHFR, HFSRB lists, HDX healthsites, PSA hospital / bed / BHS tables, bed occupancy, FHSIS primary care |
+| Workforce | 3 | FHSIS health workers, PSA government practitioners, PSMO oncologists |
+| Socioeconomic | 5 | PSA poverty, health expenditure (2), child mortality, PSGC datafile |
+| Geography | 2 | PSGC API snapshot (Q2_2024, 43,762 records); HDX COD-AB boundaries (1,747 features: ADM1 17, ADM2 88, ADM3 1,642) |
+
+**Confirm the final counts** from `ingestion_metadata` after the next full run. The per-table inventory is in `docs/bronze.md`.
+
+**Databricks run, 2026-10-19 (PHT)**
+
+| Step | Result |
+|---|---|
+| Baseline QC (5 domain QC scripts and geography QC, run by hand) | Wrote the first `quality.qc_results` rows for 17 sources whose last QC predated the quality schema. The gate had stopped on them as NOT_CHECKED, as designed |
+| `bronze_gate.py`, all domains | 41 sources: 39 PASS, 2 WARN, 0 blocking. Gate passed |
+| WARN 1: `philhealth_foi_claims_hospital` B08 | 19 exact repeat rows in the source. Silver sums them (YAML notes) |
+| WARN 2: `doh_fhsis_demographic` B08 (workforce table) | 6 identical rows with a blank `area_name` in the 2019 workbook, sheet *Health Workers Part2*. Silver drops blank-area rows |
+| `run_bronze.py` (geography, admin boundaries, diseases) | All unchanged. Diseases re-queued the 4 `doh_fhsis` entries; their QC passed (75 checks, 0 FAIL), but the run reported FAIL because it looked them up by entry name. Fixed the same day (section 5.1). Facilities, workforce and socioeconomic still to run |
+
+---
+
+## 12. Known limits and open items
+
+| # | Limit | Current treatment |
+|---|---|---|
+| L1 | The loader code is copied into four domain files, and the QC code into four QC files | Keep them in sync. A shared module with `--domain` is in the backlog |
+| L2 | Parsing-setting and loader-code changes are not detected | `--force_keys`. Backlog: hash the entry's settings into the load log |
+| L3 | `mergeSchema` adds unexpected columns silently; no statistical drift checks | Backlog: schema and row-count drift checks on `qc_results` |
+| L4 | HDX boundaries write no `ingestion_metadata` row | The gate cannot detect STALE for `hdx_phl_admin`; HB01/HB02 reconcile counts to the manifest instead |
+| L5 | Lineage column names differ between file loaders, PSGC and HDX | Silver lineage code is not fully shared. Backlog: align names |
+| L6 | `sharing: restricted` is declared only | Backlog: Unity Catalog grants |
+| L7 | B03 is only WARN for files with no `qc.expected_rows` | Add expected counts. Query in section 6.5 |
+| L8 | `dq_utils._now()` writes naive UTC timestamps. PySpark reads naive times in the driver's OS timezone | Correct on Databricks (UTC drivers). Elsewhere, set the OS timezone to UTC or change `_now()` to `datetime.now(timezone.utc)` |
+| L9 | New GB codes are not in `check_registry`; population QC uses `strict_registry=True`, the others False | Add GB01–GB13 to `quality_registry_seed.sql`; switch all scripts to strict after the seed |
+| L10 | Facilities entries 1–13 have no `header_check` | A shifted column in a `names` layout would load under the wrong names. Backlog |
+| L11 | `_as_of_date` mixes release and download dates; several marked CONFIRM | Backlog: split the two dates |
+| L12 | PSGC is ingested twice (API snapshot under geography, datafile under socioeconomic) | The platform stands on the Q2_2024 API snapshot. Backlog: one owner per vintage |
+| L13 | Files are read on the driver (largest: PhilHealth claims, 245,405 rows) | Fine today. Backlog: Spark reads for large files |
+| L14 | The 2026-10-19 changes are only partly proven on Databricks. The gate ran on the real workspace (41 sources, 0 blocking). `run_bronze` stopped after diseases because of the `source_key_override` bug, since fixed | Rerun `run_bronze` for all domains and record the summary in section 11 |
+| L15 | `doh_fhsis_demographic` is the source key in both workforce and facilities (two bronze tables). The gate matches on `source_key` only, so one domain's QC result clears the other | Backlog: match on domain and source key in `bronze_gate.py` |
+
+---
+
+## 13. Running bronze without Databricks
+
+Bronze needs four capabilities. None of them is Databricks-only.
+
+| Capability | Used for | On Databricks | Open-source way |
+|---|---|---|---|
+| File storage for landing files | `<landing_root>/<domain>/<source>/` folders | Unity Catalog Volume | A local folder or object store. Set `landing_root` (file YAMLs), `psgc.landing_path` and `hdx_phl_admin.landing_path`; keep the layout below them |
+| Spark with a versioned table format | One table per source; `replaceWhere` / `MERGE`; `ingestion_metadata`; QC table versions | Delta tables in Unity Catalog | Apache Spark 4.x with open-source Delta Lake |
+| Python with `pyyaml` and `openpyxl` | Reading the YAML and the Excel files | Job environment libraries | `pip install pyyaml openpyxl` |
+| Running loaders and QC in order, stopping on failure | `run_bronze.py`, then `bronze_gate.py` before silver | Job tasks | `python run_bronze.py`, then `python bronze_gate.py --domains <d>`, from any scheduler. Both exit non-zero on a failure |
+
+**What carries over unchanged**
+- The incremental rule (checksum computed in Python).
+- YAML-driven loading.
+- The lineage columns.
+- The QC checks and `dq_utils.py`.
+- The re-queue and the gate.
+
+**What to change**
+- **Paths:** the landing paths in the YAML files.
+- **Three-part names:** keep a `public_health` catalog, or switch to two-part names. The PSGC loader and QC, and the HDX loader, check for three-part names, so relax those checks if you drop the catalog.
+- **`/Volumes` paths:** the HDX loader and QC accept only `/Volumes/...` paths. Change `safe_volume_file` / `safe_handoff_path` for another storage root.
+- **Timezone:** run the driver on UTC, or apply the `_now()` fix (limit L8).
+- **Re-pulling sources:** the PSGC and HDX landing jobs need network access to their APIs. The bronze loaders read only what is already landed.
+
+See `docs/platform-requirements.md` for versions and the full list.
+
+---
+
+## 14. History of updates
+
+| Date | Change |
+|---|---|
+| 2026-10-04 – 10-05 | First bronze loads per dataset, starting with diseases. Bronze QC written per domain |
+| 2026-10-06 | All file domains moved to the YAML-driven loader. Shared `ingestion_metadata` (15 columns) |
+| 2026-10-07 | Quality schema `public_health.quality`; bronze QC writes through `DQRun` |
+| 2026-10-08 | Bronze table contract fixed: no new columns on existing tables; lineage identifiers come from `ingestion_metadata` |
+| 2026-10-14 | Incremental file loaders (`2026-10-14.1`) and `run_bronze.py` for the four file domains |
+| 2026-10-15 | PSGC loader writes `ingestion_metadata` and a QC handoff; HDX loader as a job script |
+| 2026-10-16 / 10-17 | Full runs 1 and 2, end to end |
+| 2026-10-19 | **QC re-queue** in `run_bronze.py`. **Preload gate** (`bronze_gate.py`, one job task per domain). **Geography and admin boundaries in `run_bronze.py`**, with no hard-coded HDX run path and no `admin_boundaries_run_dir` parameter. Geography QC moved to `DQRun` (GB00–GB13, new GB13 log check). All QC scripts: YAML overrides validated and recorded; B13 FAIL when a load cannot be verified. Facilities and population QC `batch_id` back to the contract form. Admin QC: hard-coded handoff path removed. Geography QC runs with no arguments (handoff from `ingestion_metadata`). `run_bronze` maps `source_key_override` (the `doh_fhsis` entries were re-queued as NOT_CHECKED on every run and reported as QC FAIL) and QCs entries that share a key together. Population payload QC moved into `run_bronze` (geography) and the gate; the `qc_bronze_psgc_population` job task is removed |
