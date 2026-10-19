@@ -1,5 +1,4 @@
 # =============================================================================
-# admin_boundaries_silver_qc.py
 # Silver QC for HDX administrative boundaries (public_health.silver.admin_boundaries_silver)
 #
 # Checks one persisted HDX boundary snapshot in Silver against its Bronze source and the PSGC
@@ -38,6 +37,12 @@
 #     only looked next to __file__, which a notebook does not have (No module named 'dq_utils').
 #   - Table names come from config/sources_geography.yaml; source version and batch are found
 #     instead of hard-coded.
+#
+# Rule 2a (2026-10-19)
+#   - AS04 reads the admin levels (hdx_phl_admin.required_levels) and geometry types
+#     (silver_qc.accepted_geometry_types) from the YAML the build uses, instead of typed lists.
+#   - AS08 reads the special-structure names from silver_qc.special_structures, the same lists
+#     admin_boundaries_silver.py classifies with.
 # =============================================================================
 
 import argparse
@@ -178,6 +183,37 @@ JOB_RUN_ID = param(ARGS.job_run_id, "job_run_id")
 FAIL_ON_ERROR = param(ARGS.fail_on_error, "fail_on_error", default="true").lower() == "true"
 DQ_SCHEMA_NAME = param(ARGS.dq_schema, "dq_schema", default=DQ_SCHEMA)
 
+
+# AS04 / AS08 settings from the YAML (same values the build uses). A missing list stops the run.
+def sql_list(values):
+    return ", ".join("'" + str(v).replace("'", "''") + "'" for v in values)
+
+
+hdx_silver_qc = hdx_cfg.get("silver_qc") or {}
+ADMIN_LEVELS = [str(v) for v in hdx_cfg.get("required_levels") or []]
+GEOMETRY_TYPES = [str(v) for v in hdx_silver_qc.get("accepted_geometry_types") or []]
+_special = hdx_silver_qc.get("special_structures") or {}
+SPECIAL_ADM2_PREFIXES = [str(v) for v in _special.get("adm2_name_prefixes") or []]
+SPECIAL_ADM2_NAMES = [str(v) for v in _special.get("adm2_names") or []]
+SPECIAL_ADM3_PARENTS = [str(v) for v in _special.get("adm3_parent_adm2_names") or []]
+for _name, _values in (("hdx_phl_admin.required_levels", ADMIN_LEVELS),
+                       ("hdx_phl_admin.silver_qc.accepted_geometry_types", GEOMETRY_TYPES),
+                       ("hdx_phl_admin.silver_qc.special_structures",
+                        SPECIAL_ADM2_PREFIXES + SPECIAL_ADM2_NAMES + SPECIAL_ADM3_PARENTS)):
+    if not _values:
+        raise ValueError(f"{_name} is missing or empty in {CONFIG_PATH}")
+
+# SQL for "this row is a documented special structure" (AS08)
+_adm2_terms = [f"boundary_name LIKE '{p.replace(chr(39), chr(39) * 2)}%'" for p in SPECIAL_ADM2_PREFIXES]
+if SPECIAL_ADM2_NAMES:
+    _adm2_terms.append(f"boundary_name IN ({sql_list(SPECIAL_ADM2_NAMES)})")
+_special_terms = []
+if _adm2_terms:
+    _special_terms.append(f"(admin_level = '2' AND ({' OR '.join(_adm2_terms)}))")
+if SPECIAL_ADM3_PARENTS:
+    _special_terms.append(f"(admin_level = '3' AND adm2_name IN ({sql_list(SPECIAL_ADM3_PARENTS)}))")
+SPECIAL_STRUCTURE_SQL = " OR ".join(_special_terms)
+
 print(f"Config          : {CONFIG_PATH}")
 print(f"Silver table    : {SILVER_TABLE}")
 print(f"Bronze table    : {BRONZE_TABLE}")
@@ -305,11 +341,11 @@ with DQRun(
         total_count=silver_rows,
     )
 
-    # AS04: only ADM1/2/3 and polygon boundary types are allowed.
-    invalid_values = count_sql("""
+    # AS04: only the configured admin levels and geometry types are allowed.
+    invalid_values = count_sql(f"""
         SELECT COUNT(*) FROM beginner_boundaries_silver
-        WHERE admin_level IS NULL OR admin_level NOT IN ('1', '2', '3')
-           OR geometry_type IS NULL OR geometry_type NOT IN ('Polygon', 'MultiPolygon')
+        WHERE admin_level IS NULL OR admin_level NOT IN ({sql_list(ADMIN_LEVELS)})
+           OR geometry_type IS NULL OR geometry_type NOT IN ({sql_list(GEOMETRY_TYPES)})
     """)
     dq.record(
         "AS04",
@@ -322,6 +358,7 @@ with DQRun(
         threshold=0,
         fail_count=invalid_values,
         total_count=silver_rows,
+        expected=f"admin_level in {ADMIN_LEVELS}; geometry_type in {GEOMETRY_TYPES}",
     )
 
     # ASB05: compares total counts only (AS05 in the detailed script also compares per level).
@@ -362,17 +399,14 @@ with DQRun(
     )
 
     # AS08: allow a null PSGC code ONLY for the documented special structures.
-    classification_issues = count_sql("""
+    classification_issues = count_sql(f"""
         SELECT COUNT(*) FROM beginner_boundaries_silver
         WHERE psgc_match_status IS NULL
            OR psgc_match_status NOT IN ('CODE_MATCH', 'HIERARCHY_MATCH', 'NAME_LEVEL_MATCH',
                                        'TYPE_CONTEXT_MATCH', 'NAME_VARIANT_MATCH', 'SPECIAL_STRUCTURE')
            OR (psgc_match_status <> 'SPECIAL_STRUCTURE' AND (psgc_code IS NULL OR TRIM(psgc_code) = ''))
            OR (psgc_match_status = 'SPECIAL_STRUCTURE' AND (
-                psgc_code IS NOT NULL OR NOT COALESCE(
-                    (admin_level = '2' AND (boundary_name LIKE 'Metropolitan Manila%'
-                        OR boundary_name IN ('City of Isabela (not a province)', 'Special Geographic Area')))
-                    OR (admin_level = '3' AND adm2_name = 'Special Geographic Area'), FALSE)))
+                psgc_code IS NOT NULL OR NOT COALESCE({SPECIAL_STRUCTURE_SQL}, FALSE)))
     """)
     dq.record(
         "AS08",

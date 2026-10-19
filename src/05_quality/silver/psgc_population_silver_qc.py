@@ -65,8 +65,15 @@
 # Q2_2024 payload). The live lists are in the qc_results detail of S54, S55, S56.
 #   S54/S56: Negros Island Region has no 2015 / 2020 region rows; Sulu has no
 #            2024 rows.
-#   S55: Maguindanao del Norte 2015 and 2020 (province total excludes Cotabato
-#        City), Benguet 2015 (444,224 vs 446,224 in the source).
+#   S55: provinces: Maguindanao del Norte 2015 and 2020 (province total excludes
+#        Cotabato City), Benguet 2015 (444,224 vs 446,224 in the source); regions:
+#        the ones changed by the Negros Island Region and BARMM regrouping.
+#
+# Rule 2a pass 2026-10-19 (geography batch)
+#   * S08: the ceiling is the current year (was 2100); the floor stays 1900, before the
+#     first Philippine census (1903). S59 is the exact check on the census years.
+#   * Kept in code: AREA_LEVELS (PSGC vocabulary; geography reads the same list from
+#     sources_geography.yaml) and MAX_CHANGE_PCT (part of S58's meaning).
 # =============================================================================
 
 import argparse
@@ -150,6 +157,8 @@ USABLE_PARSE_STATUS = ("VALID", "VALID_WITH_NOTE")  # population is a number
 # which is part of the check's meaning (its name says 30 percent).
 AREA_LEVELS = ("Reg", "Prov", "City", "Mun", "SubMun", "Bgy")
 MAX_CHANGE_PCT = 30.0
+# S08 floor: before the first Philippine census (1903). The ceiling is the current year.
+YEAR_FLOOR = 1900
 # Census years (S54, S59) and the national control totals (S56) are data facts, so they live in
 # sources_population.yaml under psgc_population.silver_qc (moved there 2026-10-19).
 
@@ -508,17 +517,16 @@ def run_checks(dq, entry):
     )
 
     # -------------------------------------------------------------------------
-    # S08 — Population year is within a basic calendar sanity range.
-    #
-    # No fixed source-specific year range is present in the population YAML,
-    # so this avoids asserting an unsupported historical range.
+    # S08 — Population year is a plausible census year: from 1900 (before the first
+    # Philippine census, 1903) to the current year (a census cannot be in the future).
+    # S59 checks the exact years against census_years in the YAML.
     # -------------------------------------------------------------------------
     invalid_years = scalar(
         f"""
         SELECT COUNT(*)
         FROM {table_name}
         WHERE population_year IS NOT NULL
-          AND (population_year < 1900 OR population_year > 2100)
+          AND (population_year < {YEAR_FLOOR} OR population_year > year(current_date()))
         """
     )
 
@@ -536,7 +544,7 @@ def run_checks(dq, entry):
         total_count=silver_count,
         column_name="population_year",
         detail=(
-            "Population year must be between 1900 and 2100; "
+            f"Population year must be between {YEAR_FLOOR} and the current year; "
             f"observed_range={year_range['min_year']}..{year_range['max_year']}"
         ),
     )
