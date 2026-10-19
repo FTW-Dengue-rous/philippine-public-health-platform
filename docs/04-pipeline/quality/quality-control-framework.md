@@ -1,7 +1,7 @@
 # Quality control framework
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 Quality is enforced at three layers: bronze, silver, and gold. Each layer has QC scripts in `src/05_quality/`.
 
@@ -65,10 +65,27 @@ Silver QC scripts live in `src/05_quality/silver/`. They check:
 
 ## Gold QC
 
-Gold QC is designed to live in `src/05_quality/gold/gold_qc.py` and validate mart output. **Not implemented yet**: the script is currently a placeholder ([known issues](../../08-governance/known-issues-and-backlog.md) KI11), so the checks below are design intent only:
+Gold QC lives in `src/05_quality/gold/gold_qc.py` and validates published gold tables in `public_health.gold`. It runs after the last gold build script (`gold_24_mart_evidence_readiness.sql`) and writes results to `quality.qc_results` via `dq_utils.DQRun`. Any FAIL makes the run raise, so downstream tasks (e.g. dashboard refresh) do not start.
 
-* Mart row counts are non-zero
-* Key columns are non-null
-* Metric columns are within expected ranges
+The gold build scripts already gate their own candidate before publishing (write-audit-publish). Gold QC is the check *after* publishing: it proves the published tables are the ones the pipeline built, are fresh against their inputs, still reconcile with silver, follow the selection contracts, and did not change between two runs on the same inputs.
+
+Implemented checks (14 codes):
+
+| Code | Check | Severity |
+|---|---|---|
+| G00 | QC ran without error | FAIL |
+| G01 | Table has rows | FAIL |
+| G02 | Primary key complete and unique | FAIL |
+| G03 | Grain (natural key) unique | FAIL |
+| G04 | Foreign key resolves to its dimension | FAIL |
+| G05 | Published table = its latest succeeded build (no data write after build version; OPTIMIZE/VACUUM ignored) | FAIL |
+| G06 | Built from the latest build of every input (freshness) | FAIL |
+| G07 | Control total: gold = silver | FAIL (claims: WARN when lower) |
+| G08 | Value and value_status consistent; measures on their basis | FAIL |
+| G09 | Default view / mart / seed readable and not empty | FAIL |
+| G10 | One preferred source per disease series (selection contract) | FAIL |
+| G11 | Measure values in a valid range | FAIL |
+| G12 | Content fingerprint unchanged since the previous QC run (idempotency evidence) | WARN |
+| G13 | Census population change between censuses plausible | WARN |
 
 See [quality check catalog](quality-check-catalog.md) for the full list and [quality results](quality-results.md) for recorded outcomes.

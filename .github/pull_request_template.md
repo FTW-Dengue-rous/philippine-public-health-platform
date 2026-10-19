@@ -1,3 +1,7 @@
+<!--
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-18
+-->
 ## What changed
 <!-- 1–3 bullets -->
 -

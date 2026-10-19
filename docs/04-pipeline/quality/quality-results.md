@@ -1,7 +1,7 @@
 # Quality results
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 Recorded quality check outcomes from Databricks runs. Results are stored in `public_health.quality.qc_results`. Run IDs, timestamps, and the executed revision are in the [2026-10-18 run record](../../06-evidence/2026-10-18-new-workspace-run.md).
 
@@ -58,7 +58,7 @@ Recurring WARN groups on 2026-10-18 (warnings do not block; review them after ea
 
 ## Gold QC results
 
-Gold v2 objects (test_gold2) were built successfully on 2026-10-18 (see the [run record](../../06-evidence/2026-10-18-new-workspace-run.md)). All objects have non-zero row counts:
+Gold objects (`public_health.gold`) were built successfully on 2026-10-18 (see the [run record](../../06-evidence/2026-10-18-new-workspace-run.md)). All objects have non-zero row counts:
 
 | Table | Rows | Verified |
 |---|---|---|
@@ -72,9 +72,9 @@ Gold v2 objects (test_gold2) were built successfully on 2026-10-18 (see the [run
 | `mart_area_burden_indicator` (view) | 2,071 | Built, row count verified |
 | `mart_area_priority` (view) | 12,426 | Built, row count verified |
 
-**There are no automated gold-layer quality checks yet.** The `gold_qc` job task runs `src/05_quality/gold/gold_qc.py`, which is a placeholder (a single comment line; no checks, no writes). Its SUCCESS status means the task executed, not that gold data was validated. Build success plus non-zero row counts are the only gold verification currently recorded. See [known issues](../../08-governance/known-issues-and-backlog.md) KI11 for the backlog item.
+Gold QC is implemented in `src/05_quality/gold/gold_qc.py` with 14 checks (G00-G13) that validate published gold tables and write results to `quality.qc_results` via `dq_utils.DQRun`. See [known issues](../../08-governance/known-issues-and-backlog.md) KI11 (resolved) and the [quality check catalog](quality-check-catalog.md) for the full check list.
 
-The legacy gold v1 `mart_area_service_profile` (2,784 rows; 2026-10-13 build; count verified 2026-10-18) likewise has no recorded gold QC.
+The legacy gold v1 `mart_area_service_profile` (2,784 rows; 2026-10-13 build; count verified 2026-10-18) predates the current gold QC implementation.
 
 ## How to check current results
 
@@ -95,6 +95,6 @@ ORDER BY b.started_at DESC LIMIT 20;
 ## Limitations
 
 * QC results are only as good as the checks configured. Unknown data issues may not be caught.
-* The gold layer has no automated checks yet (KI11).
+* Gold QC checks (G00-G13) are implemented and run after the last gold build script (KI11 resolved).
 * Control totals are verified against the source file at config time. A source file update may change totals.
 * Warnings do not stop the pipeline. Review them after each run.

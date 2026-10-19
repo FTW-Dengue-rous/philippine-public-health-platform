@@ -1,7 +1,7 @@
 # Quality check catalog
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 Complete list of quality checks across bronze, silver, and gold layers.
 
@@ -48,12 +48,23 @@ Implemented in `src/05_quality/silver/silver_cross_domain_qc.py`.
 
 ## Gold checks
 
-**Not implemented.** `src/05_quality/gold/gold_qc.py` is a placeholder (a single comment line); the checks below are design intent, not implemented behavior ([known issues](../../08-governance/known-issues-and-backlog.md) KI11). No gold QC results have ever been recorded.
+Implemented in `src/05_quality/gold/gold_qc.py` via `dq_utils.DQRun`. Checks published gold tables in `public_health.gold` after the last build script. Any FAIL raises and stops downstream tasks.
 
-| Check | Rule | Severity |
-|---|---|---|
-| G01 | Mart row count > 0 | ERROR |
-| G02 | Key columns non-null | ERROR |
-| G03 | Metric columns within expected range | WARN |
+| Check | Rule | Severity | Expected result | Failure action | Implementation |
+|---|---|---|---|---|---|
+| G00 | QC ran without error | FAIL | Script completes | Written by DQRun on crash | `dq_utils.DQRun` |
+| G01 | Table has rows | FAIL | Row count > 0 | Fail run, stop downstream | `gold_qc.py` |
+| G02 | Primary key complete and unique | FAIL | 0 nulls, 0 duplicates | Fail run | `gold_qc.py` |
+| G03 | Grain (natural key) unique | FAIL | 0 duplicate grain tuples | Fail run | `gold_qc.py` |
+| G04 | Foreign key resolves to its dimension | FAIL | 0 unmatched FKs | Fail run | `gold_qc.py` |
+| G05 | Published table = latest succeeded build | FAIL | No data write after build version (OPTIMIZE/VACUUM ignored) | Fail run | `gold_qc.py` |
+| G06 | Built from latest build of every input | FAIL | Gold build version >= every input's latest build version | Fail run | `gold_qc.py` |
+| G07 | Control total: gold = silver | FAIL (claims: WARN when lower) | Row counts reconcile | Fail run | `gold_qc.py` |
+| G08 | Value and value_status consistent | FAIL | Measures on their declared basis | Fail run | `gold_qc.py` |
+| G09 | Default view / mart / seed readable and not empty | FAIL | Readable, non-empty | Fail run | `gold_qc.py` |
+| G10 | One preferred source per disease series | FAIL | Selection contract holds | Fail run | `gold_qc.py` |
+| G11 | Measure values in a valid range | FAIL | Within configured bounds | Fail run | `gold_qc.py` |
+| G12 | Content fingerprint unchanged since previous QC run | WARN | Same as previous (idempotency) | Record warning | `gold_qc.py` |
+| G13 | Census population change between censuses plausible | WARN | Within expected range | Record warning | `gold_qc.py` |
 
 See [quality control framework](quality-control-framework.md) for the framework overview and [quality results](quality-results.md) for recorded outcomes.

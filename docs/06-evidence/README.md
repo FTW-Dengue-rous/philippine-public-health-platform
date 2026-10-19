@@ -1,7 +1,7 @@
 # Evidence
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 Execution records and supporting artifacts that verify the pipeline runs on Databricks.
 
@@ -39,7 +39,7 @@ The `build_log` table was created 2026-10-09 08:05 UTC. Its Delta history shows 
 
 ## Full pipeline run (2026-10-18)
 
-The pipeline (setup, bronze, silver, gold v2) ran end to end in this workspace on 2026-10-18. The manually created job's full 66-task run (513012844601841) succeeded after two run repairs; a race with the concurrently running bundle job caused the two intermediate failures. A 40-task silver-stage run (218424935830057) and the bundle job's 72-task run (23167081408523) also succeeded the same day. Full details, timestamps, and outputs: [2026-10-18 run record](2026-10-18-new-workspace-run.md).
+The pipeline (setup, bronze, silver, gold) ran end to end in this workspace on 2026-10-18. The manually created job's full 66-task run (513012844601841) succeeded after two run repairs; a race with the concurrently running bundle job caused the two intermediate failures. A 40-task silver-stage run (218424935830057) and the bundle job's 72-task run (23167081408523) also succeeded the same day. Full details, timestamps, and outputs: [2026-10-18 run record](2026-10-18-new-workspace-run.md).
 
 ## Verified silver builds (2026-10-18 pipeline runs)
 
@@ -72,9 +72,9 @@ The SQL-built silver tables below were created or rebuilt by the 2026-10-18 orch
 
 *(Source: build_log query, table Delta history (creation timestamps), and COUNT(*) per table, executed 2026-10-18.)*
 
-## Verified gold v2 builds (2026-10-18)
+## Verified gold builds (2026-10-18)
 
-All gold v2 objects in `public_health.test_gold2` were created by the 2026-10-18 runs (first creation 14:11 UTC; final writes 15:09 UTC). The schema contains 12 managed tables (the 5 dimensions, 4 facts, `source_priority`, `priority_weight_params`, `ref_osm_healthsite_point`) and 17 views (all marts, `area_coverage_map`, `fact_area_access`, `huc_province_crosswalk`, and the helper views `v_area_indicator_latest`, `v_disease_metric_totals`, `v_facility_capacity_totals`, `v_workforce_preferred`), verified via `system.information_schema.tables` on 2026-10-18.
+All gold objects in `public_health.gold` were created by the 2026-10-18 runs (first creation 14:11 UTC; final writes 15:09 UTC). The schema contains 12 managed tables (the 5 dimensions, 4 facts, `source_priority`, `priority_weight_params`, `ref_osm_healthsite_point`) and 17 views (all marts, `area_coverage_map`, `fact_area_access`, `huc_province_crosswalk`, and the helper views `v_area_indicator_latest`, `v_disease_metric_totals`, `v_facility_capacity_totals`, `v_workforce_preferred`), verified via `system.information_schema.tables` on 2026-10-18.
 
 | Object | Rows | Build date |
 |---|---|---|
@@ -108,7 +108,7 @@ All gold v2 objects in `public_health.test_gold2` were created by the 2026-10-18
 
 ## Legacy gold v1
 
-`public_health.gold.mart_area_service_profile` (2,784 rows; built 2026-10-13; count verified 2026-10-18) is the earlier v1 build. It remains in the `gold` schema, but the pipeline deploys v2 scripts from `src/04_gold/test_v2/` into `public_health.test_gold2`, and the dashboard reads the v2 tables. See [gold README](../04-pipeline/gold/README.md) for the model version decision.
+An earlier v1 `mart_area_service_profile` (2,784 rows; built 2026-10-13 in the original team workspace; count verified 2026-10-18) used a different grain (`supply_section x area_level x area_key x year x ownership x facility_level`). It was superseded when the v2 model (formerly in schema `test_gold2`) was renamed to `public_health.gold` on 2026-10-19. The current `public_health.gold.mart_area_service_profile` is a view with 109 rows at planning-unit grain. See [gold README](../04-pipeline/gold/README.md) for the model details.
 
 ## Previously unverified — now resolved
 

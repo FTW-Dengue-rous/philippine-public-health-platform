@@ -1,7 +1,7 @@
 # Architecture overview
 
 Owner: Jemma Santiago
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 ## Tech stack
 
@@ -27,7 +27,7 @@ public_health (catalog)
 
 Created by `src/00_setup/schema_setup.sql`. Quality tables created by `src/00_setup/quality_setup.sql`.
 
-The gold layer uses data model v2, which builds into schema `public_health.test_gold2` (to be promoted to `public_health.gold`). The job deploys v2 scripts from `src/04_gold/test_v2/`. All 25 gold v2 build scripts ran successfully on 2026-10-18 in the current workspace (see the [2026-10-18 run record](../06-evidence/2026-10-18-new-workspace-run.md)). See [gold layer](../04-pipeline/gold/README.md) for the full data model and [evidence](../06-evidence/README.md) for verified row counts.
+The gold layer builds into schema `public_health.gold`. The job deploys scripts from `src/04_gold/` (organised into `dimension/`, `fact/`, and `mart/` subfolders). All 24 gold build scripts ran successfully on 2026-10-18 in the current workspace (see the [2026-10-18 run record](../06-evidence/2026-10-18-new-workspace-run.md)). See [gold layer](../04-pipeline/gold/README.md) for the full data model and [evidence](../06-evidence/README.md) for verified row counts.
 
 ## Data flow
 
@@ -92,7 +92,7 @@ Execution order:
 5. **Silver QC** — per-domain QC scripts check silver tables.
 6. **Cross-domain silver QC** — checks that span domains (e.g. geography joins).
 7. **Gold** — SQL scripts build analytical marts.
-8. **Gold QC** — placeholder task; no checks implemented yet ([known issues](../08-governance/known-issues-and-backlog.md) KI11).
+8. **Gold QC** — implemented with 14 checks (G00-G13) that validate published gold tables and write to `qc_results` (KI11 resolved).
 
 Dependency rule: a task waits for the tables it reads AND the QC of those tables. A failing QC (dq_utils raises on ERROR) stops everything downstream.
 
@@ -111,7 +111,7 @@ Quality is enforced at three layers:
 
 1. **Bronze QC** — checks raw data before silver can read it. ERROR severity stops the pipeline.
 2. **Silver QC** — checks cleaned data after each silver build. ERROR severity stops the pipeline.
-3. **Gold QC** — designed but not implemented: `gold_qc.py` is a placeholder ([known issues](../08-governance/known-issues-and-backlog.md) KI11); gold output is not automatically validated before dashboard consumption.
+3. **Gold QC** — implemented: `gold_qc.py` runs 14 checks (G00-G13) after the last gold build script, writing to `qc_results` (KI11 resolved). Any FAIL stops downstream tasks.
 
 Quality results are written to `public_health.quality.qc_results` via `dq_utils.DQRun`. Build lineage is recorded in `build_log`, `build_inputs`, and `row_disposition`. See the [lineage and quality contract](../lineage-qc-contract_v1.3.md) for the shared rules.
 

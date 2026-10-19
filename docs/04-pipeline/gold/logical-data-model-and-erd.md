@@ -1,15 +1,15 @@
 # Logical data model and ERD
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
-Data model v2 is the active gold model. It lives in schema `public_health.test_gold2` and will be promoted to `public_health.gold`.
+The gold data model lives in schema `public_health.gold`. It uses a star schema with 5 dimensions and 4 facts.
 
 BQ1 is the platform's only main business question: Which areas show the largest gaps in health-service availability relative to population and selected indicators of disease burden, and how do these gaps differ by socioeconomic conditions?
 
-## Why v2
+## Design rationale
 
-The team chose v2 over v1 because v2 is self-contained (no reads from the v1 schema), uses a cleaner star schema with 5 dimensions and 4 facts, and answers BQ1 and its supporting analyses (BQ2 is previous scope). v1 tables remain in `public_health.test_gold` for comparison but are not deployed by the job.
+The team chose the current star-schema design (5 dimensions, 4 facts) on 2026-10-14 because it is self-contained, uses a cleaner star schema, and answers BQ1 and its supporting analyses (BQ2 is previous scope). An earlier v1 model used a different grain and has been superseded.
 
 Decision date: 2026-10-14. See [architecture decisions](../../03-architecture/decisions.md) for rationale.
 
@@ -82,7 +82,7 @@ MARTS (built on facts + dims)
 | `fact_disease_metric` | Area x disease x period x source | `area_key`, `disease_key`, `date_key`, `source_key` |
 | `fact_workforce_capacity` | Area x profession x year | `area_key`, `profession`, `date_key` |
 | `fact_area_indicator` | Area x indicator x period | `area_key`, `indicator_key`, `date_key` |
-| `mart_area_service_profile` (v2) | Planning unit | `planning_unit_key` |
+| `mart_area_service_profile` | Planning unit | `planning_unit_key` |
 | `mart_locality_service_presence` | Locality | `area_key` |
 | `mart_base_planning_unit` | Planning area | `planning_unit_key` |
 | `mart_area_burden_indicator` | Area x disease x period | `area_key`, `disease_key`, `date_key` |

@@ -1,7 +1,7 @@
 # Reproducibility
 
 Owner: Jemma Santiago
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 ## What it means
 
@@ -65,18 +65,18 @@ VERSION AS OF TIMESTAMP '<ingested_at>';
 | `diseases_metric_silver` | 131,887 | 2026-10-18 |
 | `socioeconomic_poverty_silver` | 322 | 2026-10-18 |
 | `workforce_headcount_silver` | 28,071 | 2026-10-18 |
-| `test_gold2.mart_area_service_profile` | 109 | 2026-10-18 |
-| `test_gold2.fact_disease_metric` | 593,171 | 2026-10-18 |
-| `test_gold2.fact_facility_capacity` | 30,365 | 2026-10-18 |
-| `test_gold2.fact_workforce_capacity` | 28,071 | 2026-10-18 |
-| `test_gold2.fact_area_indicator` | 8,928 | 2026-10-18 |
+| `public_health.gold.mart_area_service_profile` | 109 | 2026-10-18 |
+| `public_health.gold.fact_disease_metric` | 593,171 | 2026-10-18 |
+| `public_health.gold.fact_facility_capacity` | 30,365 | 2026-10-18 |
+| `public_health.gold.fact_workforce_capacity` | 28,071 | 2026-10-18 |
+| `public_health.gold.fact_area_indicator` | 8,928 | 2026-10-18 |
 | `gold.mart_area_service_profile` (v1) | 2,784 | 2026-10-13 |
 
 These counts are from the latest successful Databricks builds, verified by COUNT(*) queries on 2026-10-18. They should match on rebuild with the same inputs. If they differ, check for changed source files or YAML config.
 
 ## Verified full-pipeline reproduction (2026-10-18)
 
-The full pipeline (setup, bronze, silver, gold v2) executed end to end in the current workspace on 2026-10-18 from the repository working tree (branch `docs-re`, HEAD `e81328f`). The manually created job's full 66-task run succeeded after two run repairs; the two intermediate failures were caused by concurrent execution of the bundle job. See the [2026-10-18 run record](../06-evidence/2026-10-18-new-workspace-run.md) for run IDs, timestamps, and task outcomes. This verifies reproducibility for that revision and workspace setup. It does not verify idempotent rebuilds with unchanged inputs or incremental bronze behavior.
+The full pipeline (setup, bronze, silver, gold) executed end to end in the current workspace on 2026-10-18 from the repository working tree (branch `docs-re`, HEAD `e81328f`). The manually created job's full 66-task run succeeded after two run repairs; the two intermediate failures were caused by concurrent execution of the bundle job. See the [2026-10-18 run record](../06-evidence/2026-10-18-new-workspace-run.md) for run IDs, timestamps, and task outcomes. This verifies reproducibility for that revision and workspace setup. It does not verify idempotent rebuilds with unchanged inputs or incremental bronze behavior.
 
 ## Without restricted data
 

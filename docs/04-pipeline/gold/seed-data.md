@@ -1,13 +1,13 @@
 # Seed data
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 Seed tables are reviewed reference data that the gold layer depends on but that are not derived from silver tables. They encode team decisions and reviewed mappings.
 
 ## `source_priority`
 
-* **Script**: `gold_v2_41_source_priority.sql`
+* **Script**: `gold_10_source_priority.sql`
 * **Purpose**: When multiple sources cover the same metric for the same area and period, `source_priority` stores which source wins. This is a reviewed decision, not derived from data.
 * **Grain**: One row per metric x source.
 * **Columns**: `metric_name`, `source_key`, `priority_rank` (1 = preferred), `rationale`.
@@ -28,17 +28,17 @@ Seed tables are reviewed reference data that the gold layer depends on but that 
 
 ### How it is used
 
-The `fact_default_views` script (gold_v2_44) creates views over each fact table that filter to the preferred source per metric. Dashboard queries read these views instead of the raw fact tables.
+The `fact_default_views` script (gold_13) creates views over each fact table that filter to the preferred source per metric. Dashboard queries read these views instead of the raw fact tables.
 
 ### How to update
 
-1. Edit the VALUES list in `gold_v2_41_source_priority.sql`.
+1. Edit the VALUES list in `gold_10_source_priority.sql`.
 2. Rebuild gold (the script is idempotent -- `CREATE OR REPLACE`).
 3. Document the change in the script comments and in the [change log](../../08-governance/change-log.md).
 
 ## `area_coverage_map`
 
-* **Script**: `gold_v2_42_area_coverage_map.sql`
+* **Script**: `gold_11_area_coverage_map.sql`
 * **Purpose**: Records which areas each fact table covers. Used by `mart_evidence_readiness` to show where the platform has evidence and where it does not.
 * **Grain**: One row per fact table x area.
 * **Sources**: All four fact tables (`fact_facility_capacity`, `fact_disease_metric`, `fact_workforce_capacity`, `fact_area_indicator`).
@@ -56,7 +56,7 @@ The `dim_geography` script includes 7 named areas that do not have PSGC codes:
 | `foreign` | Foreign country | foreign |
 | (5 others) | (named regions for specific source data) | (varies) |
 
-These are reviewed additions to handle source data that does not map to a PSGC code. They are defined as a VALUES list in `gold_v2_11_dim_geography.sql`.
+These are reviewed additions to handle source data that does not map to a PSGC code. They are defined as a VALUES list in `gold_01_dim_geography.sql`.
 
 ## Reference CSVs in `config/reference/`
 

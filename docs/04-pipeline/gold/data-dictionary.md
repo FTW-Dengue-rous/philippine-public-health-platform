@@ -1,13 +1,13 @@
 # Data dictionary
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 Column definitions for the silver and gold tables. For metric formulas, see [metric definitions](metric-definitions.md).
 
-## `mart_area_service_profile` (v1, public_health.gold)
+## `mart_area_service_profile` (earlier version, superseded)
 
-This v1 mart was the dashboard source until the dashboard moved to the v2 `test_gold2` tables. It has 2,784 rows (count verified 2026-10-18). Each row is one supply section, area, year, ownership type, and hospital level.
+This earlier mart was the dashboard source until the dashboard moved to the current gold tables. It has 2,784 rows (count verified 2026-10-18). Each row is one supply section, area, year, ownership type, and hospital level.
 
 | Column | Type | Description |
 |---|---|---|
@@ -41,9 +41,9 @@ This v1 mart was the dashboard source until the dashboard moved to the v2 `test_
 | `rhu_per_10000_pop` | DOUBLE | `rhu_count / population × 10000` (S3 only) |
 | `primary_care_per_10000_pop` | DOUBLE | `health_centers_total / population × 10000` (S3 only) |
 
-## `mart_area_service_profile` (v2, public_health.test_gold2)
+## `mart_area_service_profile` (active model, public_health.gold)
 
-This v2 mart is the active data model. It has 109 rows and 62 columns. Each row is one planning unit. A planning unit is a province (without its highly urbanized cities), a single highly urbanized city (HUC), or one NCR district. Verified schema (DESCRIBE TABLE, 2026-10-18):
+This mart is the active data model. It has 109 rows and 62 columns. Each row is one planning unit. A planning unit is a province (without its highly urbanized cities), a single highly urbanized city (HUC), or one NCR district. Verified schema (DESCRIBE TABLE, 2026-10-18):
 
 | Column | Type | Description |
 |---|---|---|
@@ -1538,9 +1538,9 @@ PSMO members only (medical oncology). This excludes radiation and surgical oncol
 
 ## Gold Layer
 
-The active gold model is **v2**, in schema `public_health.test_gold2`. Scripts are in `src/04_gold/test_v2/` named `gold_v2_NN_<name>.sql`. The model has 5 dimensions, 4 facts, 4 reference tables or views, and 11 marts. Every table (not view) follows the write-audit-publish pattern: inputs, candidate, gates, publish, and `quality.build_log`. Surrogate keys are `xxhash64` of the natural key, so they stay stable across rebuilds. Build order: 00, then {11, 21, 31, 12, 13}, then {20, 30, 35, 40}, then {41, 43, 42, 44}, then 51, 52, {53, 54}, {55, 56, 57}, {61, 62, 63}, 71.
+The active gold model is in schema `public_health.gold`. Scripts are in `src/04_gold/` named `gold_NN_<name>.sql`. The model has 5 dimensions, 4 facts, 4 reference tables or views, and 11 marts. Every table (not view) follows the write-audit-publish pattern: inputs, candidate, gates, publish, and `quality.build_log`. Surrogate keys are `xxhash64` of the natural key, so they stay stable across rebuilds. Build order: 01-05 (dims) -> 06-09 (facts) -> 10-13 (refs) -> 14-15 (base marts) -> 16-20 (marts + fact_area_access) -> 21-24 (case studies + evidence readiness) -> gold_qc.
 
-`mart_area_service_profile` (v2) is documented in the [key tables section above](#data-dictionary) (62 columns, verified schema). The remaining tables are documented below.
+`mart_area_service_profile` is documented in the [key tables section above](#data-dictionary) (62 columns, verified schema). The remaining tables are documented below.
 
 ---
 
@@ -1548,7 +1548,7 @@ The active gold model is **v2**, in schema `public_health.test_gold2`. Scripts a
 
 ---
 
-### `public_health.test_gold2.dim_geography`
+### `public_health.gold.dim_geography`
 
 **Grain:** One area in the current PSGC snapshot (one row per `area_code`), plus named areas that have no PSGC code.
 **Primary key:** `area_key` (BIGINT). **Natural key:** `(area_code)`.
@@ -1578,7 +1578,7 @@ Barangays and the placeholder row `0990100000` are excluded. `planning_unit_key`
 
 ---
 
-### `public_health.test_gold2.dim_date`
+### `public_health.gold.dim_date`
 
 **Grain:** One reporting period under one period convention (year, month, week, or snapshot date).
 **Primary key:** `date_key` (BIGINT). **Natural key:** `(period_basis, period_label)`.
@@ -1600,7 +1600,7 @@ One row per reporting period, not per day. Sources report by year, month, week, 
 
 ---
 
-### `public_health.test_gold2.dim_data_source`
+### `public_health.gold.dim_data_source`
 
 **Grain:** One source dataset, keyed by the `_source_key` that silver rows carry.
 **Primary key:** `data_source_key` (BIGINT). **Natural key:** `(source_dataset)`.
@@ -1623,7 +1623,7 @@ Reviewed list of 25+ source datasets, copied by hand from the `sources_<domain>.
 
 ---
 
-### `public_health.test_gold2.dim_facility`
+### `public_health.gold.dim_facility`
 
 **Grain:** One facility establishment in `facilities_registry_silver` (listed, or carried as `not_listed`).
 **Primary key:** `facility_key` (BIGINT). **Natural key:** `(facility_source_id)`.
@@ -1648,7 +1648,7 @@ Reviewed list of 25+ source datasets, copied by hand from the `sources_<domain>.
 
 ---
 
-### `public_health.test_gold2.dim_disease`
+### `public_health.gold.dim_disease`
 
 **Grain:** One disease or cause.
 **Primary key:** `disease_key` (BIGINT). **Natural key:** `(disease_code)`.
@@ -1675,7 +1675,7 @@ A cause is never summed with its children. PSA, IHME, programme, and PhilHealth 
 
 ---
 
-### `public_health.test_gold2.fact_facility_capacity`
+### `public_health.gold.fact_facility_capacity`
 
 **Grain:** One capacity measurement of one facility group (category, ownership, hospital level) in one area and period, from one source and capacity basis.
 **Primary key:** `fact_facility_capacity_key` (BIGINT).
@@ -1715,7 +1715,7 @@ ALWAYS filter `capacity_basis` before adding anything up. Each basis fills only 
 
 ---
 
-### `public_health.test_gold2.fact_disease_metric`
+### `public_health.gold.fact_disease_metric`
 
 **Grain:** One metric of one disease, area, period, age group, and sex from one source.
 **Primary key:** `fact_disease_metric_key` (BIGINT).
@@ -1758,7 +1758,7 @@ For totals, filter `age_group = 'all_ages' AND sex = 'both_sexes'`. The preferre
 
 ---
 
-### `public_health.test_gold2.fact_workforce_capacity`
+### `public_health.gold.fact_workforce_capacity`
 
 **Grain:** Headcount of one profession in one area and year from one source.
 **Primary key:** `fact_workforce_capacity_key` (BIGINT).
@@ -1785,7 +1785,7 @@ Filter to `source_role = 'preferred'` or to one source to avoid double counting.
 
 ---
 
-### `public_health.test_gold2.fact_area_indicator`
+### `public_health.gold.fact_area_indicator`
 
 **Grain:** One population or socioeconomic indicator of one area and period from one source (long format).
 **Primary key:** `fact_area_indicator_key` (BIGINT).
@@ -1827,7 +1827,7 @@ Never sum across `indicator_name`, `indicator_category`, or `data_source_key`. C
 
 ---
 
-### `public_health.test_gold2.source_priority` (seed table)
+### `public_health.gold.source_priority` (seed table)
 
 **Grain:** One source for one metric, disease scope, geographic level, period grain, and range of years, with its role.
 **Key:** `(metric, disease_scope, geo_level, period_grain, year_from, year_to, data_source_key)`.
@@ -1850,7 +1850,7 @@ Sources overlap on purpose. This table says which source gold shows for each met
 
 ---
 
-### `public_health.test_gold2.area_coverage_map` (view) and `huc_province_crosswalk` (view)
+### `public_health.gold.area_coverage_map` (view) and `huc_province_crosswalk` (view)
 
 **`huc_province_crosswalk`** — One row per HUC outside NCR, with the province it sits in. Key: `huc_area_key`.
 
@@ -1868,7 +1868,7 @@ Sources overlap on purpose. This table says which source gold shows for each met
 
 ---
 
-### `public_health.test_gold2.ref_osm_healthsite_point`
+### `public_health.gold.ref_osm_healthsite_point`
 
 **Grain:** One OpenStreetMap health facility point (healthsites.io export via HDX), placed in a city or municipality.
 **Primary key:** `osm_point_key` (BIGINT). **Natural key:** `(osm_key)` = `osm_type/osm_id`.
@@ -1890,7 +1890,7 @@ NEVER a facility count. OSM data is crowd-sourced, incomplete, and uneven. Shari
 
 ---
 
-### `public_health.test_gold2.v_facility_capacity_totals`, `v_disease_metric_totals`, `v_workforce_preferred`, `v_area_indicator_latest` (views)
+### `public_health.gold.v_facility_capacity_totals`, `v_disease_metric_totals`, `v_workforce_preferred`, `v_area_indicator_latest` (views)
 
 Four thin views (one per fact) that apply each fact's **selection contract**. The selection contract is the set of filters every total must carry so valid rows are never added twice. The views do no computation and create no new table. They are a safe entry point for ad hoc dashboard and Genie totals.
 
@@ -1907,7 +1907,7 @@ Four thin views (one per fact) that apply each fact's **selection contract**. Th
 
 ---
 
-### `public_health.test_gold2.mart_locality_service_presence`
+### `public_health.gold.mart_locality_service_presence`
 
 **Grain:** One city or municipality, with or without a facility. **Key:** `area_key`.
 **Answers:** A1 (no hospital recorded), A2 (highest hospital level), A3 (no licensed primary care recorded), and A4 (population per hospital, bed, or primary care facility).
@@ -1936,7 +1936,7 @@ Four thin views (one per fact) that apply each fact's **selection contract**. Th
 
 ---
 
-### `public_health.test_gold2.mart_base_planning_unit`
+### `public_health.gold.mart_base_planning_unit`
 
 **Grain:** One planning unit, with its census population. **Key:** `planning_unit_key`. This is a helper for the BQ1 marts. It keeps the profile, burden, evidence, and priority marts on the same unit list and denominator.
 
@@ -1952,7 +1952,7 @@ Four thin views (one per fact) that apply each fact's **selection contract**. Th
 
 ---
 
-### `public_health.test_gold2.mart_area_burden_indicator`
+### `public_health.gold.mart_area_burden_indicator`
 
 **Grain:** One planning unit with one burden indicator (a disease, a measure, and a source), in the latest year the source has. Every unit has a row for every indicator, even when it has no value. **Key:** `(planning_unit_key, burden_indicator_key)`.
 **Answers:** N2 (modelled deaths and prevalence by province) and N4 (TB notifications).
@@ -1979,7 +1979,7 @@ Indicators: TB notifications (FHSIS, reported, summed over localities) and IHME 
 
 ---
 
-### `public_health.test_gold2.mart_area_evidence`
+### `public_health.gold.mart_area_evidence`
 
 **Grain:** One planning unit with one indicator, even when the unit has no value. **Key:** `(planning_unit_key, indicator_key)`.
 **Answers:** Why an area is missing from a comparison, and where the platform's evidence is not enough (Supporting).
@@ -2003,7 +2003,7 @@ Nothing is computed here. The view only turns `mart_area_service_profile` and `m
 
 ---
 
-### `public_health.test_gold2.priority_weight_params` (seed) and `mart_area_priority` (view)
+### `public_health.gold.priority_weight_params` (seed) and `mart_area_priority` (view)
 
 **`priority_weight_params`** — One row per weight of one gap type in one weight set. Key: `(weight_set, indicator)`. Weight sets: `equal`, `supply_heavy`, and `equity_heavy`. These are PROPOSED starting values.
 
@@ -2030,7 +2030,7 @@ PROPOSAL: the fifths, the "two of three" rule, and the weight sets are starting 
 
 ---
 
-### `public_health.test_gold2.fact_area_access`
+### `public_health.gold.fact_area_access`
 
 **Grain:** One city or municipality, with two straight-line distances. **Key:** `area_key`.
 **Answers:** The "how far" part of A1 and A2. This does NOT measure distance to a hospital building for the registry measure, because the registry has no coordinates.
@@ -2053,7 +2053,7 @@ Distance is great-circle (haversine) km, with Earth radius 6,371 km. This is a s
 
 ---
 
-### `public_health.test_gold2.mart_tb_case_study`
+### `public_health.gold.mart_tb_case_study`
 
 **Grain:** One city or municipality. **Key:** `area_key`.
 **Answers:** T1 (do places with higher TB notification rates have fewer public health workers?) and T2 (TPT coverage and treatment success by area).
@@ -2081,7 +2081,7 @@ Distance is great-circle (haversine) km, with Earth radius 6,371 km. This is a s
 
 ---
 
-### `public_health.test_gold2.mart_kidney_case_study`
+### `public_health.gold.mart_kidney_case_study`
 
 **Grain:** One province (or NCR) as IHME publishes it. **Key:** `(kidney_unit_key, unit_basis)`.
 **Answers:** K1 — which provinces have high estimated chronic kidney disease mortality but few dialysis stations per population.
@@ -2106,7 +2106,7 @@ These are modelled estimates. Never mix them with registered deaths. Show IHME a
 
 ---
 
-### `public_health.test_gold2.mart_dengue_peak_capacity`
+### `public_health.gold.mart_dengue_peak_capacity`
 
 **Grain:** One area as one dengue source publishes it, in one year. The row shows the peak reported dengue period set beside current recorded hospital beds. **Key:** `(area_key, data_source_key, year)`.
 **Answers:** DP (where were historical dengue peaks largest relative to current recorded capacity?) and N3 (when and where dengue peaks, how concentrated, and repeat high burden). This does NOT answer BQ2, which needs the replay with admission and length-of-stay assumptions.
@@ -2134,7 +2134,7 @@ Three dengue sources are never mixed (the grain keeps `data_source_key`). Weekly
 
 ---
 
-### `public_health.test_gold2.mart_evidence_readiness`
+### `public_health.gold.mart_evidence_readiness`
 
 **Grain:** One silver or gold table, in its latest succeeded build. **Key:** `table_name`.
 **Answers:** SUP6 — is each table built, checked, and built from the latest inputs? (data readiness page).
@@ -2142,10 +2142,10 @@ Three dengue sources are never mixed (the grain keeps `data_source_key`). Weekly
 | Column | Type | Description |
 |---|---|---|
 | `table_name` | STRING | Built table name (PK). |
-| `schema_name` | STRING | `test_gold` or `test_gold2`. |
+| `schema_name` | STRING | `public_health.gold` or `public_health.silver`. |
 | `layer` | STRING | `silver` or `gold`. |
 | `domain` | STRING | Domain. |
-| `model` | STRING | Build model label (`v2` for every v2 file). |
+| `model` | STRING | Build model label (`gold` for every gold file). |
 | `latest_build_id` | STRING | Latest succeeded build ID. |
 | `built_at` | TIMESTAMP | Build timestamp. |
 | `inputs` | INT | Number of inputs recorded for the build. |

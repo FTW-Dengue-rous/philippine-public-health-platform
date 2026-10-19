@@ -1,7 +1,7 @@
 # Handover checklist and final deliverables
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 This document consolidates the final documentation deliverables: a change summary, rubric coverage table, validation results, unresolved gaps, and a handover checklist for the receiving team.
 
@@ -15,7 +15,7 @@ Update 2026-10-18: the pipeline has since been executed end to end in the curren
 
 * Wrote 7 gold documentation files that were previously stubs: [table-catalog](docs/04-pipeline/gold/table-catalog.md), [conceptual-model](docs/04-pipeline/gold/conceptual-model.md), [logical-data-model-and-erd](docs/04-pipeline/gold/logical-data-model-and-erd.md), [business-data-dictionary](docs/04-pipeline/gold/business-data-dictionary.md), [analytical-validation-and-traceability](docs/04-pipeline/gold/analytical-validation-and-traceability.md), [findings-report](docs/04-pipeline/gold/findings-report.md), [seed-data](docs/04-pipeline/gold/seed-data.md).
 * Updated [gold README](docs/04-pipeline/gold/README.md) to clarify data model v2 as the active model.
-* Updated [architecture overview](docs/03-architecture/architecture-overview.md) to mention the v2 gold model and `test_gold2` schema.
+* Updated [architecture overview](docs/03-architecture/architecture-overview.md) to mention the gold model and `public_health.gold` schema (then `test_gold2`, renamed 2026-10-19).
 * Updated [lineage map](docs/02-data/lineage-map.md) to reference v2 gold scripts instead of v1.
 * Integrated the full business question framework (BQ1, BQ2, N1-N4, S1-S2, A1-A2, W1-W2, E1-E2, P1-P2, D1-D5, SUP1-SUP6, CON1-CON3) into [problem-and-business-context](docs/01-context/problem-and-business-context.md), [scope](docs/01-context/scope.md), [data-marts](docs/04-pipeline/gold/data-marts.md), root [README](README.md), and [known-issues-and-backlog](docs/08-governance/known-issues-and-backlog.md).
 * Updated [change log](docs/08-governance/change-log.md).
@@ -47,7 +47,7 @@ Update 2026-10-18: the pipeline has since been executed end to end in the curren
 | Item | Method | Result |
 |---|---|---|
 | All docs are non-empty | Read every file in `docs/` | No stubs, no empty sections, no placeholders |
-| Gold v2 model documented | Read `gold_v2_00_setup.sql` and job YAML | 5 dims, 4 facts, 11 marts, build order documented |
+| Gold model documented | Read `src/04_gold/` scripts and gold README | 5 dims, 4 facts, 4 reference, 11 marts, build order documented |
 | Business question framework | User-provided BQ table | Integrated into 5 docs with status and caveats |
 | Cross-references consistent | Checked table names, script names, schema names across docs | Lineage map updated to v2, gold README updated, architecture overview updated |
 | Source catalog matches configs | Cross-checked `data-sources.md` against YAML files in `config/` | All source keys, formats, and coverage match |
@@ -59,10 +59,10 @@ Update 2026-10-18: the pipeline has since been executed end to end in the curren
 | Gap | What is missing | Impact | Where documented |
 |---|---|---|---|
 | `facilities_osm_point_silver` | Resolved 2026-10-18: built by the bundle-job run (16,030 rows; Delta history and QC verified) | None | [2026-10-18 run record](docs/06-evidence/2026-10-18-new-workspace-run.md) |
-| Gold QC checks | `gold_qc.py` is a placeholder; no automated gold checks exist (row counts are verified, content checks are not) | Gold data quality is not automatically validated | [known issues](docs/08-governance/known-issues-and-backlog.md) KI11 |
+| Gold QC checks | Resolved 2026-10-19: `gold_qc.py` now implements 14 checks (G00-G13) writing to `qc_results` (KI11 resolved) | Gold data quality is automatically validated after the last gold build | [known issues](docs/08-governance/known-issues-and-backlog.md) KI11 (resolved) |
 | `mart_capacity_gap` (BQ1) | Not built; needs province/HUC/NCR analysis unit | BQ1 main question not answered | [data-marts](docs/04-pipeline/gold/data-marts.md), [backlog](docs/08-governance/known-issues-and-backlog.md) |
 | `mart_surge_stress_test` (BQ2) | Not built; needs admission share and LOS parameters | BQ2 main question not answered | [data-marts](docs/04-pipeline/gold/data-marts.md), [backlog](docs/08-governance/known-issues-and-backlog.md) |
-| Dashboard S3 page | No widgets | S3 not visible on dashboard | [dashboard-guide](docs/05-dashboard/dashboard-guide.md), [backlog](docs/08-governance/known-issues-and-backlog.md) |
+| Dashboard S3 page | Resolved: S3 is covered via the Access page (registry-based presence) | Full FHSIS BHS/RHU counts remain query-only | [dashboard-guide](docs/05-dashboard/dashboard-guide.md) |
 | FOI ticket numbers | Marked CONFIRM in FOI log | Provenance incomplete for 3 FOI requests | [foi-data-request-log](docs/02-data/foi-data-request-log.md) |
 | Handover walkthrough | Not conducted | Cannot claim handover is tested | [team-and-timeline](docs/08-governance/team-and-timeline.md#handover-readiness) |
 | Prod service principal | `databricks.yml` has TODO for SP UUID | Prod deployment cannot run | [setup-guide](docs/07-operations/setup-guide.md) |
@@ -94,7 +94,7 @@ Update 2026-10-18: the pipeline has since been executed end to end in the curren
 - [ ] Verify all tasks succeeded (green in Jobs UI).
 - [ ] Check row counts match [runbook expected outputs](docs/07-operations/runbook.md#expected-outputs).
 - [ ] Check `SELECT * FROM public_health.quality.qc_results WHERE status = 'FAIL'` returns no rows (a failed check stores status = FAIL; WARN does not block).
-- [ ] Open the Lakeview dashboard and confirm S1 and S2 pages show data.
+- [ ] Open the Lakeview dashboard and confirm all eight pages show data.
 
 ### Understand the system
 
@@ -130,9 +130,9 @@ Update 2026-10-18: the pipeline has since been executed end to end in the curren
 
 ### Known issues to address
 
-- [ ] Verify `facilities_osm_point_silver` table existence.
-- [ ] Verify gold v2 fact table row counts and content.
-- [ ] Populate the dashboard S3 page with widgets.
+- [x] `facilities_osm_point_silver` verified (16,030 rows, built 2026-10-18).
+- [ ] Verify gold fact table row counts and content.
+- [x] S3 is covered via the Access page (registry-based presence). Full FHSIS BHS/RHU counts remain query-only.
 - [ ] Confirm FOI ticket numbers.
 - [ ] Clean income class values for E2.
 - [ ] Build `mart_capacity_gap` (BQ1 main mart).

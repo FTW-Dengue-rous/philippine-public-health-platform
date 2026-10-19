@@ -1,7 +1,7 @@
 # Documentation index
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 This directory contains the full documentation for the Philippine Public Health Platform. Start here to find what you need.
 
@@ -84,7 +84,19 @@ BQ1 breaks down into 20+ analytical questions across five pillars: Need, Supply,
 |---|---|
 | [bronze/](04-pipeline/bronze/README.md) | Bronze layer: loaders, configs, per-domain docs |
 | [silver/](04-pipeline/silver/README.md) | Silver layer: SQL builds, per-domain docs |
-| [gold/](04-pipeline/gold/README.md) | Gold layer: marts, data model, dictionary, metrics |
+| [gold/](04-pipeline/gold/README.md) | Gold layer: marts, data model, dictionary, metrics, findings |
+| [gold/table-catalog.md](04-pipeline/gold/table-catalog.md) | Full table list with grain and row counts |
+| [gold/conceptual-model.md](04-pipeline/gold/conceptual-model.md) | Business concepts and entity relationships |
+| [gold/logical-data-model-and-erd.md](04-pipeline/gold/logical-data-model-and-erd.md) | ERD and logical data model |
+| [gold/data-dictionary.md](04-pipeline/gold/data-dictionary.md) | Column-level data dictionary |
+| [gold/business-data-dictionary.md](04-pipeline/gold/business-data-dictionary.md) | Stakeholder-facing term definitions |
+| [gold/metric-definitions.md](04-pipeline/gold/metric-definitions.md) | Metric formulas and interpretation |
+| [gold/data-marts.md](04-pipeline/gold/data-marts.md) | Question-to-mart mapping |
+| [gold/sample-queries.md](04-pipeline/gold/sample-queries.md) | SQL usage examples |
+| [gold/gold-usage-rules.md](04-pipeline/gold/gold-usage-rules.md) | Join, filter, and aggregation rules |
+| [gold/analytical-validation-and-traceability.md](04-pipeline/gold/analytical-validation-and-traceability.md) | Finding-to-source traceability |
+| [gold/findings-report.md](04-pipeline/gold/findings-report.md) | Headline findings per business question |
+| [gold/seed-data.md](04-pipeline/gold/seed-data.md) | Reference and configuration tables |
 | [quality/](04-pipeline/quality/quality-control-framework.md) | Quality control framework, check catalog, results |
 
 ### 05-dashboard/

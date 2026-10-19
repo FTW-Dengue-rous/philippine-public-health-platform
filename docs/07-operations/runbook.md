@@ -1,7 +1,7 @@
 # Runbook
 
 Owner: Jemma Santiago
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 ## Execution order
 
@@ -14,7 +14,7 @@ The pipeline runs as a single Databricks job (`ph_public_health_pipeline`). Task
 5. **Silver QC** — checks silver tables.
 6. **Cross-domain silver QC** — checks spanning domains.
 7. **Gold** — SQL builds analytical marts.
-8. **Gold QC** — placeholder. `src/05_quality/gold/gold_qc.py` contains no checks yet; a green `gold_qc` task does not validate gold output ([known issues](../08-governance/known-issues-and-backlog.md) KI11).
+8. **Gold QC** — implemented. `src/05_quality/gold/gold_qc.py` runs 14 checks (G00-G13) after the last gold build script, writing to `qc_results` (KI11 resolved). Any FAIL stops downstream tasks.
 
 ## How to run
 

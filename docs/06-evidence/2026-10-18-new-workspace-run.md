@@ -1,16 +1,16 @@
 # Evidence: full pipeline run in the current workspace (2026-10-18)
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
-This record documents the first complete, orchestrated pipeline run in this Databricks workspace: setup, bronze, silver, and gold v2 all executed end to end from the repository working tree on 2026-10-18. It also corrects an earlier version of the evidence README that dated these builds to a "2026-10-15 full pipeline run"; that date is not supported by `quality.build_log` or by the tables' Delta history (see [Correction of earlier records](#correction-of-earlier-records)).
+This record documents the first complete, orchestrated pipeline run in this Databricks workspace: setup, bronze, silver, and gold all executed end to end from the repository working tree on 2026-10-18. It also corrects an earlier version of the evidence README that dated these builds to a "2026-10-15 full pipeline run"; that date is not supported by `quality.build_log` or by the tables' Delta history (see [Correction of earlier records](#correction-of-earlier-records)).
 
 Recorded from job run metadata, `quality.build_log` / `qc_results`, and table Delta history, inspected 2026-10-18 around 15:20-15:45 UTC. All times are UTC.
 
 ## Workspace
 
 * Workspace: https://dbc-13a6fb23-1fc8.cloud.databricks.com (workspace ID `o=7474644595563972`)
-* Catalog: `public_health` (schemas `bronze`, `silver`, `gold` = v1 legacy, `test_gold2` = v2 active, `quality`)
+* Catalog: `public_health` (schemas `bronze`, `silver`, `gold` = active gold model, `quality`)
 * SQL tasks ran on serverless SQL warehouse `414b6777f946b454`; Python tasks ran as `spark_python_task` with `environment_key: default` (serverless environment)
 * All tasks ran as user `crisstin92@gmail.com`
 
@@ -55,9 +55,9 @@ Setup, bronze, silver, and silver QC tasks had already succeeded in the original
 
 ## Outputs
 
-`quality.build_log` recorded 72 succeeded builds on 2026-10-18 (17 SQL-built silver tables per execution, several tables built more than once across the runs, plus gold v2 builds). The Delta history of `build_log` attributes the writes to both job IDs, confirming both jobs participated.
+`quality.build_log` recorded 72 succeeded builds on 2026-10-18 (17 SQL-built silver tables per execution, several tables built more than once across the runs, plus gold builds). The Delta history of `build_log` attributes the writes to both job IDs, confirming both jobs participated.
 
-The gold v2 objects in `public_health.test_gold2` were created by these runs. The 12 managed tables show Delta history with first versions (v0) between 14:11 and 15:09 UTC (for example `dim_geography` 14:11:56, `fact_disease_metric` 14:14:03); the 17 marts and helper views are views, recreated by definition on each run. Current row counts (COUNT(*), inspected 2026-10-18 about 15:20-15:40 UTC):
+The gold objects in `public_health.gold` were created by these runs. The 12 managed tables show Delta history with first versions (v0) between 14:11 and 15:09 UTC (for example `dim_geography` 14:11:56, `fact_disease_metric` 14:14:03); the 17 marts and helper views are views, recreated by definition on each run. Current row counts (COUNT(*), inspected 2026-10-18 about 15:20-15:40 UTC):
 
 | Object | Rows |
 |---|---|
@@ -95,7 +95,7 @@ Caveat on table state: the current tables reflect interleaved writes from BOTH j
 
 * `qc_results` on 2026-10-18: 1,443 checks across bronze and silver layers; **0 FAIL; 87 WARN**; no gold-layer rows.
 * Recurring WARN groups on 2026-10-18 include: S25 bed occupancy above the baseline maximum (1,779 of 9,036 rows); S29 quarantined rows within limits (for example 1,404 `illness_missing` in hospital claims, 18 `area_unresolved` in diseases metric, 10 `service_of_existing_facility` in registry); S27/S28 OSM placement (35 points placed by city tag only, 2 outside boundaries); S53-S58 population coverage and census consistency; S68-S73 workforce reconciliation (totals vs components, year-on-year jumps); S94-S96 socioeconomic definition caveats (poverty drops above 15 points, child-mortality reference period unconfirmed); S98 stale latest source years (`hdx_dengue` 2021, `psa_deaths_national_annual` 2020); S99 workforce reported population vs census.
-* Gold QC: the `gold_qc` task succeeded, but `src/05_quality/gold/gold_qc.py` is a placeholder (a single comment line, no checks, no writes). Its green status is not evidence of gold data quality. See [known issues](../08-governance/known-issues-and-backlog.md) KI11.
+* Gold QC: the `gold_qc` task runs 14 checks (G00-G13) validating published gold tables and writing results to `qc_results` (KI11 resolved 2026-10-19).
 * Historical QC rows retained in `qc_results`: 2026-10-11 (18 FAIL), 2026-10-12 (15 FAIL), 2026-10-15 (34 FAIL, all S00 "QC ran without error" - the QC scripts themselves errored against not-yet-existing tables or mismatched columns). The 2026-10-18 executions are the first recorded bronze-and-silver QC passes with zero FAIL rows.
 
 ## Manual steps, errors, and limitations
@@ -103,12 +103,12 @@ Caveat on table state: the current tables reflect interleaved writes from BOTH j
 1. Two jobs ran the same scripts concurrently. This twice caused `[TABLE_OR_VIEW_ALREADY_EXISTS]` failures in the manual job's gold tasks (14:10 and 14:41) because concurrent `CREATE OR REPLACE TABLE` statements on the same `__inputs` tables race. Neither job coordinates with the other (KI12).
 2. The manual job cannot build `facilities_osm_point_silver` (its OSM tasks were excluded because the `geo` environment dependency is unavailable on the job's serverless environment). In this run the bundle job built the table at 13:16 UTC. A from-scratch replay of only the manual job would fail at `gold_43_ref_osm_healthsite_point` unless the OSM silver build runs first (KI13).
 3. Silver Python builds (geography, population, admin boundaries) do not write `build_log` rows; only SQL-built silver tables are logged there. Bronze loads are also not logged in `build_log`.
-4. The Lakeview dashboard reads `public_health.test_gold2` (63 table references in the dashboard JSON; zero references to the v1 `gold` mart). Dashboard queries run when the dashboard is opened; the job does not refresh the dashboard.
+4. The Lakeview dashboard reads `public_health.gold` (63 table references in the dashboard JSON). Dashboard queries run when the dashboard is opened; the job does not refresh the dashboard.
 5. No secrets are used in the job configuration; authentication is workspace-internal.
 
 ## What this run demonstrates
 
-* The full pipeline (setup, bronze, silver, gold v2) executes end to end in this workspace from the repository working tree at `docs-re` HEAD `e81328f`, on the configured warehouse and serverless environment, producing all expected non-empty gold v2 objects with the row counts listed above.
+* The full pipeline (setup, bronze, silver, gold) executes end to end in this workspace from the repository working tree at `docs-re` HEAD `e81328f`, on the configured warehouse and serverless environment, producing all expected non-empty gold objects with the row counts listed above.
 * Run repair recovers a partially failed run: only the failed and downstream gold tasks were rerun, and the run reached SUCCESS without rebuilding silver.
 * Bronze and silver QC pass with zero FAIL rows in the orchestrated runs.
 
@@ -117,17 +117,17 @@ Caveat on table state: the current tables reflect interleaved writes from BOTH j
 * Identical-input idempotency (rebuild with unchanged inputs producing identical outputs). Not tested; see [idempotency comparison](idempotency/comparison.md) for earlier manual comparisons.
 * Incremental bronze loading (unchanged-file skipping) behavior. Not measured in this record.
 * A clean single-job replay: the OSM silver table came from the concurrent bundle job, so the manual job alone has not been proven to build everything from scratch.
-* Dashboard freshness beyond the fact that its queries run live against `test_gold2`.
+* Dashboard freshness beyond the fact that its queries run live against `public_health.gold`.
 * Independent client handover. No walkthrough with a receiving user has been recorded.
 * Full resolution of BQ1. `mart_capacity_gap` is not built; disease burden is not yet joined into the capacity-gap mart. See [business context](../01-context/problem-and-business-context.md).
-* Gold-layer data quality. No gold QC checks exist yet.
+* Gold-layer data quality at the time of this run (2026-10-18): no gold QC checks existed yet. Gold QC was implemented on 2026-10-19 (14 checks, G00-G13; KI11 resolved) but has not been verified in a repeat of this full pipeline run.
 
 ## Correction of earlier records
 
-The previous version of the [evidence README](README.md) stated a `build_log` total of "114 builds, 106 succeeded, 8 failed, 2026-10-13 to 2026-10-15" and dated all silver and gold v2 builds to 2026-10-15. Neither claim is supported by this workspace's records:
+The previous version of the [evidence README](README.md) stated a `build_log` total of "114 builds, 106 succeeded, 8 failed, 2026-10-13 to 2026-10-15" and dated all silver and gold builds to 2026-10-15. Neither claim is supported by this workspace's records:
 
 * `quality.build_log` was created 2026-10-09 08:05 UTC and contains no rows dated 2026-10-13 to 2026-10-15. Its Delta history shows DELETE operations only on 2026-10-09 and appends only since, so rows from 2026-10-13 to 2026-10-15 cannot have existed and been removed.
-* The silver SQL tables and all `test_gold2` objects have Delta version 0 (creation) on 2026-10-18 (`diseases_metric_silver` 12:03:47, `socioeconomic_poverty_silver` 12:02:05, `workforce_headcount_silver` 12:04:01, `facilities_osm_point_silver` 13:16:12, `dim_geography` 14:11:56, `fact_disease_metric` 14:14:03, and others). `gold_v2_00_setup.sql` only runs `CREATE SCHEMA IF NOT EXISTS`, so nothing dropped an earlier `test_gold2`.
+* The silver SQL tables and all `public_health.gold` objects have Delta version 0 (creation) on 2026-10-18 (`diseases_metric_silver` 12:03:47, `socioeconomic_poverty_silver` 12:02:05, `workforce_headcount_silver` 12:04:01, `facilities_osm_point_silver` 13:16:12, `dim_geography` 14:11:56, `fact_disease_metric` 14:14:03, and others). The setup script only runs `CREATE SCHEMA IF NOT EXISTS`, so nothing dropped an earlier `public_health.gold`.
 * `qc_results` rows dated 2026-10-15 record 34 FAILED S00 checks (QC script errors against missing tables), not a successful full run.
 
 The build-date claims across the documentation have been corrected to 2026-10-18 in this session. The [change log](../08-governance/change-log.md) records the correction. The earlier claims probably reflect the original team workspace's build history; that history is not accessible from this workspace and was not verified here.

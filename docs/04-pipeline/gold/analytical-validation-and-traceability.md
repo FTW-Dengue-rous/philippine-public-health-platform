@@ -1,7 +1,7 @@
 # Analytical validation and traceability
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 Each business question traces from the dashboard query back through gold marts, silver tables, bronze tables, and source files. This page documents the full chain.
 
@@ -9,7 +9,7 @@ Each business question traces from the dashboard query back through gold marts, 
 
 ```
 Dashboard query
-  -> Gold mart (public_health.test_gold2.*)
+  -> Gold mart (public_health.gold.*)
     -> Silver table (public_health.silver.*)
       -> Bronze table (public_health.bronze.*)
         -> Landing file (/Volumes/.../g5_landing/...)
@@ -58,7 +58,7 @@ To trace a `mart_area_service_profile` row back to its source file:
 ```sql
 -- 1. Find the build ID for the mart row
 SELECT _silver_build_id, _source_key, _source_file
-FROM public_health.test_gold2.mart_area_service_profile
+FROM public_health.gold.mart_area_service_profile
 WHERE supply_section = 'S1_hospital_supply'
   AND area_name = 'Ilocos Norte'
   AND ownership = 'Government'
@@ -89,13 +89,13 @@ LIMIT 10;
 | Bronze | Row count, null keys, header check, numeric columns, control totals | `src/05_quality/bronze/*` scripts, `dq_utils.DQRun` | Verified on Databricks runs (2026-10-09 to 2026-10-13) |
 | Silver | Null keys, duplicate keys, lineage completeness, row count reconciliation, geographic match | `src/05_quality/silver/*` scripts | Verified for facilities and geography domains. Other domains: silver builds run, QC scripts exist. |
 | Cross-domain | Geography joins across domains, source coverage | `src/05_quality/silver/silver_cross_domain_qc.py` | Script exists, runs as last silver task before gold. |
-| Gold | Mart row counts, key columns, metric ranges | `src/05_quality/gold/gold_qc.py` | Placeholder script: no checks implemented, nothing logged (KI11). Gold objects' row counts verified by COUNT(*) in the [2026-10-18 run record](../../06-evidence/2026-10-18-new-workspace-run.md). |
+| Gold | Published-table integrity: row counts, PK uniqueness, grain, FK resolution, freshness, control totals, value consistency, default views, selection contract, metric ranges, idempotency, census plausibility | `src/05_quality/gold/gold_qc.py` (14 checks G00-G13) | Implemented 2026-10-19. Results written to `quality.qc_results`. See [quality results](../quality/quality-results.md). |
 
 ## Unverified claims
 
 The following are documented but not independently verified:
-* Dashboard -- all eight pages (v2 model) are populated with widgets; datasets query `test_gold2` views (verified 2026-10-18). Widget-level values have not been independently spot-checked.
+* Dashboard -- all eight pages (v2 model) are populated with widgets; datasets query `public_health.gold` views (verified 2026-10-18). Widget-level values have not been independently spot-checked.
 * `facilities_osm_point_silver` -- resolved: built 2026-10-18, 16,030 rows (bundle-job run; verified via table Delta history). See [known issues](../../08-governance/known-issues-and-backlog.md).
-* Gold v2 fact tables (`fact_disease_metric`, `fact_workforce_capacity`, `fact_area_indicator`) -- row counts verified 2026-10-18 (see [findings report](findings-report.md)); content verification is pending.
+* Gold fact tables (`fact_disease_metric`, `fact_workforce_capacity`, `fact_area_indicator`) -- row counts verified 2026-10-18 (see [findings report](findings-report.md)); content verification is pending.
 * Silver QC for diseases, workforce, and socioeconomic domains -- scripts exist and run; socioeconomic results verified in `quality.qc_results` (all four tables PASS; poverty 6 WARN, child mortality 3 WARN). Diseases and workforce results have not been reviewed in detail.
 * Handover -- a formal handover walkthrough has not been conducted (see [team and timeline](../../08-governance/team-and-timeline.md#handover-readiness)).

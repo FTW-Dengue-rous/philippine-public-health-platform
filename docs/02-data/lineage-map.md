@@ -26,7 +26,7 @@ Landing volume (15 sources)
         →  facilities_silver_02_metric.sql     →  public_health.silver.facilities_metric_silver (2,988 rows)
         →  facilities_silver_03_bed_occupancy.sql  →  public_health.silver.facilities_bed_occupancy_silver (1,977 rows)
         →  facilities_silver_04_osm_point.sql   →  public_health.silver.facilities_osm_point_silver (UNVERIFIED)
-            →  gold_v2_53_mart_area_service_profile.sql  →  public_health.test_gold2.mart_area_service_profile (~2,784 rows)
+            →  gold_16_mart_area_service_profile.sql  →  public_health.gold.mart_area_service_profile
                 →  Dashboard (S1, S2, S3)
 ```
 
@@ -43,8 +43,8 @@ Landing volume (multiple sources)
         →  diseases_silver_04_source_coverage.sql
         →  diseases_silver_05_tb_programme.sql
         →  diseases_silver_06_hospital_claims.sql
-            →  gold_v2_30_fact_disease_metric.sql   →  public_health.test_gold2.fact_disease_metric
-            →  gold_v2_31_dim_disease.sql             →  public_health.test_gold2.dim_disease
+            →  gold_07_fact_disease_metric.sql   →  public_health.gold.fact_disease_metric
+            →  gold_05_dim_disease.sql             →  public_health.gold.dim_disease
 ```
 
 ## Workforce
@@ -58,7 +58,7 @@ Landing volume
         →  workforce_silver_02_headcount.sql
         →  workforce_silver_03_denominator.sql
         →  workforce_silver_04_specialist.sql
-            →  gold_v2_35_fact_workforce_capacity.sql  →  public_health.test_gold2.fact_workforce_capacity
+            →  gold_08_fact_workforce_capacity.sql  →  public_health.gold.fact_workforce_capacity
 ```
 
 ## Socioeconomic
@@ -73,5 +73,5 @@ Landing volume
         →  socioeconomic_silver_03_health_expenditure_per_capita.sql
         →  socioeconomic_silver_04_child_mortality.sql
         →  socioeconomic_silver_05_poverty_geography_check.sql
-            →  gold_v2_40_fact_area_indicator.sql  →  public_health.test_gold2.fact_area_indicator
+            →  gold_09_fact_area_indicator.sql  →  public_health.gold.fact_area_indicator
 ```

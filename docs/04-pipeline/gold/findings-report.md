@@ -1,13 +1,13 @@
 # Findings report
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 Findings from the built gold tables, organized by the platform's business question framework. BQ1 (capacity gap analysis) is the platform's only active main question; the supporting sections (N, S, A, W, E, P, SUP) provide its evidence base. Each section states the question, the gold table, the answer grain, the silver inputs, whether the data can answer it, and the verified finding or status. BQ2 is previous scope.
 
 See [business context](../../01-context/problem-and-business-context.md) for the full question framework and traceability table. See [metric definitions](metric-definitions.md) for formulas and [assumptions and limitations](../../01-context/assumptions-and-limitations.md) for interpretation rules.
 
-Numbers marked **v1** come from `public_health.gold.mart_area_service_profile` (2,784 rows, built 2026-10-13; count re-verified 2026-10-18). Numbers marked **v2** come from `public_health.test_gold2` tables (built 2026-10-18). Numbers marked **silver** come from direct silver table queries. All counts verified by COUNT(*) and aggregate queries on 2026-10-18.
+Numbers marked **v1** come from the earlier `mart_area_service_profile` (2,784 rows, built 2026-10-13; count re-verified 2026-10-18). Numbers marked **v2** come from `public_health.gold` tables (built 2026-10-18). Numbers marked **silver** come from direct silver table queries. All counts verified by COUNT(*) and aggregate queries on 2026-10-18.
 
 ---
 
@@ -101,7 +101,7 @@ Average beds per 10,000 population across 109 planning units is 10.4. The range 
 
 > How does bed-day-weighted occupancy differ across areas and between government and private hospitals, among facilities with comparable reports?
 
-* **Gold table**: `mart_area_service_profile` v1 (built). The dashboard shows occupancy on its Preparedness page via `test_gold2.v_facility_capacity_totals`.
+* **Gold table**: `mart_area_service_profile` v1 (built). The dashboard shows occupancy on its Preparedness page via `public_health.gold.v_facility_capacity_totals`.
 * **Answer grain**: Area x ownership x year (2020-2025).
 * **Silver inputs**: `facilities_bed_occupancy_silver`.
 * **Answerable?**: Yes, with caveat.
@@ -334,11 +334,11 @@ Areas with lower poverty (under 10%) have more beds per 10,000 (10.8) than areas
 
 The platform is a data engineering capstone. It does not make health policy recommendations. The following are next steps for the data, not policy advice:
 
-1. **Verify gold v2 fact table content** -- query each fact table and confirm values match expectations. Row counts are confirmed (2026-10-18); content verification is next.
-2. **Integrate disease burden into the capacity gap mart** -- `mart_area_burden_indicator` (2,071 rows) exists but is not yet joined to `mart_area_service_profile` v2 (109 rows). Full BQ1 needs this.
+1. **Verify gold fact table content** -- query each fact table and confirm values match expectations. Row counts are confirmed (2026-10-18); content verification is next.
+2. **Integrate disease burden into the capacity gap mart** -- `mart_area_burden_indicator` (2,071 rows) exists but is not yet joined to `mart_area_service_profile` (109 rows). Full BQ1 needs this.
 3. **Source BQ2 parameters (previous scope)** -- only if the dengue surge stress test is re-scoped. Dengue admission share and length-of-stay values from clinical literature or DOH.
-4. **Add FHSIS primary-care visuals (S3)** -- the dashboard Access page shows registry-based presence only. BHS/RHU availability needs widgets or stays query-only. The v2 mart has the data.
-5. **Dashboard on v2 -- done.** Dashboard datasets read `test_gold2` tables and views (verified 2026-10-18).
+4. **Add FHSIS primary-care visuals (S3)** -- the dashboard Access page shows registry-based presence only. BHS/RHU availability needs widgets or stays query-only. The gold mart has the data.
+5. **Dashboard on gold -- done.** Dashboard datasets read `public_health.gold` tables and views (verified 2026-10-18).
 6. **Add age group dimension** -- SUP1 needs an age dimension in gold.
 7. **Clean income class values** -- E2 needs cleaned income class values.
 
@@ -348,4 +348,4 @@ The platform is a data engineering capstone. It does not make health policy reco
 
 All findings are computed from silver and gold tables using SQL. No statistical modeling is applied. No causal claims are made. All comparisons are descriptive. See [assumptions and limitations](../../01-context/assumptions-and-limitations.md) for the full list of interpretation rules.
 
-Evidence: build logs in `public_health.quality.build_log` (85 succeeded builds: 2026-10-09, 2026-10-12, 2026-10-18) and the [2026-10-18 run record](../../06-evidence/2026-10-18-new-workspace-run.md). Row counts and aggregate values verified by COUNT(*), AVG, SUM, and MIN/MAX queries on 2026-10-18 against `public_health.test_gold2`, `public_health.gold`, and `public_health.silver` schemas.
+Evidence: build logs in `public_health.quality.build_log` (85 succeeded builds: 2026-10-09, 2026-10-12, 2026-10-18) and the [2026-10-18 run record](../../06-evidence/2026-10-18-new-workspace-run.md). Row counts and aggregate values verified by COUNT(*), AVG, SUM, and MIN/MAX queries on 2026-10-18 against `public_health.gold` and `public_health.silver` schemas.

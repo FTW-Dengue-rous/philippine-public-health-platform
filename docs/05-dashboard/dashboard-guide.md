@@ -1,11 +1,11 @@
 # Dashboard guide
 
-Owner: Cristina Villota
-Last updated: 2026-10-18
+Owner: Shiena Arico, Margarette Legaspi
+Last updated: 2026-10-19
 
 The dashboard is a Databricks Lakeview dashboard: **Philippine Public Health Platform**.
 
-The current dashboard (v2 model, updated 2026-10-16) reads gold v2 tables and views in `public_health.test_gold2`. It is organised by theme rather than by question: eight pages, all populated. It covers the supply-side questions (S1, S2; S3 partially through registry-based presence) plus highlights of need, workforce, equity, access, priority, and case studies (N1-N4, W1, E1, E2 partial, A1, P1, P2, D1). Questions without visuals are query-only (see below). See [business context](../01-context/problem-and-business-context.md) for the full question framework.
+The current dashboard (updated 2026-10-16) reads gold tables and views in `public_health.gold`. It is organised by theme rather than by question: eight pages, all populated. It covers the supply-side questions (S1, S2; S3 partially through registry-based presence) plus highlights of need, workforce, equity, access, priority, and case studies (N1-N4, W1, E1, E2 partial, A1, P1, P2, D1). Questions without visuals are query-only (see below). See [business context](../01-context/problem-and-business-context.md) for the full question framework.
 
 Dashboard file: `dashboard/Philippine Public Health Platform.lvdash.json`
 
@@ -47,7 +47,7 @@ Data sources, pipeline status per table, and evidence readiness. Covers SUP6.
 
 ## Dashboard datasets
 
-The dashboard has 41 datasets querying `test_gold2` views and marts (not v1 `gold` tables). Key sources:
+The dashboard has 41 datasets querying `public_health.gold` views and marts. Key sources:
 
 * `v_facility_capacity_totals`, `fact_facility_capacity`, `mart_area_service_profile` -- supply (S1, S2)
 * `v_disease_metric_totals`, `fact_disease_metric` -- need (N1, N2, N3, N4)
@@ -59,13 +59,13 @@ The dashboard has 41 datasets querying `test_gold2` views and marts (not v1 `gol
 
 ## Query-only data
 
-Not shown on any dashboard page; query the gold v2 tables instead:
+Not shown on any dashboard page; query the gold tables instead:
 
-* FHSIS BHS/RHU/health-centre counts (S3) -- `facilities_metric_silver` and v2 gold
+* FHSIS BHS/RHU/health-centre counts (S3) -- `facilities_metric_silver` and gold tables
 * Workforce employer split, LGU vs DOH (W2) -- `fact_workforce_capacity`
 * Level 3 hospital presence by area (A2) -- `fact_area_access`
 * Income-class analysis (E2) -- `fact_area_indicator` and `dim_geography`
-* Supporting analyses SUP1-SUP5 -- gold v2 fact tables
+* Supporting analyses SUP1-SUP5 -- gold fact tables
 
 ## How to use
 
@@ -77,9 +77,9 @@ Not shown on any dashboard page; query the gold v2 tables instead:
 
 ## Data freshness
 
-The dashboard reflects the latest gold v2 build in `test_gold2`. To confirm it is current:
+The dashboard reflects the latest gold build in `public_health.gold`. To confirm it is current:
 1. Check the latest pipeline job run succeeded.
-2. Run: `SELECT max(finished_at) FROM public_health.quality.build_log WHERE target_table LIKE '%test_gold2%'`
+2. Run: `SELECT max(finished_at) FROM public_health.quality.build_log WHERE target_table LIKE '%public_health.gold%'`
 3. Verify the dashboard page shows data.
 
 ## Interpretation cautions

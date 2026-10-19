@@ -1,18 +1,18 @@
 # Team and timeline
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 ## Team
 
 | Role | Name | Responsibilities |
 |---|---|---|
-| Team lead | Jemma Santiago | Plan, lineage contract, facilities silver SQL, prod deployment |
-| Data engineer | Virna Pomendia | Bronze loaders, QC scripts |
-| Data engineer | Shiena Arico | Geography/PSGC reference data, geospatial |
-| Data engineer | Via Cabuyao | Sources, data acquisition |
-| Data engineer | Cristina Villota | documentation |
-| Data engineer | Margarette Legaspi | Gold marts, socioeconomic domain |
+| Team lead | Jemma Santiago | Disease domain, architecture plan, QC framework, gold layer, lineage contract, prod deployment |
+| Data engineer | Virna Pomendia | Socioeconomic and workforce domain, dataset acquisition, presentation and script |
+| Data engineer | Shiena Arico | Geography domain, PSGC and HDX ingestion, dimension modelling, dashboard |
+| Data engineer | Via Cabuyao | Facilities domain, dataset acquisition, presentation and script |
+| Data engineer | Ma. Cristina Villota | Facilities domain, dataset acquisition, Documentation |
+| Data engineer | Margarette Legaspi | Population domain, dataset acquisition, documentation, dashboard |
 
 *(Source: `databricks.yml` permissions and team conversation. Email addresses are in the bundle config.)*
 
@@ -24,12 +24,13 @@ The person responsible for a domain's Bronze implementation also owns its Silver
 |---|---|---|
 | Facilities | Cristina Villota, Via Cabuyao | Bronze, silver, documentation |
 | Diseases | Jemma Santiago | Bronze, silver, documentation |
-| Geography | Margarette Legaspi | Bronze, silver, documentation |
+| Geography | Shiena Arico | Bronze, silver, documentation |
 | Population | Margarette Legaspi | Bronze, silver, documentation |
-| PSGC ingestion | Shiena Arico | Ingestion pipeline only (distinct from geography) |
+| PSGC and HDX ingestion | Shiena Arico | Part of the geography domain (ingestion pipelines) |
 | Socioeconomic | Virna Pomendia | Bronze, silver, documentation |
 | Workforce | Virna Pomendia | Bronze, silver, documentation |
-| Bronze | Cristina Villota |, documentation |
+| Gold layer | Jemma Santiago | Gold model (`public_health.gold`), gold QC |
+| Dashboard | Shiena Arico, Margarette Legaspi | Lakeview dashboard |
 | CI/CD and DevOps | Jemma Santiago | Pipeline, deployment, CI/CD |
 
 ## Timeline
