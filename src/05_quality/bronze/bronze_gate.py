@@ -26,6 +26,9 @@
 #       (quality.build_log + quality.build_inputs, input_kind = 'bronze_source').
 #   (b) catches a source that was turned off in the YAML but is still read by silver.
 #   --exclude_keys drops a source the silver build does not read (e.g. psa_psgc).
+#   A key in several domains is checked once per domain (doh_fhsis_demographic: workforce and
+#   facilities, two bronze tables). A QC result counts only for the domain of its QC run
+#   (run_log.domain, same validation_id), so one domain's result never clears the other.
 #   --source_keys checks only the listed sources.
 #   geography (psgc, and psgc_population: the population payload in the same bronze rows) and
 #   admin_boundaries (hdx_phl_admin) are not YAML file sources; they are listed in
@@ -77,23 +80,35 @@ METADATA_NAME_KEYS = {"psgc": ("sources_geography.yaml", "psgc", "source_name"),
 # State per source
 # -----------------------------------------------------------------------------
 
+def state_label(key, domain, pairs):
+    """Output key: the source_key, or 'source_key (domain)' when the key is in several domains."""
+    return key if sum(1 for k, _ in pairs if k == key) == 1 else f"{key} ({domain})"
+
+
 def source_states(spark, key_domains, quality_schema=QUALITY_SCHEMA, metadata_table=METADATA_TABLE,
                   metadata_names=None):
-    """Return {source_key: {state, domain, validation_id, last_qc_at, failed_checks,
-    n_warn, crashed_at, last_load_at}} for every key in key_domains ({source_key: domain}).
+    """Return {label: {state, source_key, domain, validation_id, last_qc_at, failed_checks,
+    n_warn, crashed_at, last_load_at}}.
+
+    key_domains: {source_key: qc_domain}, or a list of (source_key, qc_domain) pairs when one
+    key belongs to several domains (doh_fhsis_demographic: workforce and facilities). A result
+    counts for a pair only if its QC run (run_log, same validation_id) was of that domain, so
+    one domain's result never clears the other. label = source_key, or 'source_key (domain)'
+    for a key listed under several domains.
     metadata_names: {source_key: ingestion_metadata.source_name} where the two differ."""
-    if not key_domains:
+    pairs = sorted(set(key_domains.items() if isinstance(key_domains, dict) else map(tuple, key_domains)))
+    if not pairs:
         return {}
     q = quality_schema
     names = metadata_names or {}
-    (spark.createDataFrame([(k, d, names.get(k, k)) for k, d in sorted(key_domains.items())],
+    (spark.createDataFrame([(k, d, names.get(k, k)) for k, d in pairs],
                            "source_key string, domain string, metadata_name string")
      .createOrReplaceTempView("_gate_keys"))
 
     has_run_log = spark.catalog.tableExists(f"{q}.run_log")
     crash_sql = f"""
       crash AS (
-        SELECT k.source_key,
+        SELECT k.source_key, k.domain,
                max(g.started_at)                        AS crashed_at,
                max_by(g.validation_id, g.started_at)    AS crash_validation_id
         FROM _gate_keys k
@@ -101,35 +116,42 @@ def source_states(spark, key_domains, quality_schema=QUALITY_SCHEMA, metadata_ta
           ON g.layer = 'bronze' AND g.status = 'ERROR' AND g.domain = k.domain
          AND (upper(trim(coalesce(g.source_keys, 'ALL'))) = 'ALL'
               OR array_contains(transform(split(g.source_keys, ','), x -> trim(x)), k.source_key))
-        GROUP BY k.source_key)""" if has_run_log else """
-      crash AS (SELECT CAST(NULL AS STRING) AS source_key, CAST(NULL AS TIMESTAMP) AS crashed_at,
+        GROUP BY k.source_key, k.domain)""" if has_run_log else """
+      crash AS (SELECT CAST(NULL AS STRING) AS source_key, CAST(NULL AS STRING) AS domain,
+                       CAST(NULL AS TIMESTAMP) AS crashed_at,
                        CAST(NULL AS STRING) AS crash_validation_id WHERE false)"""
+    # A result counts for (source_key, domain) only when its QC run was of that domain. Results
+    # with no run_log row (none expected: DQRun writes both) are ignored, so the source is
+    # NOT_CHECKED and gets its QC again, which is the safe side.
+    domain_join = (f"JOIN {q}.run_log g ON g.validation_id = r.validation_id AND g.domain = k.domain"
+                   if has_run_log else "")
 
     rows = spark.sql(f"""
       WITH r AS (
-        SELECT r.source_key, r.validation_id, r.executed_at, r.status, r.check_id
+        SELECT r.source_key, k.domain, r.validation_id, r.executed_at, r.status, r.check_id
         FROM {q}.qc_results r
         JOIN _gate_keys k ON r.source_key = k.source_key
+        {domain_join}
         WHERE r.layer = 'bronze'),
       latest AS (
-        SELECT source_key, max_by(validation_id, executed_at) AS validation_id
-        FROM r GROUP BY source_key),
+        SELECT source_key, domain, max_by(validation_id, executed_at) AS validation_id
+        FROM r GROUP BY source_key, domain),
       qc AS (
-        SELECT l.source_key, l.validation_id,
+        SELECT l.source_key, l.domain, l.validation_id,
                max(r.executed_at)                                              AS last_qc_at,
                count_if(coalesce(r.status, '') NOT IN ('PASS', 'WARN'))        AS n_fail,
                count_if(r.status = 'WARN')                                     AS n_warn,
                concat_ws(',', sort_array(collect_set(
                  CASE WHEN coalesce(r.status, '') NOT IN ('PASS', 'WARN') THEN r.check_id END))) AS failed_checks
         FROM latest l
-        JOIN r ON r.source_key = l.source_key AND r.validation_id = l.validation_id
-        GROUP BY l.source_key, l.validation_id),
+        JOIN r ON r.source_key = l.source_key AND r.domain = l.domain AND r.validation_id = l.validation_id
+        GROUP BY l.source_key, l.domain, l.validation_id),
       {crash_sql.strip()}
       SELECT k.source_key, k.domain, qc.validation_id, qc.last_qc_at, qc.n_fail, qc.n_warn,
              qc.failed_checks, c.crashed_at, c.crash_validation_id
       FROM _gate_keys k
-      LEFT JOIN qc ON qc.source_key = k.source_key
-      LEFT JOIN crash c ON c.source_key = k.source_key""").collect()
+      LEFT JOIN qc ON qc.source_key = k.source_key AND qc.domain = k.domain
+      LEFT JOIN crash c ON c.source_key = k.source_key AND c.domain = k.domain""").collect()
 
     loads = {}
     if metadata_table and spark.catalog.tableExists(metadata_table):
@@ -154,8 +176,9 @@ def source_states(spark, key_domains, quality_schema=QUALITY_SCHEMA, metadata_ta
             state = "WARN"
         else:
             state = "PASS"
-        out[r["source_key"]] = {
-            "state": state, "domain": r["domain"], "validation_id": r["validation_id"],
+        out[state_label(r["source_key"], r["domain"], pairs)] = {
+            "state": state, "source_key": r["source_key"], "domain": r["domain"],
+            "validation_id": r["validation_id"],
             "last_qc_at": last_qc, "failed_checks": r["failed_checks"] or None,
             "n_warn": r["n_warn"] or 0, "crashed_at": crashed, "last_load_at": loaded,
         }
@@ -304,26 +327,31 @@ def main(argv=None):
     if [d.lower() for d in domains] == ["all"]:
         domains = sorted(by_domain)
         print(f"Checking every domain: {', '.join(domains)}")
-    owner = {k: qd for keys in by_domain.values() for k, qd in keys.items()}
-    key_domains, origin = {}, {}
+    def owners(k):
+        """QC domains of a key across every YAML (a key can be in more than one)."""
+        return sorted({qd for keys in by_domain.values() for kk, qd in keys.items() if kk == k})
+
+    pairs, origin = set(), {}
     for d in domains:
         from_yaml = by_domain.get(d, {})
         from_builds = consumed_sources(spark, d, a.quality_schema)
         if not from_yaml and not from_builds:
             raise SystemExit(f"STOPPED: domain '{d}' has no YAML file sources and no recorded silver build inputs")
+        for k, qd in from_yaml.items():
+            pairs.add((k, qd))
+        for k in from_builds - set(from_yaml):        # read by silver, not an enabled YAML source here
+            pairs.update((k, qd) for qd in (owners(k) or [d]))
         for k in set(from_yaml) | from_builds:
-            key_domains[k] = owner.get(k, d)
             origin[k] = "yaml+build" if k in from_yaml and k in from_builds else "yaml" if k in from_yaml else "build"
     for k in explicit:
-        key_domains[k] = owner.get(k) or (domains[0] if domains else k)
+        pairs.update((k, qd) for qd in (owners(k) or [domains[0] if domains else k]))
         origin[k] = "argument"
-    for k in excluded:
-        key_domains.pop(k, None)
+    pairs = {(k, qd) for k, qd in pairs if k not in excluded}
 
-    states = source_states(spark, key_domains, a.quality_schema, a.metadata_table, metadata_names(root))
+    states = source_states(spark, sorted(pairs), a.quality_schema, a.metadata_table, metadata_names(root))
     print_states(states, f"Preload gate: {len(states)} bronze source(s) for {', '.join(domains + explicit)}")
     for k in sorted(origin):
-        if k in states and origin[k] == "build":
+        if origin[k] == "build" and any(s["source_key"] == k for s in states.values()):
             print(f"  note: {k} is read by the latest silver build but is not an enabled YAML source")
     stop = blocking(states, a.allow_unchecked == "true")
     if stop:

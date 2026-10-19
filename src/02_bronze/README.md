@@ -143,7 +143,7 @@ The PSGC loader keeps each original record as JSON (`source_record_json`) plus t
 3. **Reconcile.** The rows per file in the table must equal the rows read.
 4. **Log.** Append one `ingestion_metadata` row per file or sheet. If this write fails, the data stays committed and the run fails. The next run detects it and reloads (section 8).
 
-### 3.4 Incremental loading (file loaders, version `2026-10-14.1`)
+### 3.4 Incremental loading (file loaders, since version `2026-10-14.1`; current `2026-10-19.1`)
 
 Each run compares every listed file and sheet with its latest `processed` row in `ingestion_metadata`:
 
@@ -409,7 +409,11 @@ For `--domains <domain>`, the gate checks:
 - **(a)** the domain's enabled YAML file sources; and
 - **(b)** every bronze source that the domain's latest successful silver build read (`quality.build_log` + `build_inputs`, `input_kind = 'bronze_source'`).
 
-Part (b) catches a source that was switched off in the YAML but is still read by silver. Geography (`psgc` and `psgc_population`) and admin boundaries (`hdx_phl_admin`) are listed in the script. `psgc_population` uses the PSGC load log name, so a new PSGC load makes it STALE until its QC runs again.
+Part (b) catches a source that was switched off in the YAML but is still read by silver.
+
+A key in several domains is checked once per domain and printed as `key (domain)`, e.g. `doh_fhsis_demographic (workforce)` and `doh_fhsis_demographic (facilities)`. `qc_results` has no domain column, so the gate joins each result to its `run_log` row (same `validation_id`) and uses that run's domain. One domain's result never clears the other.
+
+Geography (`psgc` and `psgc_population`) and admin boundaries (`hdx_phl_admin`) are listed in the script. `psgc_population` uses the PSGC load log name, so a new PSGC load makes it STALE until its QC runs again.
 
 | Option | Use |
 |---|---|
@@ -510,7 +514,9 @@ Scenarios 5–7 were gaps before 2026-10-19 and are closed by the re-queue and t
 | `bronze_gate.py`, all domains | 41 sources: 39 PASS, 2 WARN, 0 blocking. Gate passed |
 | WARN 1: `philhealth_foi_claims_hospital` B08 | 19 exact repeat rows in the source. Silver sums them (YAML notes) |
 | WARN 2: `doh_fhsis_demographic` B08 (workforce table) | 6 identical rows with a blank `area_name` in the 2019 workbook, sheet *Health Workers Part2*. Silver drops blank-area rows |
-| `run_bronze.py` (geography, admin boundaries, diseases) | All unchanged. Diseases re-queued the 4 `doh_fhsis` entries; their QC passed (75 checks, 0 FAIL), but the run reported FAIL because it looked them up by entry name. Fixed the same day (section 5.1). Facilities, workforce and socioeconomic still to run |
+| `run_bronze.py`, first run (geography, admin boundaries, diseases) | All unchanged. Diseases re-queued the 4 `doh_fhsis` entries; their QC passed (75 checks, 0 FAIL), but the run reported FAIL because it looked them up by entry name, and stopped. Fixed the same day (section 5.1) |
+| `run_bronze.py`, second run (override fix, before the population QC change), all 6 domains | 46 sources unchanged (geography 1, admin boundaries 1, diseases 19, facilities 16, workforce 3, socioeconomic 5; `doh_fhsis_demographic` counted in both facilities and workforce). 0 loaded, 0 failed, 0 QC re-queued: every source was already cleared. About 13 minutes in total; the geography loader took about 5 of them, validating the full landing batch even when unchanged |
+| Next | Run the current `run_bronze.py` once: expect `psgc_population` to be re-queued (its QC predates the latest PSGC load). Then the full job, so the `gate_<domain>` tasks run before silver |
 
 ---
 
@@ -525,14 +531,14 @@ Scenarios 5–7 were gaps before 2026-10-19 and are closed by the re-queue and t
 | L5 | Lineage column names differ between file loaders, PSGC and HDX | Silver lineage code is not fully shared. Backlog: align names |
 | L6 | `sharing: restricted` is declared only | Backlog: Unity Catalog grants |
 | L7 | B03 is only WARN for files with no `qc.expected_rows` | Add expected counts. Query in section 6.5 |
-| L8 | `dq_utils._now()` writes naive UTC timestamps. PySpark reads naive times in the driver's OS timezone | Correct on Databricks (UTC drivers). Elsewhere, set the OS timezone to UTC or change `_now()` to `datetime.now(timezone.utc)` |
+| L8 | Fixed 2026-10-19: `dq_utils._now()` and the four file loaders (`INGESTED_AT`, version `2026-10-19.1`) write timezone-aware UTC; the PSGC and HDX loaders already did. Times are correct on any driver timezone | Same stored values on Databricks, so existing loads still match and are skipped. Tested: the old loader was 8 hours off on a UTC+8 machine |
 | L9 | New GB codes are not in `check_registry`; population QC uses `strict_registry=True`, the others False | Add GB01–GB13 to `quality_registry_seed.sql`; switch all scripts to strict after the seed |
 | L10 | Facilities entries 1–13 have no `header_check` | A shifted column in a `names` layout would load under the wrong names. Backlog |
 | L11 | `_as_of_date` mixes release and download dates; several marked CONFIRM | Backlog: split the two dates |
 | L12 | PSGC is ingested twice (API snapshot under geography, datafile under socioeconomic) | The platform stands on the Q2_2024 API snapshot. Backlog: one owner per vintage |
 | L13 | Files are read on the driver (largest: PhilHealth claims, 245,405 rows) | Fine today. Backlog: Spark reads for large files |
-| L14 | The 2026-10-19 changes are only partly proven on Databricks. The gate ran on the real workspace (41 sources, 0 blocking). `run_bronze` stopped after diseases because of the `source_key_override` bug, since fixed | Rerun `run_bronze` for all domains and record the summary in section 11 |
-| L15 | `doh_fhsis_demographic` is the source key in both workforce and facilities (two bronze tables). The gate matches on `source_key` only, so one domain's QC result clears the other | Backlog: match on domain and source key in `bronze_gate.py` |
+| L14 | The 2026-10-19 changes ran on Databricks from a notebook (gate, then a clean `run_bronze` over all 6 domains). Not yet run as the job, and the population QC change is not yet run on Databricks | Run the current `run_bronze.py`, then the full job; record both in section 11 |
+| L15 | Fixed 2026-10-19: a key in two domains (`doh_fhsis_demographic`) is checked once per domain. A QC result counts only for the domain of its QC run (`run_log.domain`) | A facilities reload still marks the workforce entry STALE too (same load log name). Harmless: it only re-runs that QC |
 
 ---
 
@@ -576,4 +582,4 @@ See `docs/platform-requirements.md` for versions and the full list.
 | 2026-10-14 | Incremental file loaders (`2026-10-14.1`) and `run_bronze.py` for the four file domains |
 | 2026-10-15 | PSGC loader writes `ingestion_metadata` and a QC handoff; HDX loader as a job script |
 | 2026-10-16 / 10-17 | Full runs 1 and 2, end to end |
-| 2026-10-19 | **QC re-queue** in `run_bronze.py`. **Preload gate** (`bronze_gate.py`, one job task per domain). **Geography and admin boundaries in `run_bronze.py`**, with no hard-coded HDX run path and no `admin_boundaries_run_dir` parameter. Geography QC moved to `DQRun` (GB00–GB13, new GB13 log check). All QC scripts: YAML overrides validated and recorded; B13 FAIL when a load cannot be verified. Facilities and population QC `batch_id` back to the contract form. Admin QC: hard-coded handoff path removed. Geography QC runs with no arguments (handoff from `ingestion_metadata`). `run_bronze` maps `source_key_override` (the `doh_fhsis` entries were re-queued as NOT_CHECKED on every run and reported as QC FAIL) and QCs entries that share a key together. Population payload QC moved into `run_bronze` (geography) and the gate; the `qc_bronze_psgc_population` job task is removed |
+| 2026-10-19 | **QC re-queue** in `run_bronze.py`. **Preload gate** (`bronze_gate.py`, one job task per domain). **Geography and admin boundaries in `run_bronze.py`**, with no hard-coded HDX run path and no `admin_boundaries_run_dir` parameter. Geography QC moved to `DQRun` (GB00–GB13, new GB13 log check). All QC scripts: YAML overrides validated and recorded; B13 FAIL when a load cannot be verified. Facilities and population QC `batch_id` back to the contract form. Admin QC: hard-coded handoff path removed. Geography QC runs with no arguments (handoff from `ingestion_metadata`). `run_bronze` maps `source_key_override` (the `doh_fhsis` entries were re-queued as NOT_CHECKED on every run and reported as QC FAIL) and QCs entries that share a key together. Population payload QC moved into `run_bronze` (geography) and the gate; the `qc_bronze_psgc_population` job task is removed. Gate matches results on domain (via `run_log`), so a key shared by two domains is checked per domain. `dq_utils._now()` and the file loaders (`2026-10-19.1`) write timezone-aware UTC |
