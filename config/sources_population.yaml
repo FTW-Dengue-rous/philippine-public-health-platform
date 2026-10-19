@@ -25,10 +25,11 @@ sources:
         - raw_path
         - ingested_at
 
-      # B10 WARN, checked 2026-10-19: 94 of 127,945 nested population values are text that does
-      # not cast to a whole number as it stands (thousands separators, a leading bracketed note
-      # such as "(excluding CITY OF ANGELES) 1,234", or "-"). Expected: population_silver parses
-      # them (VALID / VALID_WITH_NOTE / MISSING) and silver QC S52 / S53 check the result.
+      # B10 is expected to WARN: some nested population values are text that does not cast to a
+      # whole number as it stands (thousands separators, a leading bracketed note such as
+      # "(excluding CITY OF ANGELES) 1,234", or "-"). population_silver parses them
+      # (VALID / VALID_WITH_NOTE / MISSING) and silver QC S52 / S53 check the result. The
+      # current count is B10 fail_count in quality.qc_results (reviewed 2026-10-19).
       skip_checks:
         - B02
         - B03

@@ -1,6 +1,5 @@
 # =============================================================================
 # Bronze QC for the facilities domain
-#
 # What it does
 #   Runs after facilities_bronze.py. Reads the bronze tables as stored and checks
 #   that each load is complete and faithful to the source file.
@@ -43,7 +42,8 @@
 # the form quality.v_qc_results_identity reads the file checksum from.
 #
 # Changes 2026-10-19: YAML overrides validated and recorded; B13 FAIL when the load cannot
-# be verified (was WARN); facilities batch_id back to the contract form.
+# be verified (was WARN); batch_id back to the contract form <source_key>:<checksum>
+# (latest_metadata had used the loader's run id). Only this script had that bug.
 #
 # Severity policy
 #   FAIL = the load itself is wrong or cannot be traced (missing file, wrong row count,
