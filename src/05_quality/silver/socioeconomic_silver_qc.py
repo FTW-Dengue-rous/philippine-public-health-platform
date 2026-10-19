@@ -43,10 +43,28 @@
 # Row dispositions: quality.row_disposition holds only the bronze rows that were
 # NOT loaded, so S09 compares rows read (build_inputs.input_rows) with bronze, and the rows silver
 # points to with rows read minus rows not loaded.
+#
+# Rule 2a (2026-10-19): no numbers about the files are typed here any more.
+#   - S84 controls come from sources_socioeconomic.yaml: every qc.control_values item with a
+#     `silver:` block (the same numbers bronze QC B11 checks). A table with none is S00 FAIL.
+#     Two controls were silver-only (Households share 2016, per capita 2016); they are now in the
+#     YAML and bronze checks them too.
+#   - Years, counts and thresholds come from build_log.parameters of the build that wrote the
+#     table (TableQC.param): poverty_years and poverty_cv_caution_pct (01), share_years,
+#     share_agent_count and share_level1_tolerance_pct (02), per_capita_years (03),
+#     mortality_survey_years, characteristic_count and characteristics_by_group (04).
+#     A table built before 2026-10-19 has none of them: S00 FAIL names the build to rerun.
+#   - Kept: the S94 fall of 15 points (decision D4) and the S07 growth band of 50 percent, both
+#     part of what the check means (constants below).
 
 import argparse
+import functools
+import json
 import os
+import re
 import sys
+
+import yaml
 
 from pyspark.sql import SparkSession
 
@@ -97,6 +115,11 @@ from dq_utils import DQRun  # noqa: E402
 
 DOMAIN = "socioeconomic"
 SCRIPT_NAME = "socioeconomic_silver_qc.py"
+CONFIG_NAME = "sources_socioeconomic.yaml"
+
+# Part of what a check means (see the CHECKS names), so kept in code.
+INCIDENCE_DROP_PP = 15      # S94: fall between two releases, percentage points (decision D4)
+GROWTH_REVIEW_PCT = 50      # S07: per capita growth outside -50 to 50 percent is worth a look
 
 
 def parse_args():
@@ -118,6 +141,8 @@ def parse_args():
     )
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--code_version", default=None)
+    p.add_argument("--config_path", default=None,
+                   help=f"Full path to {CONFIG_NAME} (default: config/ above this file)")
     a, _ = p.parse_known_args()
     return a
 
@@ -264,67 +289,78 @@ TABLES = {
     },
 }
 
-# Control values: the same numbers bronze QC checks (sources_socioeconomic.yaml), read from silver.
-CONTROLS = {
-    POV: [
-        (
-            "Philippines 2025 poverty incidence (percent)",
-            f"SELECT max(poverty_incidence_pct) FROM {POV} WHERE area_key = 'ph' AND year = 2025",
-            9.7,
-        ),
-        (
-            "Philippines 2025 annual per capita poverty threshold (pesos)",
-            f"SELECT max(annual_per_capita_poverty_threshold_php) FROM {POV} WHERE area_key = 'ph' AND year = 2025",
-            35120.89,
-        ),
-        (
-            "Philippines 2025 poor population (persons)",
-            f"SELECT max(poor_population) FROM {POV} WHERE area_key = 'ph' AND year = 2025",
-            11083030,
-        ),
-    ],
-    SHARE: [
-        (
-            "Households share 2023 (percent)",
-            f"SELECT max(share_pct) FROM {SHARE} WHERE financing_agent = 'Households' AND year = 2023",
-            44.4,
-        ),
-        (
-            "Households share 2016 (percent)",
-            f"SELECT max(share_pct) FROM {SHARE} WHERE financing_agent = 'Households' AND year = 2016",
-            50.5,
-        ),
-        (
-            "Total current health expenditure 2023 (percent)",
-            f"SELECT max(share_pct) FROM {SHARE} WHERE agent_level = 0 AND year = 2023",
-            100.0,
-        ),
-    ],
-    PCAP: [
-        (
-            "Per capita health expenditure 2023 (pesos)",
-            f"SELECT max(per_capita_health_expenditure_php) FROM {PCAP} WHERE year = 2023",
-            11082.68,
-        ),
-        (
-            "Per capita health expenditure 2016 (pesos)",
-            f"SELECT max(per_capita_health_expenditure_php) FROM {PCAP} WHERE year = 2016",
-            5836.93,
-        ),
-    ],
-    MORT: [
-        (
-            "NCR infant mortality rate, 2022 survey",
-            f"SELECT max(infant_mortality_rate) FROM {MORT} WHERE characteristic = 'NCR' AND survey_year = 2022",
-            8,
-        ),
-        (
-            "BARMM under-five mortality rate, 2017 survey",
-            f"SELECT max(under5_mortality_rate) FROM {MORT} WHERE characteristic = 'BARMM' AND survey_year = 2017",
-            55,
-        ),
-    ],
-}
+# ----------------------------------------------------------------------------------
+# Control values (S84): read from sources_socioeconomic.yaml (rule 2a, 2026-10-19)
+# ----------------------------------------------------------------------------------
+def find_config(explicit=None):
+    """--config_path, or config/<CONFIG_NAME> in this file's folder, the working directory or up
+    to five folders above them."""
+    if explicit:
+        if not os.path.isfile(explicit):
+            raise FileNotFoundError(f"--config_path does not exist: {explicit}")
+        return os.path.abspath(explicit)
+    starts = [os.getcwd()]
+    try:
+        starts.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    except NameError:
+        pass
+    searched = []
+    for start in starts:
+        folder = start
+        for _ in range(6):
+            for sub in ("", "config"):
+                candidate = os.path.join(folder, sub, CONFIG_NAME)
+                searched.append(candidate)
+                if os.path.isfile(candidate):
+                    return os.path.abspath(candidate)
+            parent = os.path.dirname(folder)
+            if parent == folder:
+                break
+            folder = parent
+    raise FileNotFoundError(f"{CONFIG_NAME} not found. Pass --config_path. Looked in:\n  "
+                            + "\n  ".join(dict.fromkeys(searched)))
+
+
+def sql_literal(v):
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+@functools.lru_cache(maxsize=None)
+def load_controls():
+    """{silver table: [(label, sql, expected)]} from the qc.control_values items that carry a
+    `silver:` block: {column, where: {silver column: value}, scale}. expected = bronze expected
+    x scale. A table without any such item raises, so a YAML edit cannot silently remove S84."""
+    path = find_config(ARGS.config_path)
+    with open(path, encoding="utf-8") as f:
+        sources = (yaml.safe_load(f) or {}).get("sources") or {}
+    out = {}
+    for table, cfg in TABLES.items():
+        key = cfg["source_key"]
+        items = [cv for cv in ((sources.get(key) or {}).get("qc") or {}).get("control_values") or []
+                 if cv.get("silver")]
+        if not items:
+            raise ValueError(f"{CONFIG_NAME}: {key} has no qc.control_values with a silver: block (S84)")
+        rows = []
+        for cv in items:
+            sv = cv["silver"]
+            if not sv.get("column") or not sv.get("where"):
+                raise ValueError(f"{CONFIG_NAME}: {key} control {cv.get('label')!r}: "
+                                 "silver block needs column and where")
+            where = " AND ".join(f"{c} = {sql_literal(v)}" for c, v in sv["where"].items())
+            expected = round(float(cv["expected"]) * float(sv.get("scale", 1)), 6)
+            rows.append((cv["label"], f"SELECT max({sv['column']}) FROM {table} WHERE {where}", expected))
+        out[table] = rows
+    return out
+
+
+def label_key(s):
+    """Same normalisation as se_label in socioeconomic_silver_04: apostrophes removed, spaces
+    collapsed, upper case ("Mother's Education" -> "MOTHERS EDUCATION")."""
+    return re.sub(r"\s+", " ", re.sub("['\u2019]", "", s or "")).strip().upper()
 
 
 # ----------------------------------------------------------------------------------
@@ -368,6 +404,7 @@ class TableQC:
         self.build_ids = ids
         self.build_id = ids[0] if len(ids) == 1 else None
         self.batch = f"build:{self.build_id}" if self.build_id else None
+        self._params = None
         self.total_sql = f"SELECT count(*) FROM {table}"
         # every bronze row reference of the table, one row per silver row and side
         self.refs_sql = " UNION ALL ".join(
@@ -375,6 +412,25 @@ class TableQC:
             f"FROM {table}"
             for sheet, rownum in self.cfg["refs"]
         )
+
+    def param(self, key):
+        """A setting recorded by the build that wrote this table (build_log.parameters).
+        Raises when it is missing, which main() records as S00 FAIL for the table."""
+        if self._params is None:
+            if self.build_id is None:
+                raise KeyError(f"{self.table}: no single build id, so no build settings (see S82)")
+            rows = spark.sql(f"""SELECT parameters FROM {QUALITY}.build_log
+                                 WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
+                                   AND status = 'succeeded'""").collect()
+            self._params = json.loads(rows[0]["parameters"]) if rows and rows[0]["parameters"] else {}
+        if key not in self._params:
+            raise KeyError(f"{self.table}: build {self.build_id} did not record {key!r}. "
+                           "Rebuild the table with the 2026-10-19 build file.")
+        return self._params[key]
+
+    def years_sql(self, key):
+        """A recorded list of years as SQL text: 2021, 2023, 2025."""
+        return ", ".join(str(int(y)) for y in self.param(key))
 
     def _rec(self, check_id, **kw):
         name, ctype, severity = CHECKS[check_id]
@@ -594,7 +650,7 @@ class TableQC:
         )
 
     def controls(self):
-        for label, sql, expected in CONTROLS[self.table]:
+        for label, sql, expected in load_controls()[self.table]:
             self.value("S84", scalar(sql), expected, detail=label)
 
     def common(self, key):
@@ -619,11 +675,14 @@ def check_poverty(dq, profile):
     if t.build_id:
         t.reference_freshness(AREA_MAP)
 
+    years = t.years_sql("poverty_years")
+    cv_caution = t.param("poverty_cv_caution_pct")
     t.count(
         "S08",
-        f"SELECT count(*) FROM {POV} WHERE year NOT IN (2021, 2023, 2025)",
+        f"SELECT count(*) FROM {POV} WHERE year NOT IN ({years})",
         total_sql,
         column_name="year",
+        detail=f"poverty_years recorded by the build: {years}",
     )
 
     # S88: exactly the area-years the area map expects (an area starts at its first_estimate_year)
@@ -632,11 +691,11 @@ def check_poverty(dq, profile):
         f"""
         WITH expected AS (
           SELECT m.area_key, y.year FROM {AREA_MAP} m
-          CROSS JOIN (SELECT explode(array(2021, 2023, 2025)) AS year) y
+          CROSS JOIN (SELECT explode(array({years})) AS year) y
           WHERE y.year >= try_cast(m.first_estimate_year AS INT))
         SELECT (SELECT count(*) FROM expected e LEFT ANTI JOIN {POV} s ON s.area_key = e.area_key AND s.year = e.year)
              + (SELECT count(*) FROM {POV} s LEFT ANTI JOIN expected e ON s.area_key = e.area_key AND s.year = e.year)""",
-        f"""SELECT count(*) FROM {AREA_MAP} m CROSS JOIN (SELECT explode(array(2021, 2023, 2025)) AS year) y
+        f"""SELECT count(*) FROM {AREA_MAP} m CROSS JOIN (SELECT explode(array({years})) AS year) y
                 WHERE y.year >= try_cast(m.first_estimate_year AS INT)""",
         column_name="area_key, year",
         detail="area-years missing from silver, or in silver but not expected",
@@ -648,18 +707,18 @@ def check_poverty(dq, profile):
             "tab2",
             "poverty_incidence_pct",
             " + ".join(
-                f"coalesce(sum({bronze_number(f'incidence_{y}')}), 0)" for y in (2021, 2023, 2025)
+                f"coalesce(sum({bronze_number(f'incidence_{y}')}), 0)" for y in t.param("poverty_years")
             ),
-            "incidence_2021 + incidence_2023 + incidence_2025",
+            " + ".join(f"incidence_{y}" for y in t.param("poverty_years")),
         ),
         (
             "tab6",
             "poor_population",
             " + ".join(
                 f"coalesce(sum(round({bronze_number(f'poor_pop_{y}')} * 1000)), 0)"
-                for y in (2021, 2023, 2025)
+                for y in t.param("poverty_years")
             ),
-            "poor_pop_2021 + poor_pop_2023 + poor_pop_2025, times 1,000",
+            " + ".join(f"poor_pop_{y}" for y in t.param("poverty_years")) + ", times 1,000",
         ),
     ]:
         s = scalar(f"SELECT sum({silver_col}) FROM {POV}")
@@ -711,11 +770,12 @@ def check_poverty(dq, profile):
            OR (poor_population_cv_pct IS NULL) <> (poor_population_precision = 'unknown')
            OR incidence_precision NOT IN ('ok', 'use_with_caution', 'unknown')
            OR poor_population_precision NOT IN ('ok', 'use_with_caution', 'unknown')
-           OR (incidence_precision = 'use_with_caution') <> coalesce(incidence_cv_pct > 10, false)
-           OR (poor_population_precision = 'use_with_caution') <> coalesce(poor_population_cv_pct > 10, false)
+           OR (incidence_precision = 'use_with_caution') <> coalesce(incidence_cv_pct > {cv_caution}, false)
+           OR (poor_population_precision = 'use_with_caution') <> coalesce(poor_population_cv_pct > {cv_caution}, false)
            OR poverty_population_basis <> 'population' OR reporting_period <> 'full_year'""",
         total_sql,
         column_name="measures, below-threshold flags, precision, basis",
+        detail=f"use_with_caution above CV {cv_caution} (poverty_cv_caution_pct recorded by the build)",
     )
 
     # S90: the area columns are the ones of the area map, and a superseded or coverage-unconfirmed
@@ -749,7 +809,7 @@ def check_poverty(dq, profile):
           SELECT geo_name_source, year, poverty_incidence_pct,
                  lag(poverty_incidence_pct) OVER (PARTITION BY area_key ORDER BY year) AS previous_pct
           FROM {POV})
-        WHERE poverty_incidence_pct = 0 OR previous_pct - poverty_incidence_pct > 15"""
+        WHERE poverty_incidence_pct = 0 OR previous_pct - poverty_incidence_pct > {INCIDENCE_DROP_PP}"""
     t.count(
         "S94",
         f"SELECT count(*) FROM ({fell})",
@@ -831,31 +891,38 @@ def check_share(dq, profile):
     t = TableQC(dq, SHARE)
     total_sql = t.total_sql
     t.common(["financing_agent", "year"])
+    share_years = [int(y) for y in t.param("share_years")]
+    agents = int(t.param("share_agent_count"))
+    tolerance = t.param("share_level1_tolerance_pct")
+    years = ", ".join(map(str, share_years))
     t.count(
         "S08",
-        f"SELECT count(*) FROM {SHARE} WHERE year NOT BETWEEN 2016 AND 2023",
+        f"SELECT count(*) FROM {SHARE} WHERE year NOT IN ({years})",
         total_sql,
         column_name="year",
+        detail=f"share_years recorded by the build: {years}",
     )
-    # S88: 16 agents, each with the 8 years
+    # S88: every agent of the approved list, each with every year (counts recorded by the build)
     t.count(
         "S88",
         f"""
-        SELECT abs((SELECT count(DISTINCT financing_agent) FROM {SHARE}) - 16)
+        SELECT abs((SELECT count(DISTINCT financing_agent) FROM {SHARE}) - {agents})
              + (SELECT count(*) FROM (SELECT financing_agent FROM {SHARE} GROUP BY financing_agent
-                                      HAVING count(DISTINCT year) <> 8 OR count(*) <> 8))""",
-        "SELECT 16",
+                                      HAVING count(DISTINCT year) <> {len(share_years)}
+                                          OR count(*) <> {len(share_years)}))""",
+        f"SELECT {agents}",
         column_name="financing_agent, year",
-        detail="expected 16 agents x 8 years = 128 rows",
+        detail=f"expected {agents} agents x {len(share_years)} years = {agents * len(share_years)} rows",
     )
     s = scalar(f"SELECT sum(share_pct) FROM {SHARE}")
     b = scalar(
         "SELECT "
-        + " + ".join(f"coalesce(sum({bronze_number(f'share_{y}')}), 0)" for y in range(2016, 2024))
+        + " + ".join(f"coalesce(sum({bronze_number(f'share_{y}')}), 0)" for y in share_years)
         + f" FROM {BRONZE}.{SHARE_BRONZE} WHERE _source_key = '{SHARE_KEY}'"
     )
     t.value(
-        "S10", s, b, column_name="share_pct (bronze share_2016 ... share_2023, a/ counted as 0)"
+        "S10", s, b,
+        column_name=f"share_pct (bronze share_{min(share_years)} ... share_{max(share_years)}, a/ counted as 0)",
     )
     t.count(
         "S86",
@@ -878,9 +945,9 @@ def check_share(dq, profile):
           SELECT year, sum(CASE WHEN agent_level = 1 THEN share_pct END) AS level_1,
                  max(CASE WHEN agent_level = 0 THEN share_pct END) AS total
           FROM {SHARE} GROUP BY year)
-        WHERE NOT (total <=> 100) OR NOT (abs(level_1 - total) <= 0.2)""",
+        WHERE NOT (total <=> 100) OR NOT (abs(level_1 - total) <= {tolerance})""",
         f"SELECT count(DISTINCT year) FROM {SHARE}",
-        column_name="share_pct",
+        column_name=f"share_pct (tolerance {tolerance}, share_level1_tolerance_pct)",
         detail=listing(f"""SELECT concat(year, ' ', sum(CASE WHEN agent_level = 1 THEN share_pct END))
                                FROM {SHARE} GROUP BY year ORDER BY year"""),
     )
@@ -908,20 +975,22 @@ def check_per_capita(dq, profile):
     t = TableQC(dq, PCAP)
     total_sql = t.total_sql
     t.common(["year"])
+    pc_years = sorted(int(y) for y in t.param("per_capita_years"))
     t.count(
         "S08",
-        f"SELECT count(*) FROM {PCAP} WHERE year NOT BETWEEN 2016 AND 2023",
+        f"SELECT count(*) FROM {PCAP} WHERE year NOT IN ({', '.join(map(str, pc_years))})",
         total_sql,
         column_name="year",
+        detail=f"per_capita_years recorded by the build: {pc_years[0]} to {pc_years[-1]}",
     )
     n = spark.sql(
-        f"SELECT count(*) AS n, count(DISTINCT year) AS d, min(year) AS lo, max(year) AS hi FROM {PCAP}"
+        f"SELECT count(*) AS n, sort_array(collect_set(year)) AS ys FROM {PCAP}"
     ).collect()[0]
     t.value(
         "S88",
-        f"{n['n']} rows, {n['d']} years, {n['lo']} to {n['hi']}",
-        "8 rows, 8 years, 2016 to 2023",
-        ok=(n["n"], n["d"], n["lo"], n["hi"]) == (8, 8, 2016, 2023),
+        f"{n['n']} rows, years {list(n['ys'])}",
+        f"{len(pc_years)} rows, years {pc_years}",
+        ok=n["n"] == len(pc_years) and list(n["ys"]) == pc_years,
         column_name="year",
     )
     t.count(
@@ -943,10 +1012,10 @@ def check_per_capita(dq, profile):
     # S07: a negative growth rate is valid; a very large change in either direction is worth a look
     t.count(
         "S07",
-        f"SELECT count(*) FROM {PCAP} WHERE growth_rate_pct NOT BETWEEN -50 AND 50",
+        f"SELECT count(*) FROM {PCAP} WHERE growth_rate_pct NOT BETWEEN -{GROWTH_REVIEW_PCT} AND {GROWTH_REVIEW_PCT}",
         total_sql,
         column_name="growth_rate_pct",
-        detail="growth outside -50 to 50 percent",
+        detail=f"growth outside -{GROWTH_REVIEW_PCT} to {GROWTH_REVIEW_PCT} percent",
     )
     if profile:
         dq.profile_table(PCAP, exclude=("_silver_build_id",))
@@ -965,28 +1034,31 @@ def check_child_mortality(dq, profile):
         "under5_mortality_reliability",
     ]
     t.common(["characteristic_group", "characteristic", "survey_year"])
+    surveys = sorted(int(y) for y in t.param("mortality_survey_years"))
     t.count(
         "S08",
-        f"SELECT count(*) FROM {MORT} WHERE survey_year NOT IN (2017, 2022)",
+        f"SELECT count(*) FROM {MORT} WHERE survey_year NOT IN ({', '.join(map(str, surveys))})",
         total_sql,
         column_name="survey_year",
+        detail=f"mortality_survey_years recorded by the build: {surveys}",
     )
-    # S88: 30 characteristics (17 regions, 2 residence, 6 education, 5 wealth), each in both surveys
-    g = {
-        r["characteristic_group"]: r["n"]
-        for r in spark.sql(
-            f"SELECT characteristic_group, count(DISTINCT characteristic) AS n FROM {MORT} GROUP BY 1"
-        ).collect()
-    }
-    expected_groups = {"Region": 17, "Residence": 2, "Mother's Education": 6, "Wealth quintile": 5}
+    # S88: every characteristic of the approved list, per group, in every survey. The expected
+    # counts per group are the build's characteristics_by_group (keys normalised like se_label).
+    g = {}
+    for r in spark.sql(
+        f"SELECT characteristic_group, count(DISTINCT characteristic) AS n FROM {MORT} GROUP BY 1"
+    ).collect():
+        g[label_key(r["characteristic_group"])] = g.get(label_key(r["characteristic_group"]), 0) + r["n"]
+    expected_groups = {label_key(k): int(v) for k, v in t.param("characteristics_by_group").items()}
     incomplete = scalar(f"""SELECT count(*) FROM (SELECT 1 FROM {MORT} GROUP BY characteristic_group, characteristic
-                                                  HAVING count(DISTINCT survey_year) <> 2 OR count(*) <> 2)""")
+                                                  HAVING count(DISTINCT survey_year) <> {len(surveys)}
+                                                      OR count(*) <> {len(surveys)})""")
     t.value(
         "S88",
         ", ".join(f"{k} {v}" for k, v in sorted(g.items()))
-        + f", {incomplete} without both surveys",
+        + f", {incomplete} without every survey",
         ", ".join(f"{k} {v}" for k, v in sorted(expected_groups.items()))
-        + ", 0 without both surveys",
+        + ", 0 without every survey",
         ok=g == expected_groups and incomplete == 0,
         column_name="characteristic_group, characteristic, survey_year",
     )
@@ -995,11 +1067,11 @@ def check_child_mortality(dq, profile):
         "SELECT "
         + " + ".join(
             f"coalesce(sum(try_cast(regexp_extract(trim(`{c}`), '^[(]?([0-9]+)[)]?$', 1) AS INT)), 0)"
-            for c in [f"{m}_{y}" for m in ("imr", "cmr", "u5mr") for y in (2017, 2022)]
+            for c in [f"{m}_{y}" for m in ("imr", "cmr", "u5mr") for y in surveys]
         )
         + f" FROM {BRONZE}.{MORT_BRONZE} WHERE _source_key = '{MORT_KEY}'"
     )
-    t.value("S10", s, b, column_name="three rates, both surveys (bronze imr / cmr / u5mr columns)")
+    t.value("S10", s, b, column_name="three rates, every survey (bronze imr / cmr / u5mr columns)")
     t.count(
         "S86",
         f"SELECT count(*) FROM {MORT} WHERE " + " OR ".join(f"{c} < 0" for c in rates),

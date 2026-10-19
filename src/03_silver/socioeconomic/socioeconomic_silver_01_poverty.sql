@@ -28,6 +28,17 @@
 --       AND v.target_table = 'public_health.silver.socioeconomic_poverty_silver'
 --       AND v.source_key = s._source_key AND v.source_file = s._source_file
 --       AND v.source_sheet <=> s._incidence_source_sheet       (or _magnitude_source_sheet)
+--
+-- Rule 2a (2026-10-19)
+--   - poverty_years (2021, 2023, 2025) is a setting, used wherever the build lists the expected
+--     years. The unpivot in [3] still names the bronze columns (incidence_2025, ...): a new gate
+--     stops the build when bronze holds a year column the setting does not list, or the reverse,
+--     so a new PSA release cannot be loaded with its new year silently left out.
+--   - poverty_cv_caution_pct (10): the CV above which a value is use_with_caution. Was typed
+--     twice here and once in socioeconomic_silver_qc.py S87, which now reads it from build_log.
+--   - Both are recorded in build_log.parameters.
+--   - Gate 'area map first_estimate_year is not one of poverty_years' (moved here from 00, which
+--     had its own typed copy of the years).
 -- =============================================================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -39,6 +50,10 @@ DECLARE OR REPLACE VARIABLE silver_build_started_at TIMESTAMP DEFAULT current_ti
 DECLARE OR REPLACE VARIABLE strict_load_lookup BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
+-- Reporting years of the release loaded (psa_poverty_province_biennial_2021_2025.xlsx).
+DECLARE OR REPLACE VARIABLE poverty_years ARRAY<INT> DEFAULT array(2021, 2023, 2025);
+-- Precision rule: a CV above this (percent) is use_with_caution; no CV is unknown.
+DECLARE OR REPLACE VARIABLE poverty_cv_caution_pct DECIMAL(5,2) DEFAULT 10;
 
 -- Text to number: spaces and thousands separators removed. Null when it is not a number.
 CREATE OR REPLACE TEMPORARY FUNCTION se_num(s STRING) RETURNS DECIMAL(20,4)
@@ -156,7 +171,9 @@ LEFT JOIN poverty_table_versions v ON v.table_name = t.table_name;
 
 
 -- =============================================================================
--- [3] cells: one row per area, year and metric, with the parsed value and its status
+-- [3] cells: one row per area, year and metric, with the parsed value and its status.
+--     The bronze columns are named by year, so they are listed here by name. The gate
+--     'bronze year columns differ from poverty_years' keeps this list and the setting in step.
 -- =============================================================================
 CREATE OR REPLACE TABLE public_health.silver.socioeconomic_poverty_silver__cells AS
 WITH long AS (
@@ -207,7 +224,7 @@ CREATE OR REPLACE TABLE public_health.silver.socioeconomic_poverty_silver__candi
 WITH expected AS (
   SELECT m.area_key, y.year
   FROM public_health.silver.socioeconomic_poverty_area_map m
-  CROSS JOIN (SELECT explode(array(2021, 2023, 2025)) AS year) y
+  CROSS JOIN (SELECT explode(poverty_years) AS year) y
   WHERE y.year >= try_cast(m.first_estimate_year AS INT)
 ),
 wide AS (
@@ -272,10 +289,12 @@ SELECT
   CAST(round(w.poor_pop_ci_high * 1000) AS BIGINT) AS poor_population_ci_high,
   -- precision: unknown when the CV is not available, never assumed to be ok
   CASE WHEN w.incidence_cv IS NULL THEN 'unknown'
-       WHEN w.incidence_cv > 10    THEN 'use_with_caution' ELSE 'ok' END AS incidence_precision,
+       WHEN w.incidence_cv > poverty_cv_caution_pct THEN 'use_with_caution' ELSE 'ok' END AS incidence_precision,
   CASE WHEN w.poor_pop_cv IS NULL THEN 'unknown'
-       WHEN w.poor_pop_cv > 10    THEN 'use_with_caution' ELSE 'ok' END AS poor_population_precision,
-  -- notes 1/ (2021 to 2023) and 2/ (2023 to 2025): the change is statistically significant
+       WHEN w.poor_pop_cv > poverty_cv_caution_pct  THEN 'use_with_caution' ELSE 'ok' END AS poor_population_precision,
+  -- notes 1/ (2021 to 2023) and 2/ (2023 to 2025): the change is statistically significant.
+  -- The markers belong to this release; a release with other years changes them (the year
+  -- column gate stops the build before this runs on a new file).
   CASE w.year WHEN 2023 THEN coalesce(n.incidence_notes, '') RLIKE '(^|[ ,])1/'
               WHEN 2025 THEN coalesce(n.incidence_notes, '') RLIKE '(^|[ ,])2/' END AS is_incidence_change_significant,
   CASE w.year WHEN 2023 THEN coalesce(n.magnitude_notes, '') RLIKE '(^|[ ,])1/'
@@ -321,6 +340,22 @@ SELECT 'inputs: sheets come from different versions of the file',
        CASE WHEN count(DISTINCT content_checksum) > 1 THEN 1 ELSE 0 END
   FROM public_health.silver.socioeconomic_poverty_silver__inputs WHERE input_kind = 'bronze_source'
 UNION ALL
+-- Years in the bronze column names (incidence_2025, poor_pop_cv_2023, ...) vs poverty_years.
+-- Every column is listed, nulls included (ignoreNullFields false), from one row of the source.
+SELECT 'bronze year columns differ from poverty_years (update the setting and the unpivot in [3])',
+       size(array_except(y.bronze_years, poverty_years)) + size(array_except(poverty_years, y.bronze_years))
+FROM (SELECT array_distinct(collect_list(CAST(regexp_extract(k, '_([0-9]{4})$', 1) AS INT))) AS bronze_years
+      FROM (SELECT explode(json_object_keys(to_json(struct(*), map('ignoreNullFields', 'false')))) AS k
+            FROM (SELECT * FROM public_health.bronze.socioeconomic_psa_poverty_bronze
+                  WHERE _source_key = 'psa_poverty' LIMIT 1))
+      WHERE k RLIKE '_[0-9]{4}$') y
+UNION ALL
+-- moved from socioeconomic_silver_00 (rule 2a): an area starts in one of the reporting years
+SELECT 'area map first_estimate_year is not one of poverty_years', count(*)
+  FROM public_health.silver.socioeconomic_poverty_area_map
+  WHERE NOT array_contains(poverty_years, try_cast(first_estimate_year AS INT))
+     OR try_cast(first_estimate_year AS INT) IS NULL
+UNION ALL
 SELECT 'unclassified bronze rows', count(*)
   FROM public_health.silver.socioeconomic_poverty_silver__classified WHERE row_class NOT IN ('data', 'non_data')
 UNION ALL
@@ -341,7 +376,7 @@ UNION ALL
 SELECT 'expected area-year without a published estimate', count(*) FROM (
   SELECT m.area_key, y.year, k.metric
   FROM public_health.silver.socioeconomic_poverty_area_map m
-  CROSS JOIN (SELECT explode(array(2021, 2023, 2025)) AS year) y
+  CROSS JOIN (SELECT explode(poverty_years) AS year) y
   CROSS JOIN (SELECT explode(array('threshold', 'incidence', 'poor_pop')) AS metric) k
   LEFT ANTI JOIN public_health.silver.socioeconomic_poverty_silver__cells c
     ON c.area_key = m.area_key AND c.year = y.year AND c.metric = k.metric AND c.value_status = 'ok'
@@ -386,7 +421,7 @@ UNION ALL
 SELECT 'silver rows <> expected area-years of the area map',
        abs((SELECT count(*) FROM public_health.silver.socioeconomic_poverty_silver__candidate)
          - (SELECT count(*) FROM public_health.silver.socioeconomic_poverty_area_map m
-            CROSS JOIN (SELECT explode(array(2021, 2023, 2025)) AS year) y
+            CROSS JOIN (SELECT explode(poverty_years) AS year) y
             WHERE y.year >= try_cast(m.first_estimate_year AS INT)))
 UNION ALL
 SELECT 'reconciliation: bronze rows referenced by silver <> rows read - rows not loaded (data rows, tab2)',
@@ -413,6 +448,8 @@ SELECT silver_build_id                                AS build_id,
        CAST(NULL AS BIGINT)                           AS target_table_version,     -- filled in [9]
        code_version                                   AS code_version,
        to_json(named_struct('poverty_population_basis', 'population', 'reporting_period', 'full_year',
+                            'poverty_years', poverty_years,
+                            'poverty_cv_caution_pct', poverty_cv_caution_pct,
                             'strict_load_lookup', strict_load_lookup,
                             'inputs_without_load_log',
                             (SELECT count(*) FROM public_health.silver.socioeconomic_poverty_silver__inputs WHERE input_kind = 'bronze_source' AND metadata_matches = 0))) AS parameters,
@@ -506,7 +543,8 @@ SELECT (SELECT count(*) FROM public_health.silver.socioeconomic_poverty_silver__
        (SELECT count(DISTINCT area_key) FROM public_health.silver.socioeconomic_poverty_silver) AS areas,
        (SELECT count(*) FROM public_health.silver.socioeconomic_poverty_silver WHERE NOT comparison_eligible) AS rows_not_comparison_eligible,
        (SELECT count(*) FROM public_health.silver.socioeconomic_poverty_silver WHERE incidence_precision <> 'ok') AS rows_incidence_not_ok_precision,
-       -- control values to read against the PSA release (expected 9.7, 35120.89 and 11083030)
+       -- control values to read against the PSA release: the expected numbers are the
+       -- psa_poverty qc.control_values in sources_socioeconomic.yaml (S84 checks them)
        (SELECT max(poverty_incidence_pct) FROM public_health.silver.socioeconomic_poverty_silver WHERE area_key = 'ph' AND year = 2025) AS ph_2025_incidence_pct,
        (SELECT max(annual_per_capita_poverty_threshold_php) FROM public_health.silver.socioeconomic_poverty_silver WHERE area_key = 'ph' AND year = 2025) AS ph_2025_threshold_php,
        (SELECT max(poor_population) FROM public_health.silver.socioeconomic_poverty_silver WHERE area_key = 'ph' AND year = 2025) AS ph_2025_poor_population;

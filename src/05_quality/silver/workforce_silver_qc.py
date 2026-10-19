@@ -30,10 +30,27 @@
 #   FAIL = the table is wrong, incomplete or cannot be traced.
 #   WARN = the table is a faithful copy of the sources, but the sources disagree or have gaps
 #          a person should look at
+#
+# Rule 2a (2026-10-19): no numbers about the files are typed here any more.
+#   - S64 / S78 controls: qc.control_values items with a `silver:` block in sources_workforce.yaml
+#     (the same numbers bronze QC B11 checks). S65 area controls:
+#     doh_fhsis_demographic.silver_qc.area_controls (bronze labels differ by file, so they are
+#     silver-only). A missing set is S00 FAIL for the table.
+#   - From build_log.parameters of the build that wrote the table (TableQC.param):
+#     headcount (02): fhsis_years, psa_years, fhsis_coded_years, professions, eligibility_rule_ids
+#       -> S08 ranges, S66 professions, S67 rule ids, S68 / S70 coded-file year, S71 common years
+#     denominator (03): denominator_sheets, households_years -> S09 / S63 sheet scope, S08, S74
+#     A table built before 2026-10-19 has none of them: S00 FAIL names the build to rerun.
+#   - S71 keeps its registry name ("2018-2023"); the years it compares are now derived and listed
+#     in its detail.
 
 import argparse
+import functools
+import json
 import os
 import sys
+
+import yaml
 
 from pyspark.sql import SparkSession
 
@@ -84,6 +101,7 @@ from dq_utils import DQRun  # noqa: E402
 
 DOMAIN = "workforce"
 SCRIPT_NAME = "workforce_silver_qc.py"
+CONFIG_NAME = "sources_workforce.yaml"
 
 
 def parse_args():
@@ -100,6 +118,8 @@ def parse_args():
     p.add_argument("--profile", default="true", help="Also write a column profile")
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--code_version", default=None)
+    p.add_argument("--config_path", default=None,
+                   help=f"Full path to {CONFIG_NAME} (default: config/ above this file)")
     a, _ = p.parse_known_args()
     return a
 
@@ -158,57 +178,80 @@ CHECKS = {
     "S79": ("area label overrides not yet reviewed", "CONSISTENCY", "WARN"),
 }
 
-# National controls (plan 9): FHSIS doctors per year; PSA as in bronze B11.
-NATIONAL_CONTROLS = [
-    (FHSIS_KEY, y, "doctors", n)
-    for y, n in [
-        (2018, 3131),
-        (2019, 3001),
-        (2020, 3351),
-        (2021, 4046),
-        (2022, 4289),
-        (2023, 4416),
-        (2024, 5099),
-        (2025, 5150),
-    ]
-] + [(PSA_KEY, 2023, "doctors", 4416), (PSA_KEY, 2012, "midwives", 16948)]
-# Area controls: national totals cannot prove that values reached the right area.
-AREA_CONTROLS = [
-    ("Pangasinan", "psgc:0105500000", 2022, "doctors", 76),
-    ("Pangasinan", "psgc:0105500000", 2023, "doctors", 97),
-    ("City of Dagupan", "psgc:0105518000", 2023, "doctors", 5),
-    ("City of Manila", "psgc:1380600000", 2021, "doctors", 304),
-    ("BARMM", "psgc:1900000000", 2024, "doctors", 109),
-]
-PSMO_CONTROL_TOTAL = 419
-
-# Denominator sheets (plan 8.1): (year, sheet). Used to scope the freshness and reconcile checks.
-DENOMINATOR_SHEETS = [
-    (2018, "Table 3B.2"),
-    (2019, "HEALTH WORKERS PART1"),
-    (2019, "HEALTH WORKERS PART3"),
-    (2020, "HEALTH WORKERS PART1"),
-    (2020, "HEALTH WORKERS PART3"),
-    (2021, "HEALTH WORKERS PART1"),
-    (2022, "HEALTH WORKERS PART1"),
-    (2022, "HEALTH WORKERS PART2"),
-    (2023, "HEALTH WORKERS PART1"),
-    (2024, "Health Workers"),
-    (2025, "Health Workers"),
-]
 FILE_YEAR = "try_cast(regexp_extract(_source_file, '_([0-9]{4})[.]xlsx$', 1) AS INT)"
-DEN_FILTER = (
-    "("
-    + " OR ".join(f"({FILE_YEAR} = {y} AND _source_sheet = '{s}')" for y, s in DENOMINATOR_SHEETS)
-    + ")"
-)
 
 # Declared inputs per table: (bronze table, _source_key, extra bronze filter). Used by S09 and S63.
+# None = the denominator sheets recorded by workforce_silver_03 (TableQC.declared_inputs).
 DECLARED_INPUTS = {
     HC: [(FHSIS, FHSIS_KEY, "true"), (PSA, PSA_KEY, "true")],
-    DEN: [(FHSIS, FHSIS_KEY, DEN_FILTER)],
+    DEN: [(FHSIS, FHSIS_KEY, None)],
     SPEC: [(PSMO, PSMO_KEY, "true")],
 }
+
+
+# Control values (S64, S65, S78): sources_workforce.yaml (rule 2a, 2026-10-19)
+def find_config(explicit=None):
+    """--config_path, or config/<CONFIG_NAME> in this file's folder, the working directory or up
+    to five folders above them."""
+    if explicit:
+        if not os.path.isfile(explicit):
+            raise FileNotFoundError(f"--config_path does not exist: {explicit}")
+        return os.path.abspath(explicit)
+    starts = [os.getcwd()]
+    try:
+        starts.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    except NameError:
+        pass
+    searched = []
+    for start in starts:
+        folder = start
+        for _ in range(6):
+            for sub in ("", "config"):
+                candidate = os.path.join(folder, sub, CONFIG_NAME)
+                searched.append(candidate)
+                if os.path.isfile(candidate):
+                    return os.path.abspath(candidate)
+            parent = os.path.dirname(folder)
+            if parent == folder:
+                break
+            folder = parent
+    raise FileNotFoundError(f"{CONFIG_NAME} not found. Pass --config_path. Looked in:\n  "
+                            + "\n  ".join(dict.fromkeys(searched)))
+
+
+@functools.lru_cache(maxsize=None)
+def load_controls():
+    """national: [(source_key, year, profession, expected, label)]  S64
+    area:     [(label, area_key, year, profession, expected)]      S65
+    psmo:     expected listed total                                  S78
+    Raises when a set is missing, so a YAML edit cannot silently remove a control check."""
+    path = find_config(ARGS.config_path)
+    with open(path, encoding="utf-8") as f:
+        sources = (yaml.safe_load(f) or {}).get("sources") or {}
+
+    def silver_items(key):
+        items = [cv for cv in ((sources.get(key) or {}).get("qc") or {}).get("control_values") or []
+                 if cv.get("silver")]
+        if not items:
+            raise ValueError(f"{CONFIG_NAME}: {key} has no qc.control_values with a silver: block")
+        return items
+
+    national = []
+    for key in (FHSIS_KEY, PSA_KEY):
+        for cv in silver_items(key):
+            sv = cv["silver"]
+            if "year" not in sv or "profession" not in sv:
+                raise ValueError(f"{CONFIG_NAME}: {key} control {cv.get('label')!r}: silver block needs year and profession")
+            national.append((key, int(sv["year"]), str(sv["profession"]), cv["expected"], cv["label"]))
+    area = [(a["label"], a["area_key"], int(a["year"]), a["profession"], a["expected"])
+            for a in ((sources.get(FHSIS_KEY) or {}).get("silver_qc") or {}).get("area_controls") or []]
+    if not area:
+        raise ValueError(f"{CONFIG_NAME}: {FHSIS_KEY}.silver_qc.area_controls is missing (S65)")
+    psmo = [cv for cv in silver_items(PSMO_KEY) if cv["silver"].get("total")]
+    if len(psmo) != 1:
+        raise ValueError(f"{CONFIG_NAME}: {PSMO_KEY} needs exactly one control with silver: {{total: ...}} (S78)")
+    return {"national": national, "area": area, "psmo": psmo[0]["expected"]}
+
 
 LINEAGE_ALWAYS = [
     "_silver_build_id",
@@ -255,6 +298,38 @@ class TableQC:
         self.build_id = ids[0] if len(ids) == 1 else None
         self.batch = f"build:{self.build_id}" if self.build_id else None
         self.total_sql = f"SELECT count(*) FROM {table}"
+        self._params = None
+
+    def param(self, key):
+        """A setting recorded by the build that wrote this table (build_log.parameters).
+        Raises when it is missing, which main() records as S00 FAIL for the table."""
+        if self._params is None:
+            if self.build_id is None:
+                raise KeyError(f"{self.table}: no single build id, so no build settings (see S62)")
+            rows = spark.sql(f"""SELECT parameters FROM {QUALITY}.build_log
+                                 WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
+                                   AND status = 'succeeded'""").collect()
+            self._params = json.loads(rows[0]["parameters"]) if rows and rows[0]["parameters"] else {}
+        if key not in self._params:
+            raise KeyError(f"{self.table}: build {self.build_id} did not record {key!r}. "
+                           "Rebuild the table with the 2026-10-19 build file.")
+        return self._params[key]
+
+    def years(self, key):
+        return sorted(int(y) for y in self.param(key))
+
+    def declared_inputs(self):
+        """DECLARED_INPUTS with the denominator sheet filter built from the sheets the build
+        recorded (denominator_sheets), so the QC has no copy of the layout."""
+        out = []
+        for bronze, source_key, extra in DECLARED_INPUTS[self.table]:
+            if extra is None:
+                sheets = {(int(d["year"]), d["sheet"]) for d in self.param("denominator_sheets")}
+                extra = "(" + " OR ".join(
+                    f"({FILE_YEAR} = {y} AND _source_sheet = '{sh.replace(chr(39), chr(39) * 2)}')"
+                    for y, sh in sorted(sheets)) + ")"
+            out.append((bronze, source_key, extra))
+        return out
 
     def _rec(self, check_id, **kw):
         name, ctype, severity = CHECKS[check_id]
@@ -359,7 +434,7 @@ class TableQC:
     def freshness(self):
         """S63, per source: the files, sheets and load times in bronze now are the ones the build read;
         and the geography and reference tables are still at the version the build read."""
-        for bronze, source_key, extra in DECLARED_INPUTS[self.table]:
+        for bronze, source_key, extra in self.declared_inputs():
             mismatches = scalar(f"""
                 WITH now_in_bronze AS (
                   SELECT DISTINCT _source_file AS f, _source_sheet AS s, _ingested_at AS t
@@ -438,7 +513,7 @@ class TableQC:
         diseases; quality.v_build_reconciliation), so:
              rows the build read (build_inputs.input_rows) = bronze rows now
              rows silver points to = rows read - rows not loaded (merged_into counts as loaded)"""
-        for bronze, source_key, extra in DECLARED_INPUTS[self.table]:
+        for bronze, source_key, extra in self.declared_inputs():
             bronze_rows = scalar(
                 f"SELECT count(*) FROM {bronze} WHERE _source_key = '{source_key}' AND {extra}"
             )
@@ -532,20 +607,25 @@ def check_headcount(dq, profile):
         total_sql,
         column_name="headcount_*",
     )
+    fhsis_years, psa_years = t.years("fhsis_years"), t.years("psa_years")
+    coded = ", ".join(str(y) for y in t.years("fhsis_coded_years"))
+    common = sorted(set(fhsis_years) & set(psa_years))
+    professions_sql = ", ".join("'" + x + "'" for x in t.param("professions"))
+    rules_sql = ", ".join("'" + x + "'" for x in t.param("eligibility_rule_ids"))
     t.count(
         "S08",
         f"""SELECT count(*) FROM {HC}
-                       WHERE (_source_key = '{FHSIS_KEY}' AND year NOT BETWEEN 2018 AND 2025)
-                          OR (_source_key = '{PSA_KEY}' AND year NOT BETWEEN 2012 AND 2023)""",
+                       WHERE (_source_key = '{FHSIS_KEY}' AND year NOT IN ({', '.join(map(str, fhsis_years))}))
+                          OR (_source_key = '{PSA_KEY}' AND year NOT IN ({', '.join(map(str, psa_years))}))""",
         total_sql,
         column_name="year",
+        detail=f"years recorded by the build: FHSIS {fhsis_years[0]}-{fhsis_years[-1]}, PSA {psa_years[0]}-{psa_years[-1]}",
     )
     t.count(
         "S66",
         f"""
         SELECT count(*) FROM {HC}
-        WHERE profession NOT IN ('doctors','nurses','midwives','dentists','medtech','nutritionists',
-                                 'sanitary_engineers','sanitary_inspectors','bhw')
+        WHERE profession NOT IN ({professions_sql})
            OR geo_level NOT IN ('country','region','province','city','municipality','special_geographic_area')
            OR split_basis NOT IN ('sex','employer','employer_lgu_only','none')
            OR source_role NOT IN ('preferred','cross_check')
@@ -562,16 +642,15 @@ def check_headcount(dq, profile):
         WHERE (NOT analysis_eligible AND (exclusion_reason IS NULL OR display_label IS NULL))
            OR (analysis_eligible AND (exclusion_reason IS NOT NULL OR total_status <> 'ok'))
            OR (exclusion_reason = 'reporting_inconsistency'
-               AND coalesce(exclusion_rule, '') NOT IN ('R1_PROVINCE_ZERO_CHILDREN_POSITIVE', 'R2_NEW_PROVINCE_FIRST_YEAR_ZERO',
-                                                        'R3_PSA_SUSPECT_VALUE', 'R4_TOTAL_ZERO_SPLITS_BLANK',
-                                                        'R5_TOTAL_ZERO_SPLIT_POSITIVE'))""",
+               AND coalesce(exclusion_rule, '') NOT IN ({rules_sql}))""",
         total_sql,
         column_name="analysis_eligible, exclusion_reason, exclusion_rule",
         detail=listing(f"""SELECT exclusion_reason, coalesce(exclusion_rule, ''), count(*) FROM {HC}
                                WHERE NOT analysis_eligible GROUP BY 1, 2 ORDER BY 1, 2"""),
     )
 
-    for source_key, year, profession, expected in NATIONAL_CONTROLS:
+    controls = load_controls()
+    for source_key, year, profession, expected, label in controls["national"]:
         observed = scalar(f"""SELECT max(headcount_total) FROM {HC} WHERE _source_key = '{source_key}'
                               AND area_key = 'ph' AND year = {year} AND profession = '{profession}'""")
         t.value(
@@ -580,9 +659,9 @@ def check_headcount(dq, profile):
             expected,
             source_key=source_key,
             column_name="headcount_total",
-            detail=f"Philippines {year} {profession}",
+            detail=f"Philippines {year} {profession} ({label})",
         )
-    for name, area_key, year, profession, expected in AREA_CONTROLS:
+    for name, area_key, year, profession, expected in controls["area"]:
         observed = scalar(f"""SELECT max(headcount_total) FROM {HC} WHERE _source_key = '{FHSIS_KEY}'
                               AND area_key = '{area_key}' AND year = {year} AND profession = '{profession}'""")
         t.value(
@@ -595,9 +674,10 @@ def check_headcount(dq, profile):
         )
 
     # ---- WARN: the sources disagree or have gaps; silver is still a faithful copy -------------
-    # S68 (plan 4.5). 2018-2024: region row = the rows listed under it in the same sheet (provinces,
-    # listed cities, SGA, each once); national = sum of region rows. 2025: region = rows whose
-    # comparison parent is the region (provinces, HUC/ICC, SGA). Only groups where every part is ok.
+    # S68 (plan 4.5). Uncoded files (2018-2024): region row = the rows listed under it in the same
+    # sheet (provinces, listed cities, SGA, each once); national = sum of region rows. Coded files
+    # (fhsis_coded_years, 2025): region = rows whose comparison parent is the region (provinces,
+    # HUC/ICC, SGA). Only groups where every part is ok.
     recon = f"""
         WITH h AS (SELECT * FROM {HC} WHERE _source_key = '{FHSIS_KEY}'),
         nat AS (
@@ -613,13 +693,13 @@ def check_headcount(dq, profile):
           FROM h p JOIN h c ON c._source_file = p._source_file AND c._source_sheet = p._source_sheet
                            AND c.profession = p.profession AND c.region_as_published = p.region_as_published
                            AND c.geo_level NOT IN ('region', 'country')
-          WHERE p.geo_level = 'region' AND p.year <= 2024 AND p.total_status = 'ok'
+          WHERE p.geo_level = 'region' AND p.year NOT IN ({coded}) AND p.total_status = 'ok'
           GROUP BY p.year, p.profession, p.area_label_source, p.headcount_total),
         reg25 AS (
           SELECT p.year, p.profession, p.area_label_source AS area, p.headcount_total AS published,
                  sum(c.headcount_total) AS parts, bool_and(c.total_status = 'ok') AS all_ok
           FROM h p JOIN h c ON c.year = p.year AND c.profession = p.profession AND c.parent_area_key = p.area_key
-          WHERE p.geo_level = 'region' AND p.year = 2025 AND p.total_status = 'ok'
+          WHERE p.geo_level = 'region' AND p.year IN ({coded}) AND p.total_status = 'ok'
           GROUP BY p.year, p.profession, p.area_label_source, p.headcount_total)
         SELECT * FROM nat UNION ALL SELECT * FROM reg_pub UNION ALL SELECT * FROM reg25"""
     spark.sql(recon).createOrReplaceTempView("wf_qc_recon")
@@ -645,27 +725,29 @@ def check_headcount(dq, profile):
     t.count(
         "S70",
         f"SELECT count(*) FROM {HC} WHERE array_contains(review_flags, 'province_vs_municipality_sum')",
-        f"SELECT count(*) FROM {HC} WHERE year = 2025 AND geo_level = 'province'",
+        f"SELECT count(*) FROM {HC} WHERE year IN ({coded}) AND geo_level = 'province'",
         source_key=FHSIS_KEY,
         column_name="headcount_total",
         detail=listing(f"""SELECT area_label_source, profession, headcount_total FROM {HC}
                                WHERE array_contains(review_flags, 'province_vs_municipality_sum') AND profession = 'doctors'"""),
     )
+    common_in = ", ".join(map(str, common)) or "NULL"
     t.count(
         "S71",
         f"""SELECT count(*) FROM {HC} p
                        LEFT JOIN {HC} f ON f._source_key = '{FHSIS_KEY}' AND f.area_key = 'ph'
                                        AND f.year = p.year AND f.profession = p.profession
-                       WHERE p._source_key = '{PSA_KEY}' AND p.area_key = 'ph' AND p.year BETWEEN 2018 AND 2023
+                       WHERE p._source_key = '{PSA_KEY}' AND p.area_key = 'ph' AND p.year IN ({common_in})
                          AND NOT (p.headcount_total <=> f.headcount_total)""",
-        f"SELECT count(*) FROM {HC} WHERE _source_key = '{PSA_KEY}' AND area_key = 'ph' AND year BETWEEN 2018 AND 2023",
+        f"SELECT count(*) FROM {HC} WHERE _source_key = '{PSA_KEY}' AND area_key = 'ph' AND year IN ({common_in})",
         source_key=PSA_KEY,
         column_name="headcount_total",
-        detail=listing(f"""SELECT p.year, p.profession, 'PSA', p.headcount_total, 'FHSIS', f.headcount_total FROM {HC} p
+        detail=f"years in both sources: {common_in}. "
+        + (listing(f"""SELECT p.year, p.profession, 'PSA', p.headcount_total, 'FHSIS', f.headcount_total FROM {HC} p
                                LEFT JOIN {HC} f ON f._source_key = '{FHSIS_KEY}' AND f.area_key = 'ph'
                                                AND f.year = p.year AND f.profession = p.profession
-                               WHERE p._source_key = '{PSA_KEY}' AND p.area_key = 'ph' AND p.year BETWEEN 2018 AND 2023
-                                 AND NOT (p.headcount_total <=> f.headcount_total)"""),
+                               WHERE p._source_key = '{PSA_KEY}' AND p.area_key = 'ph' AND p.year IN ({common_in})
+                                 AND NOT (p.headcount_total <=> f.headcount_total)""") or ""),
     )
     t.count(
         "S72",
@@ -722,11 +804,14 @@ def check_denominator(dq, profile):
         total_sql,
         column_name="reported_population, household_estimates",
     )
+    den_years = sorted({int(d["year"]) for d in t.param("denominator_sheets") if d["side"] == "population"})
+    hh_years = ", ".join(str(y) for y in t.years("households_years"))
     t.count(
         "S08",
-        f"SELECT count(*) FROM {DEN} WHERE year NOT BETWEEN 2018 AND 2025",
+        f"SELECT count(*) FROM {DEN} WHERE year NOT IN ({', '.join(map(str, den_years))})",
         total_sql,
         column_name="year",
+        detail=f"population years recorded by the build: {den_years[0]}-{den_years[-1]}",
     )
     t.count(
         "S66",
@@ -746,7 +831,7 @@ def check_denominator(dq, profile):
            OR (NOT population_source_present AND (_population_source_sheet IS NOT NULL OR _population_source_row_num IS NOT NULL))
            OR (households_source_present AND (_households_source_sheet IS NULL OR _households_source_row_num IS NULL))
            OR (NOT households_source_present AND (_households_source_sheet IS NOT NULL OR _households_source_row_num IS NOT NULL))
-           OR (households_source_present AND year NOT IN (2019, 2020, 2022, 2024, 2025))""",
+           OR (households_source_present AND year NOT IN ({hh_years}))""",
         total_sql,
         column_name="_population_source_*, _households_source_*",
     )
@@ -824,7 +909,7 @@ def check_specialist(dq, profile):
     t.value(
         "S78",
         scalar(f"SELECT sum(listed_oncologist_count) FROM {SPEC}"),
-        PSMO_CONTROL_TOTAL,
+        load_controls()["psmo"],
         source_key=PSMO_KEY,
         column_name="listed_oncologist_count",
         detail="sum of listings as published; listings repeat across areas, so this is not a unique headcount",
