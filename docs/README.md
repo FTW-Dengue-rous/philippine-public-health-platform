@@ -51,6 +51,7 @@ docs/
 │   │   ├── README.md                        silver overview
 │   │   ├── diseases.md · facilities.md · workforce.md · socioeconomic.md
 │   │   ├── geography.md · population.md
+│   │   ├── silver-quality-checks.md         every silver check: gates, domain and cross-domain QC
 │   │   ├── reconciliation.md                how every bronze row is accounted for in silver
 │   │   └── rebuild-strategy.md              why silver rebuilds in full; cost recommendations
 │   ├── gold/

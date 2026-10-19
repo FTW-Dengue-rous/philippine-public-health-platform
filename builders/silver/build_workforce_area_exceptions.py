@@ -168,6 +168,19 @@ OVERRIDES = [  # (file, sheet, row, bound_checksum, original_label, proposed_are
         "",
         "",
     ),
+    (
+        _F2025,
+        "Health Workers",
+        1243,
+        _C2025,
+        "Zamboanga Sibugay",
+        "psgc:0908300000",
+        "Printed code 0908001000 is not a PSGC code (Region IX has no province 080); the label is the "
+        "province Zamboanga Sibugay, whose PSGC code is 0908300000",
+        "accepted",
+        "Jemma",
+        "2026-10-20",
+    ),
 ]
 
 # ---------------------------------------------------------------------------------------------

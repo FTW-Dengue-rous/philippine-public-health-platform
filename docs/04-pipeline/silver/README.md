@@ -17,6 +17,7 @@ This page is the overview. The full reference (run order, every table, gates, ch
 | [workforce.md](workforce.md) | Health worker headcounts, FHSIS population denominators, oncologist listings |
 | [socioeconomic.md](socioeconomic.md) | Poverty, health expenditure, child mortality |
 | [reconciliation.md](reconciliation.md) | How every bronze row is accounted for in silver, and how to produce the evidence |
+| [silver-quality-checks.md](silver-quality-checks.md) | Every silver check: build gates, domain QC, cross-domain QC, severities, settings, what to do on a failure |
 | [rebuild-strategy.md](rebuild-strategy.md) | Why silver rebuilds in full on every run, and the cost recommendations |
 
 ## How every build works
@@ -98,7 +99,7 @@ Three tables come from FOI releases or a hospital extract: `diseases_hospital_en
 | Domain QC | The published table: keys, lineage, freshness, reconciliation, controls, accepted values, codes in geography, domain rules | `quality.qc_results` |
 | Cross-domain QC | Quarantine share per table (gate), future years, ratios per population, source age, FHSIS vs census population | `quality.qc_results` |
 
-Any FAIL stops the job before gold. WARNs are kept for a person to read; the expected ones are listed on each domain page. Check codes: [quality check catalog](../quality/quality-check-catalog.md). Results of the recorded runs: [quality results and evidence](../quality/quality-results-and-evidence.md).
+Any FAIL stops the job before gold. WARNs are kept for a person to read; the expected ones are listed on each domain page. Every silver check in detail: [silver quality checks](silver-quality-checks.md). Codes of all layers: [quality check catalog](../quality/quality-check-catalog.md). Results of the recorded runs: [quality results and evidence](../quality/quality-results-and-evidence.md).
 
 ## Scope
 
