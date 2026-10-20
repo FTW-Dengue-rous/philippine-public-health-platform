@@ -68,7 +68,7 @@ BQ2 needs admissions and bed data per disease, which the team does not have yet.
 
 ## 6. Analytical questions
 
-The business questions break into analytical questions. Each one is answered by a gold mart or fact table. The full list, with wording and the mart that answers it, is in the question map workbook (`capstone_gold_question_map.xlsx`).
+The business questions break into analytical questions. Each one is answered by a gold mart or fact table. The table below is the question map: each group's wording and the gold object that answers it.
 
 | Group | IDs | What it asks | Gold object |
 |---|---|---|---|
@@ -92,7 +92,7 @@ The business questions break into analytical questions. Each one is answered by 
 | A3 | Using the latest available HFSRB list, how many residents live in each area without a recorded facility? |
 | A4 | Which cities and municipalities have the highest population per recorded hospital, licensed primary care facility or hospital bed? |
 
-**Where the questions stand (2026-10-20).** The gold model is built: 5 dimensions, 4 facts, and the marts in the table above, as views over the facts ([gold README](../../src/04_gold/README.md)). Every group in the table can be queried in `public_health.gold`; live row counts are in `quality.build_log`. Two tables are not built: `mart_capacity_gap`, which would join need and supply in one row per area — until then BQ1 is answered by reading `mart_area_service_profile` (supply, workforce, poverty, access) and `mart_area_burden_indicator` (disease burden) side by side — and `mart_surge_stress_test` of BQ2 (previous scope).
+**Where the questions stand (checked 2026-10-20).** The gold model is built: 5 dimensions, 4 facts, and the marts in the table above, as views over the facts ([gold README](../../src/04_gold/README.md)). This workspace does not hold that build: `public_health.gold`, `quality.build_log` and `build_inputs` are not yet implemented here, so the lineage queries in the [data lineage map](../02-data/data-lineage-map.md), section 5, do not work yet — trace lineage manually from the silver `_source_*` columns. Two tables are not built at all: `mart_capacity_gap`, which would join need and supply in one row per area — until then BQ1 is answered by reading `mart_area_service_profile` (supply, workforce, poverty, access) and `mart_area_burden_indicator` (disease burden) side by side — and `mart_surge_stress_test` of BQ2 (previous scope).
 
 ## 7. Success criteria
 
@@ -126,4 +126,6 @@ Motto: **Tamang Datos. Tamang Lugar. Tamang Tugon.** The right data, for the rig
 | 2026-10-14 | Core dengue question reworded to "largest relative to current recorded capacity" (D-39) |
 | 2026-10-19 | Page written from the decision log and the presentation script |
 | 2026-10-20 | Criterion 4: three evidence runs |
-| 2026-10-20 |  N1 and S2 added to the question table with their gold objects; evidence-readiness row and a build-status note added; criterion 6 (reproduction from the documentation) added; status-date row merged into the page metadata; criterion 6 provenance noted |
+| 2026-10-20 | N1 and S2 added to the question table with their gold objects; evidence-readiness row and a build-status note added; criterion 6 (reproduction from the documentation) added; status-date row merged into the page metadata; criterion 6 provenance noted |
+| 2026-10-20 | Question-map workbook reference removed — `capstone_gold_question_map.xlsx` is not in the repo; the in-page question table is now the authoritative question map |
+| 2026-10-20 | Build-status note qualified: `public_health.gold`, `build_log` and `build_inputs` are not yet implemented in this workspace (aligns with the data lineage map); status-check date restored to the heading; 2026-10-12 rewording date restored to the access-questions heading |
