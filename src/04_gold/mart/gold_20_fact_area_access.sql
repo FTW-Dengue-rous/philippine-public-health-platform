@@ -1,5 +1,4 @@
 -- ========================================
--- gold_20_fact_area_access.sql
 -- Creates the view public_health.gold.fact_area_access
 --   One row is: one city or municipality, with three straight-line distances:
 --     (a) to the centre of the nearest city or municipality with a hospital RECORDED in the
@@ -9,7 +8,6 @@
 --   Key: area_key
 --   Answers: the "how far" part of A1 and A2.
 --   (a) is not a distance to a hospital building. The registry has no coordinates.
--- Previous file name: gold_v2_57_fact_area_access.sql
 --
 -- The name starts with fact_, but this is a view in mart/. It is not one of the 4 model facts.
 -- The name stays because the dashboard reads it.

@@ -1,29 +1,50 @@
--- =======================================
+-- ========================================
 -- Builds public_health.gold.dim_facility
---   One row is: one facility establishment in facilities_registry_silver (listed, or carried as not_listed)
---   Primary key: facility_key (BIGINT, xxhash64 of the natural key or grain, stable across rebuilds)
---   Natural key: (facility_source_id)
+--   One row is: one facility establishment in facilities_registry_silver (listed, or carried
+--   as not_listed)
+--   Primary key: facility_key = xxhash64(facility_source_id). The same facility gives the same
+--                key on every rebuild.
+--   Natural key: facility_source_id (the registry facility_key)
 --
 -- Reads
 --   public_health.silver.facilities_registry_silver
---   public_health.gold.dim_geography
+--   public_health.gold.dim_geography (gold 01, for the area check)
 --
--- v3.1 columns: facility_key, facility_source_id, facility_name, area_key, facility_category,
---   hospital_level, ownership.
+-- Columns (Proposal v3.1): facility_key, facility_source_id, facility_name, area_key,
+--   facility_category, hospital_level, ownership.
 -- Extra columns
 --   * facility_status (listed, not_listed): only listed facilities are counted. Closure is
 --     never inferred from a carried row.
 --   * authorized_beds, analysis_beds, analysis_beds_basis: beds per facility, with the basis
---     shown next to analysis_beds (facilities handoff rule).
+--     shown next to analysis_beds.
 --   * dialysis_stations: K1. Null means not reported, never zero.
 --   * is_license_valid_on_as_of: A3 and A4 count licensed primary care facilities.
+--
 -- Rules
---   * No matching, keys or area resolution are redone. facility_source_id is the registry
---     facility_key and facility_key is its hash.
---   * ownership is government or private (lower case of the registry column ownership).
---   * hospital_level is Level 1, Level 2 or Level 3, read from service_level. A hospital whose
---     service level names no level gets unknown, so the check "filled for hospitals only" holds.
---   * area_key is the registry area: a city, municipality or Manila submunicipality.
+--   * No matching, keys or area resolution are redone here. Silver owns them.
+--   * ownership = government or private (lower case of the registry column).
+--   * hospital_level = Level 1, Level 2 or Level 3, read from service_level. A hospital whose
+--     service level names no level gets 'unknown'. Other categories get null.
+--   * area_key = the registry area (a city, municipality or Manila submunicipality). Null when
+--     silver has no area; a listed facility without an area stops the build.
+--   * This dimension joins dim_geography only. It is never joined to fact_facility_capacity
+--     (that fact is at group grain, not facility grain).
+--
+-- Build steps (write-audit-publish)
+--   [0] build id and settings
+--   [1] __inputs     every input, with the build that wrote it and its latest silver QC
+--   [2] __candidate  the candidate rows
+--   [3] __gates      every gate must have failures = 0
+--   [4] stop if a gate failed: the failed build is logged, the published table is not touched
+--   [5] write the table from the candidate (full rebuild)
+--   [6] record the build in quality.build_log and quality.build_inputs
+--   [7] drop the staging tables, then show the summary
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_21, v1).
+--   2026-10-20  Moved to public_health.gold and renamed gold_04. area_key is null (not the hash
+--               of null) when silver has no area, so the gate "listed facility without an
+--               area" can fire. 'model' removed from the build log parameters.
 -- ========================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -34,6 +55,7 @@ DECLARE OR REPLACE VARIABLE gold_target_version BIGINT DEFAULT NULL;
 -- false: a silver table written by a notebook is allowed. Gold inputs always need one.
 DECLARE OR REPLACE VARIABLE strict_input_builds BOOLEAN DEFAULT false;
 -- true : a silver input whose latest QC (quality.v_table_health) has a FAIL stops the build.
+--        No QC run does not stop it; it makes the approval provisional (step [4]).
 DECLARE OR REPLACE VARIABLE block_on_silver_qc_fail BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
@@ -68,7 +90,7 @@ CREATE OR REPLACE TABLE public_health.gold.dim_facility__candidate AS
 SELECT xxhash64(r.facility_key)                   AS facility_key,
        r.facility_key                             AS facility_source_id,
        r.facility_name,
-       xxhash64(r.area_key)                       AS area_key,
+       nvl2(r.area_key, xxhash64(r.area_key), NULL) AS area_key,   -- null area stays null (xxhash64(NULL) is not null)
        r.facility_category,
        CASE WHEN r.facility_category = 'hospital'
             THEN coalesce(nullif(regexp_extract(r.service_level, '(Level [1-3])', 1), ''), 'unknown') END AS hospital_level,
@@ -132,6 +154,7 @@ FROM public_health.silver.facilities_registry_silver;
 -- ========================================
 -- [4] stop if a gate failed. The failed build is logged first and the staging tables are kept:
 --     SELECT * FROM public_health.gold.dim_facility__gates WHERE failures <> 0
+--     approval: provisional while a silver input has no QC run or has WARN findings to review.
 -- ========================================
 CREATE OR REPLACE TEMP VIEW dim_facility_build_log AS
 SELECT gold_build_id                                   AS build_id,
@@ -142,7 +165,7 @@ SELECT gold_build_id                                   AS build_id,
        current_timestamp()                             AS finished_at,
        CASE WHEN g.failed_gates = 0 THEN 'succeeded' ELSE 'failed' END AS status,
        code_version                                    AS code_version,
-       to_json(named_struct('model', 'v2', 'approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds)) AS parameters,
+       to_json(named_struct('approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds)) AS parameters,
        job_run_id                                      AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT count_if(failures <> 0) AS failed_gates,
@@ -177,7 +200,9 @@ SELECT * FROM public_health.gold.dim_facility__candidate;
 
 
 -- ========================================
--- [6] record the build. If your runtime rejects this SET VAR, delete it (version = null).
+-- [6] record the build, with the table version just written. If your runtime rejects this
+--     SET VAR, delete it: the version stays null, and freshness checks (G06,
+--     mart_evidence_readiness) cannot compare this table.
 -- ========================================
 SET VAR gold_target_version = (SELECT max(version) FROM (DESCRIBE HISTORY public_health.gold.dim_facility));
 
@@ -200,7 +225,7 @@ FROM public_health.gold.dim_facility__inputs;
 
 
 -- ========================================
--- [7] summary, then remove the staging tables
+-- [7] remove the staging tables, then show the summary
 -- ========================================
 DROP TABLE IF EXISTS public_health.gold.dim_facility__candidate;
 DROP TABLE IF EXISTS public_health.gold.dim_facility__gates;

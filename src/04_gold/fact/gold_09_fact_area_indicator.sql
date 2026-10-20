@@ -1,34 +1,54 @@
 -- ========================================
 -- Builds public_health.gold.fact_area_indicator
---   One row is: one population or socioeconomic indicator of one area and period from one source
---   Primary key: fact_area_indicator_key (BIGINT, xxhash64 of the natural key or grain, stable across rebuilds)
+--   One row is: one population or socioeconomic indicator of one area and period from one
+--   source
+--   Primary key: fact_area_indicator_key = xxhash64 of the grain. Stable across rebuilds.
 --   Grain: (area_key, date_key, data_source_key, indicator_name, indicator_category)
 --
 -- Reads
---   public_health.silver.population_silver
---   public_health.silver.workforce_area_denominator_silver
+--   public_health.silver.population_silver                             census (psa_psgc)
+--   public_health.silver.workforce_area_denominator_silver             population printed in FHSIS
 --   public_health.silver.socioeconomic_poverty_silver
 --   public_health.silver.socioeconomic_health_expenditure_share_silver
 --   public_health.silver.socioeconomic_health_expenditure_per_capita_silver
---   public_health.gold.dim_geography
---   public_health.gold.dim_date
---   public_health.gold.dim_data_source
+--   public_health.gold.dim_geography, dim_date, dim_data_source (gold 01-03)
 --
 -- Rules
 --   * Never sum across indicator_name, indicator_category or data_source_key. Census and
 --     FHSIS population are two sources and are never added together.
 --   * value is filled only when value_status is ok. Null is not zero.
 --   * Census: VALID and VALID_WITH_NOTE become ok. Only areas in dim_geography, latest
---     snapshot. coverage_basis for census provinces: province_excl_huc in 2024,
---     province_coverage_unconfirmed for 2015 and 2020.
+--     snapshot. coverage_basis of a census province row: province_excl_huc in the years of
+--     the setting census_province_excl_huc_years (2024), province_coverage_unconfirmed in the
+--     other census years (2015, 2020). The marts never use census province rows: they sum the
+--     cities and municipalities (gold 15).
 --   * FHSIS population: an area whose label override is proposed or rejected gets
---     label_under_review and a null value
+--     label_under_review and a null value.
 --   * Poverty: rows with comparison_eligible = false are KEPT. Do not compare them with
 --     PSGC-based population or facilities as they are. Percentages are never summed or
 --     averaged. comparison_eligible is null on non-poverty rows (not assessed).
 --   * Health expenditure: never add a parent agent to its children. Only category_level 1
---     rows add up to 100. value_note below_0_05: a 0.0 share stands for below 0.05 percent.
---   * Gold never interpolates between census years. The marts apply the 2-year window.
+--     rows add up to 100 (within share_level1_tolerance_pct, the same tolerance as the silver
+--     setting). value_note below_0_05: a 0.0 share stands for below 0.05 percent.
+--   * Gold never interpolates between census years. The marts apply the 2-year window (O-15).
+--   * Latest value per area: v_area_indicator_latest (gold 13).
+--
+-- Build steps (write-audit-publish)
+--   [0] build id and settings
+--   [1] __inputs     every input, with the build that wrote it and its latest silver QC
+--   [2] __candidate  the candidate rows
+--   [3] __gates      every gate must have failures = 0
+--   [4] stop if a gate failed: the failed build is logged, the published table is not touched
+--   [5] write the table from the candidate (full rebuild)
+--   [6] record the build in quality.build_log and quality.build_inputs
+--   [7] drop the staging tables, then show the summary
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_14, gold_37 and gold_90, v1).
+--   2026-10-20  Moved to public_health.gold and renamed gold_09. The census year with
+--               province_excl_huc and the level-1 share tolerance are named settings recorded
+--               in build_log.parameters (were typed in the SQL). 'model' removed from the build
+--               log parameters. No change to the table.
 -- ========================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -39,9 +59,16 @@ DECLARE OR REPLACE VARIABLE gold_target_version BIGINT DEFAULT NULL;
 -- false: a silver table written by a notebook is allowed. Gold inputs always need one.
 DECLARE OR REPLACE VARIABLE strict_input_builds BOOLEAN DEFAULT false;
 -- true : a silver input whose latest QC (quality.v_table_health) has a FAIL stops the build.
+--        No QC run does not stop it; it makes the approval provisional (step [4]).
 DECLARE OR REPLACE VARIABLE block_on_silver_qc_fail BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
+-- Census years whose province rows exclude their HUCs (PSA 2024 census). Other census years
+-- get province_coverage_unconfirmed. Recorded in build_log.parameters.
+DECLARE OR REPLACE VARIABLE census_province_excl_huc_years ARRAY<INT> DEFAULT array(2024);
+-- Level-1 health expenditure shares of a year must add up to 100 within this many points
+-- (same value as the silver setting share_level1_tolerance_pct). Recorded in build_log.parameters.
+DECLARE OR REPLACE VARIABLE share_level1_tolerance_pct DOUBLE DEFAULT 0.2;
 
 
 -- ========================================
@@ -117,7 +144,8 @@ SELECT g.area_key,
        CASE WHEN s.silver_status IN ('VALID', 'VALID_WITH_NOTE') THEN 'ok'
             ELSE coalesce(lower(s.silver_status), 'missing') END AS value_status,
        CAST(NULL AS STRING)                       AS value_note,
-       CASE WHEN g.geographic_level = 'province' AND s.year = 2024 THEN 'province_excl_huc'
+       CASE WHEN g.geographic_level = 'province' AND array_contains(census_province_excl_huc_years, s.year)
+            THEN 'province_excl_huc'
             WHEN g.geographic_level = 'province' THEN 'province_coverage_unconfirmed'
             ELSE g.geographic_level END           AS coverage_basis,
        CAST(NULL AS BOOLEAN)                      AS comparison_eligible,
@@ -273,10 +301,10 @@ SELECT 'share rows <> share silver rows', abs((SELECT count(*) FROM public_healt
 UNION ALL
 SELECT 'per capita rows <> 2 x per capita silver rows', abs((SELECT count(*) FROM public_health.gold.fact_area_indicator__candidate WHERE indicator_name LIKE 'health_expenditure_per_capita%') - 2 * count(*)) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver
 UNION ALL
-SELECT 'level 1 shares of a year do not add up to 100 within 0.2', count(*) FROM (
+SELECT concat('level 1 shares of a year do not add up to 100 within ', CAST(share_level1_tolerance_pct AS STRING)), count(*) FROM (
   SELECT 1 FROM public_health.gold.fact_area_indicator__candidate
   WHERE indicator_name = 'health_expenditure_share_pct' AND category_level = 1
-  GROUP BY date_key HAVING abs(sum(value) - 100) > 0.2)
+  GROUP BY date_key HAVING abs(sum(value) - 100) > share_level1_tolerance_pct)
 UNION ALL
 SELECT 'health expenditure row whose area is not ph', count(*) FROM public_health.gold.fact_area_indicator__candidate WHERE indicator_name LIKE 'health_expenditure%' AND area_key <> xxhash64('ph')
 UNION ALL
@@ -296,6 +324,7 @@ LEFT ANTI JOIN public_health.gold.dim_data_source AS d ON d.data_source_key = c.
 -- ========================================
 -- [4] stop if a gate failed. The failed build is logged first and the staging tables are kept:
 --     SELECT * FROM public_health.gold.fact_area_indicator__gates WHERE failures <> 0
+--     approval: provisional while a silver input has no QC run or has WARN findings to review.
 -- ========================================
 CREATE OR REPLACE TEMP VIEW fact_area_indicator_build_log AS
 SELECT gold_build_id                                   AS build_id,
@@ -306,7 +335,7 @@ SELECT gold_build_id                                   AS build_id,
        current_timestamp()                             AS finished_at,
        CASE WHEN g.failed_gates = 0 THEN 'succeeded' ELSE 'failed' END AS status,
        code_version                                    AS code_version,
-       to_json(named_struct('model', 'v2', 'approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds)) AS parameters,
+       to_json(named_struct('approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds, 'census_province_excl_huc_years', census_province_excl_huc_years, 'share_level1_tolerance_pct', share_level1_tolerance_pct)) AS parameters,
        job_run_id                                      AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT count_if(failures <> 0) AS failed_gates,
@@ -341,7 +370,9 @@ SELECT * FROM public_health.gold.fact_area_indicator__candidate;
 
 
 -- ========================================
--- [6] record the build. If your runtime rejects this SET VAR, delete it (version = null).
+-- [6] record the build, with the table version just written. If your runtime rejects this
+--     SET VAR, delete it: the version stays null, and freshness checks (G06,
+--     mart_evidence_readiness) cannot compare this table.
 -- ========================================
 SET VAR gold_target_version = (SELECT max(version) FROM (DESCRIBE HISTORY public_health.gold.fact_area_indicator));
 
@@ -364,14 +395,15 @@ FROM public_health.gold.fact_area_indicator__inputs;
 
 
 -- ========================================
--- [7] summary, then remove the staging tables
+-- [7] remove the staging tables, then show the summary
 -- ========================================
 DROP TABLE IF EXISTS public_health.gold.fact_area_indicator__candidate;
 DROP TABLE IF EXISTS public_health.gold.fact_area_indicator__gates;
 DROP TABLE IF EXISTS public_health.gold.fact_area_indicator__inputs;
 
--- Controls: Negros Island Region has no 2015 or 2020 census rows and Sulu no 2024 rows;
--- poverty ph 2025 incidence 9.7; households share 2023 = 44.4; per capita 2023 = 11,082.68.
+-- Controls (the same values as the silver S84 controls in sources_socioeconomic.yaml): poverty
+-- ph 2025 incidence 9.7; households share 2023 = 44.4; per capita 2023 = 11,082.68. Known gaps:
+-- Negros Island Region has no 2015 or 2020 census rows; Sulu has no 2024 row (D-41).
 SELECT f.indicator_name, f.indicator_category = 'all' AS no_breakdown, s.source_dataset, min(d.year) AS first_year,
        max(d.year) AS last_year, count(*) AS row_count, count_if(f.value_status <> 'ok') AS not_ok,
        count_if(f.comparison_eligible = false) AS not_comparison_eligible

@@ -1,26 +1,44 @@
 -- ========================================
--- Builds public_health.gold.ref_osm_healthsite_point
---   One row is: one OpenStreetMap health facility point (healthsites.io export via HDX), placed in
---   a city or municipality of dim_geography
---   Primary key: osm_point_key (BIGINT, xxhash64 of osm_key, stable across rebuilds)
---   Natural key: (osm_key) = osm_type/osm_id
+-- Builds public_health.gold.ref_osm_healthsite_point (reference table, outside the
+-- dimensional model)
+--   One row is: one OpenStreetMap health facility point (healthsites.io export via HDX),
+--   placed in a city or municipality of dim_geography
+--   Primary key: osm_point_key = xxhash64(osm_key). Stable across rebuilds.
+--   Natural key: osm_key = osm_type/osm_id
 --
 -- Reads
---   public_health.silver.facilities_osm_point_silver   (2026-10-14 file: coordinates from the GeoJSON)
---   public_health.gold.dim_geography
+--   public_health.silver.facilities_osm_point_silver   (coordinates from the GeoJSON)
+--   public_health.gold.dim_geography (gold 01)
 --
 -- What it is for
 --   * The dashboard map: points by facility_type, with the "© OpenStreetMap contributors" line.
---   * Straight-line distance from each locality (dim_geography centroid) to the nearest OSM
---     hospital: computed in the access mart, not here. OSM is the only geocoded facility source
---     the platform has (the registry has no coordinates).
+--   * Straight-line distance from each locality centre to the nearest OSM hospital, computed
+--     in fact_area_access (gold 20). OSM is the only geocoded facility source the platform has
+--     (the registry has no coordinates).
+--
 -- Rules
 --   * NEVER a facility count. OSM is crowd-sourced, incomplete and uneven by area. Official
 --     counts come from fact_facility_capacity (registry_snapshot) and dim_facility.
 --   * One gold row per silver row; nothing is re-matched or re-placed. area_key is the silver
---     placement (point_in_polygon, nearest_boundary, exception or addr_city_name) and
+--     placement (point_in_polygon, nearest_boundary, exception or addr_city_name), and
 --     location_precision says whether the coordinates or only the municipality are known.
 --   * Sharing: open, ODbL 1.0. Every chart or map that uses it shows the attribution line.
+--
+-- Build steps (write-audit-publish)
+--   [0] build id and settings
+--   [1] __inputs     every input, with the build that wrote it and its latest silver QC
+--   [2] __candidate  the candidate rows
+--   [3] __gates      every gate must have failures = 0
+--   [4] stop if a gate failed: the failed build is logged, the published table is not touched
+--   [5] write the table from the candidate (full rebuild)
+--   [6] record the build in quality.build_log and quality.build_inputs
+--   [7] drop the staging tables, then show the summary
+--
+-- History
+--   2026-10-14  Written for the combined data model (new table: HDX healthsites re-ingest).
+--   2026-10-20  Moved to public_health.gold and renamed gold_12. area_key is null (not the hash
+--               of null) when silver has no area, so the "required key column is null" gate can
+--               fire. 'model' removed from the build log parameters. No change to the table.
 -- ========================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -76,7 +94,7 @@ SELECT xxhash64(o.osm_key)                        AS osm_point_key,
        CAST(o.longitude AS DOUBLE)                AS longitude,
        o.has_coordinates,
        o.location_precision,                      -- point (coordinates known) or municipality
-       xxhash64(o.area_key)                       AS area_key,
+       nvl2(o.area_key, xxhash64(o.area_key), NULL) AS area_key,   -- null area stays null (xxhash64(NULL) is not null)
        o.geo_resolution_method,
        xxhash64(o._source_key)                    AS data_source_key,
        o._as_of_date                              AS source_as_of_date,
@@ -140,7 +158,7 @@ SELECT gold_build_id                                   AS build_id,
        current_timestamp()                             AS finished_at,
        CASE WHEN g.failed_gates = 0 THEN 'succeeded' ELSE 'failed' END AS status,
        code_version                                    AS code_version,
-       to_json(named_struct('model', 'v2', 'table_role', 'reference map layer, outside the dimensional model',
+       to_json(named_struct('table_role', 'reference map layer, outside the dimensional model',
                             'approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds)) AS parameters,
        job_run_id                                      AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
@@ -202,13 +220,14 @@ FROM public_health.gold.ref_osm_healthsite_point__inputs;
 
 
 -- ========================================
--- [7] summary, then remove the staging tables
+-- [7] remove the staging tables, then show the summary
 -- ========================================
 DROP TABLE IF EXISTS public_health.gold.ref_osm_healthsite_point__candidate;
 DROP TABLE IF EXISTS public_health.gold.ref_osm_healthsite_point__gates;
 DROP TABLE IF EXISTS public_health.gold.ref_osm_healthsite_point__inputs;
 
--- Silver 2026-10-14: 16,030 rows (hospital 1,946, pharmacy 6,982, clinic 2,945, dentist 1,855, doctors 1,526 in the source file).
+-- Checked 2026-10-14: 16,030 silver rows (hospital 1,946, pharmacy 6,982, clinic 2,945,
+-- dentist 1,855, doctors 1,526). A large change means a new OSM export.
 SELECT facility_type, location_precision, count(*) AS points, count_if(ownership IS NOT NULL) AS with_ownership,
        count(DISTINCT area_key) AS localities
 FROM public_health.gold.ref_osm_healthsite_point

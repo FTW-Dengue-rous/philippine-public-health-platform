@@ -2,7 +2,7 @@
 
 Every check code in the platform, in one list. A code has one meaning in every domain and is never reused. `*00` always means "the QC script crashed".
 
-The names and severities here are the ones in the scripts (`CHECKS` dictionaries and recorded `check_name`). How each check works, what fails it and what to do: [bronze quality checks](../bronze/bronze-quality-checks.md), [silver quality checks](../silver/silver-quality-checks.md), and the gold README (`src/04_gold/README.md`). Rules for severities and gates: [quality control framework](quality-control-framework.md).
+The names and severities here are the ones in the scripts (`CHECKS` dictionaries and recorded `check_name`). How each check works, what fails it and what to do: [bronze quality checks](../bronze/bronze-quality-checks.md), [silver quality checks](../silver/silver-quality-checks.md), and [gold analytical validation and traceability](../gold/analytical-validation-and-traceability.md). Rules for severities and gates: [quality control framework](quality-control-framework.md).
 
 Status date: 2026-10-20. Back to the [quality overview](README.md).
 
@@ -24,6 +24,8 @@ Status date: 2026-10-20. Back to the [quality overview](README.md).
 
 Silver S ranges: S00–S12 shared; S13–S28 facilities; S29 cross-domain; S30–S50 diseases; S51–S59 population; S60–S79 workforce; S80–S96 socioeconomic; S97–S99 cross-domain.
 
+SQL build gates in silver and gold have names, not codes. The layer pages list them per file ([silver](../silver/silver-quality-checks.md) section 4, [gold](../gold/analytical-validation-and-traceability.md) section 3).
+
 ## 2. Bronze
 
 ### 2.1 File domains and population (B)
@@ -32,7 +34,7 @@ Silver S ranges: S00–S12 shared; S13–S28 facilities; S29 cross-domain; S30�
 |---|---|---|
 | B00 | QC ran without error | FAIL |
 | B01 | Table exists and has rows for the source | FAIL |
-| B02 | Every file listed in the YAML was loaded | FAIL |
+| B02 | The loader loaded every file the YAML lists | FAIL |
 | B03 | Rows per file = `qc.expected_rows` | FAIL (WARN when the file has no expected count) |
 | B04 | Required columns present | FAIL |
 | B05 | Lineage columns not null | FAIL |
@@ -43,7 +45,7 @@ Silver S ranges: S00–S12 shared; S13–S28 facilities; S29 cross-domain; S30�
 | B10 | `qc.numeric_columns` parse as numbers | WARN |
 | B11 | Control totals and values match verified numbers | FAIL |
 | B12 | Total column equals the sum of its parts (`qc.row_sum`) | WARN |
-| B13 | Rows per file = the loader's `processed` log row for the same load | FAIL, also when it can't be verified |
+| B13 | Rows per file = the loader's `processed` log row for the same load | FAIL, also when the loader log is unreadable |
 | B14 | No files in the table outside the YAML | WARN |
 | B15 | Every data column is STRING | FAIL |
 | B16 | Nested population payload parses (population only) | WARN |
@@ -52,7 +54,7 @@ Population QC runs B00, B01, B04, B05, B07, B10, B13, B15 and B16; file and shee
 
 ### 2.2 PSGC snapshot (GB)
 
-Every GB check is FAIL (GB13 is WARN only when the load log can't be read).
+Every GB check is FAIL. GB13 is WARN only when the load log is unreadable.
 
 | Code | Check |
 |---|---|
@@ -69,11 +71,11 @@ Every GB check is FAIL (GB13 is WARN only when the load log can't be read).
 | GB10 | Stored JSON = landed JSON |
 | GB11 | Projected attributes = the loader's extraction |
 | GB12 | Snapshot lineage complete (batch id, raw path, load time) |
-| GB13 | Rows = the loader's `processed` log row (WARN if the log can't be read) |
+| GB13 | Rows = the loader's `processed` log row (WARN if the log is unreadable) |
 
 ### 2.3 HDX boundaries (HB)
 
-Every HB check is FAIL and none can be skipped.
+Every HB check is FAIL. No override can skip one.
 
 | Code | Check |
 |---|---|
@@ -139,142 +141,141 @@ QC on the published tables:
 
 ### 3.2 Shared codes (S00–S12)
 
-| Code | Check | Type | Severity | Used by |
-|---|---|---|---|---|
-| S00 | QC ran without error | execution | FAIL | population, facilities, diseases, workforce, socioeconomic, cross-domain |
-| S01 | table exists and has rows | completeness | FAIL | population, facilities, diseases, workforce, socioeconomic |
-| S02 | grain key not null | completeness | FAIL | population, facilities, diseases, workforce, socioeconomic |
-| S03 | grain key unique | uniqueness | FAIL | population, facilities, diseases, workforce, socioeconomic |
-| S04 | PSGC code found in geography | consistency | WARN | population, facilities, socioeconomic, cross-domain |
-| S05 | admin level valid | validity | FAIL | facilities |
-| S06 | counts non-negative | validity | FAIL | population, facilities, diseases, workforce |
-| S07 | rates within range | validity | WARN | socioeconomic |
-| S08 | period within expected range | validity | FAIL | population, facilities, diseases, workforce, socioeconomic, cross-domain |
-| S09 | bronze to silver rows reconcile | reconciliation | FAIL | population, facilities, diseases, workforce, socioeconomic |
-| S10 | metric totals preserved | reconciliation | FAIL | diseases, socioeconomic |
-| S11 | accepted values | validity | WARN | facilities |
-| S12 | metric null rate under threshold | completeness | WARN | diseases |
+| Code | Check | Severity | Used by |
+|---|---|---|---|
+| S00 | QC ran without error | FAIL | All |
+| S01 | Table exists and has rows | FAIL | All |
+| S02 | Grain key not null | FAIL | All |
+| S03 | Grain key unique | FAIL | All |
+| S04 | PSGC code found in geography | WARN | Population, facilities, socioeconomic, cross-domain (workforce) |
+| S05 | Admin level valid | FAIL | Facilities |
+| S06 | Counts non-negative | FAIL | Population, facilities, diseases, workforce |
+| S07 | Rates within range | WARN | Socioeconomic |
+| S08 | Period within expected range | FAIL | All domains, cross-domain |
+| S09 | Bronze to silver rows reconcile | FAIL | All domains |
+| S10 | Metric totals preserved | FAIL | Diseases, socioeconomic |
+| S11 | Accepted values | WARN | Facilities |
+| S12 | Metric null rate under threshold | WARN | Diseases |
 
 ### 3.3 Facilities (S13–S28)
 
-| Code | Check | Type | Severity | Used by |
-|---|---|---|---|---|
-| S13 | lineage columns not null | completeness | FAIL | facilities |
-| S14 | every lineage reference has one build input | consistency | FAIL | facilities |
-| S15 | table written by a succeeded build | consistency | FAIL | facilities |
-| S16 | silver built from the current bronze loads and reference versions | consistency | FAIL | facilities |
-| S17 | one processed ingestion_metadata row and one load time per input | consistency | FAIL | facilities |
-| S18 | each NHFR id in at most one registry facility | uniqueness | FAIL | facilities |
-| S19 | registry lineage groups follow in_nhfr / in_hfsrb | completeness | FAIL | facilities |
-| S20 | every MAP key has a lineage group | consistency | FAIL | facilities |
-| S21 | control totals match | reconciliation | FAIL | facilities |
-| S22 | id map and registry keys agree | consistency | FAIL | facilities |
-| S23 | bed columns follow their definitions | consistency | FAIL | facilities |
-| S24 | bed occupancy eligibility follows the named rules | consistency | FAIL | facilities |
-| S25 | bed occupancy rate above 100 or above the baseline maximum | validity | WARN | facilities |
-| S26 | FHSIS region equals its provinces and listed cities | reconciliation | WARN | facilities |
-| S27 | OSM points placed by city tag only, or tag disagrees with coordinates | completeness | WARN | facilities |
-| S28 | quarantined bronze rows | completeness | WARN | facilities |
+| Code | Check | Severity |
+|---|---|---|
+| S13 | Lineage columns not null | FAIL |
+| S14 | Each file or sheet referenced has one build input | FAIL |
+| S15 | Table written by the latest succeeded build | FAIL |
+| S16 | Built from the current bronze loads and reference versions | FAIL (WARN: same rows, new reference version) |
+| S17 | One load time and one ingestion-log row per input | FAIL |
+| S18 | NHFR id in at most one facility | FAIL |
+| S19 | Registry lineage groups follow `in_nhfr` / `in_hfsrb` | FAIL |
+| S20 | Every metric source key has a lineage group | FAIL |
+| S21 | Control totals match | FAIL (WARN on a new file) |
+| S22 | Id map and registry keys agree | FAIL |
+| S23 | Bed columns follow their definitions | FAIL |
+| S24 | Bed occupancy eligibility follows the named rules | FAIL |
+| S25 | BOR above 100% | WARN |
+| S26 | FHSIS region = its provinces + listed cities | WARN |
+| S27 | OSM points placed by city tag only, or tag disagrees | WARN |
+| S28 | Quarantined bronze rows | WARN |
 
-### 3.4 Cross-domain (S29, S97–S99)
+### 3.4 Cross-domain (S29, S97–S99, and shared codes it runs)
 
-| Code | Check | Type | Severity | Used by |
-|---|---|---|---|---|
-| S29 | quarantined rows within the limit | completeness | FAIL | cross-domain |
-| S97 | ratio per population inside the plausible band | validity | WARN | cross-domain |
-| S98 | latest data year of each source is recent | consistency | WARN | cross-domain |
-| S99 | reported population agrees with census population | consistency | WARN | cross-domain |
-
-S29 is a band, not a plain threshold: PASS at 0; WARN up to 5% of the rows read or 10 rows; FAIL above both.
+| Code | Check | Severity |
+|---|---|---|
+| S00 | QC ran without error | FAIL |
+| S04 | PSGC code found in geography (workforce) | WARN |
+| S08 | Period within expected range (no future year) | FAIL |
+| S29 | Quarantined rows within the limit | Banded: PASS at 0; WARN up to 5% or ≤ 10 rows; FAIL above both |
+| S97 | Ratio per population inside the plausible band | WARN |
+| S98 | Latest data year of each source is recent | WARN |
+| S99 | Reported population agrees with census | WARN |
 
 ### 3.5 Diseases (S30–S50)
 
-| Code | Check | Type | Severity | Used by |
-|---|---|---|---|---|
-| S30 | lineage columns not null | completeness | FAIL | diseases |
-| S31 | every lineage reference has one build input | consistency | FAIL | diseases |
-| S32 | table written by one succeeded build | consistency | FAIL | diseases |
-| S33 | silver built from the current bronze loads | consistency | FAIL | diseases |
-| S34 | control values match | reconciliation | FAIL | diseases |
-| S35 | modelled value within its bounds | validity | FAIL | diseases |
-| S36 | value, status and definitions consistent | validity | FAIL | diseases |
-| S37 | disease and area keys resolve | validity | FAIL | diseases |
-| S38 | aggregation set sums to all causes | reconciliation | FAIL | diseases |
-| S39 | aggregation set members do not overlap | consistency | FAIL | diseases |
-| S40 | months sum to the published year total | consistency | WARN | diseases |
-| S41 | country equals regions plus foreign | consistency | WARN | diseases |
-| S42 | national totals agree between PSA tables | consistency | WARN | diseases |
-| S43 | weekly series has no gaps | completeness | WARN | diseases |
-| S44 | dengue sources agree on a common basis | consistency | WARN | diseases |
-| S45 | quarantined rows are the reviewed kind only | validity | FAIL | diseases |
-| S46 | age groups sum to the metric total | reconciliation | FAIL | diseases |
-| S47 | hospital encounter review flags | validity | WARN | diseases |
-| S48 | coverage table matches the metric table | consistency | FAIL | diseases |
-| S49 | mapped area codes exist in geography silver | validity | FAIL | diseases |
-| S50 | source-printed area codes agree with geography silver | consistency | WARN | diseases |
+| Code | Check | Severity |
+|---|---|---|
+| S30 | Lineage columns not null | FAIL |
+| S31 | Each lineage reference has one build input | FAIL |
+| S32 | Written by one succeeded build | FAIL |
+| S33 | Built from the current bronze loads | FAIL |
+| S34 | Control values match | FAIL |
+| S35 | Modelled value within its bounds | FAIL |
+| S36 | Value, status and definitions consistent | FAIL |
+| S37 | Disease and area keys resolve | FAIL |
+| S38 | Aggregation set sums to all causes | FAIL |
+| S39 | Aggregation set members don't overlap | FAIL |
+| S40 | Months sum to the published year total | WARN |
+| S41 | Country = regions + foreign | WARN |
+| S42 | National totals agree between PSA tables | WARN |
+| S43 | Weekly series has no gaps | WARN |
+| S44 | Dengue sources agree on a common basis | WARN |
+| S45 | Quarantined rows are the reviewed kind only | FAIL |
+| S46 | Age groups sum to the metric total | FAIL |
+| S47 | Hospital encounter review flags | WARN |
+| S48 | Coverage table matches the metric table | FAIL |
+| S49 | Mapped area codes exist in geography | FAIL |
+| S50 | Source-printed codes agree with geography | WARN |
 
 ### 3.6 Population (S51–S59)
 
-| Code | Check | Type | Severity | Used by |
-|---|---|---|---|---|
-| S51 | population lineage columns not null | completeness | FAIL | population |
-| S52 | population filled exactly when the status is valid | validity | FAIL | population |
-| S53 | rows without a usable population | completeness | WARN | population |
-| S54 | every geography area has a row for every census year | completeness | WARN | population |
-| S55 | area total equals the sum of its cities and municipalities | consistency | WARN | population |
-| S56 | national census total matches the PSA release | reconciliation | WARN | population |
-| S57 | one population snapshot from the current PSGC release | consistency | WARN | population |
-| S58 | change between census years above 30 percent | validity | WARN | population |
-| S59 | population years are the configured census years | consistency | FAIL | population |
-
-S56 becomes FAIL once `confirmed: true` is set for the controls in `sources_population.yaml`.
+| Code | Check | Severity |
+|---|---|---|
+| S51 | Lineage columns not null | FAIL |
+| S52 | Population filled exactly when valid | FAIL |
+| S53 | Rows without a usable population | WARN |
+| S54 | Every area has every census year | WARN |
+| S55 | Area total = its cities and municipalities | WARN |
+| S56 | National total matches the PSA release | WARN (FAIL once `confirmed: true`) |
+| S57 | One snapshot from the current PSGC release | WARN |
+| S58 | Change between census years above 30% | WARN |
+| S59 | Years are the configured census years | FAIL |
 
 ### 3.7 Workforce (S60–S79)
 
-| Code | Check | Type | Severity | Used by |
-|---|---|---|---|---|
-| S60 | lineage columns not null | completeness | FAIL | workforce |
-| S61 | every lineage reference has one build input | consistency | FAIL | workforce |
-| S62 | table written by one succeeded build | consistency | FAIL | workforce |
-| S63 | silver built from the current bronze loads and reference versions | consistency | FAIL | workforce |
-| S64 | national control values match | reconciliation | FAIL | workforce |
-| S65 | area control values match | reconciliation | FAIL | workforce |
-| S66 | accepted values | validity | FAIL | workforce |
-| S67 | eligibility follows the named rules | consistency | FAIL | workforce |
-| S68 | totals equal their mutually exclusive components | reconciliation | WARN | workforce |
-| S69 | split fields add up to the published total | consistency | WARN | workforce |
-| S70 | 2025 province vs its municipalities and cities | consistency | WARN | workforce |
-| S71 | PSA and FHSIS national totals agree 2018-2023 | consistency | WARN | workforce |
-| S72 | province year-on-year change above 50% outside break years | consistency | WARN | workforce |
-| S73 | quarantined bronze rows | completeness | WARN | workforce |
-| S74 | denominator lineage groups follow source contribution | completeness | FAIL | workforce |
-| S75 | every MAP key has a lineage group | consistency | FAIL | workforce |
-| S76 | population agrees across sheets of the same workbook | consistency | WARN | workforce |
-| S77 | PSMO label matched to a city by name (no province of that name) | consistency | WARN | workforce |
-| S78 | listed oncologist control total | reconciliation | FAIL | workforce |
-| S79 | area label overrides not yet reviewed | consistency | WARN | workforce |
+| Code | Check | Severity |
+|---|---|---|
+| S60 | Lineage columns not null | FAIL |
+| S61 | Each lineage reference has one build input | FAIL |
+| S62 | Written by one succeeded build | FAIL |
+| S63 | Built from the current bronze loads and reference versions | FAIL (WARN: same rows, new version) |
+| S64 | National control values match | FAIL |
+| S65 | Area control values match | FAIL |
+| S66 | Accepted values | FAIL |
+| S67 | Eligibility follows the named rules | FAIL |
+| S68 | Totals equal their components | WARN |
+| S69 | Splits add up to the total | WARN |
+| S70 | 2025 province vs its municipalities and cities | WARN |
+| S71 | PSA and FHSIS national totals agree | WARN |
+| S72 | Province change above 50% outside break years | WARN |
+| S73 | Quarantined bronze rows | WARN |
+| S74 | Denominator lineage groups follow source contribution | FAIL |
+| S75 | Every metric source key has a lineage group | FAIL |
+| S76 | Population agrees across sheets of one workbook | WARN |
+| S77 | PSMO label matched to a city by name | WARN |
+| S78 | Listed oncologist control total | FAIL |
+| S79 | Area label overrides not reviewed | WARN |
 
 ### 3.8 Socioeconomic (S80–S96)
 
-| Code | Check | Type | Severity | Used by |
-|---|---|---|---|---|
-| S80 | lineage columns not null | completeness | FAIL | socioeconomic |
-| S81 | every lineage reference has one build input | consistency | FAIL | socioeconomic |
-| S82 | table written by one succeeded build | consistency | FAIL | socioeconomic |
-| S83 | silver built from the current bronze loads and reference tables | consistency | FAIL | socioeconomic |
-| S84 | control values match | reconciliation | FAIL | socioeconomic |
-| S85 | build inputs carry a load id and file checksum | completeness | WARN | socioeconomic |
-| S86 | measure within its hard limits | validity | FAIL | socioeconomic |
-| S87 | value agrees with its flag or status | validity | FAIL | socioeconomic |
-| S88 | expected rows present, no others | completeness | FAIL | socioeconomic |
-| S89 | metric source columns complete and valid | consistency | FAIL | socioeconomic |
-| S90 | area attributes match the area map | consistency | FAIL | socioeconomic |
-| S91 | level-1 shares sum to the total | reconciliation | FAIL | socioeconomic |
-| S92 | financing agent hierarchy resolves | consistency | FAIL | socioeconomic |
-| S93 | PSGC code unique in geography, at the same level | consistency | FAIL | socioeconomic |
-| S94 | incidence fell by more than 15 points or reached zero | consistency | WARN | socioeconomic |
-| S95 | rows not eligible for comparison with PSGC-based data | consistency | WARN | socioeconomic |
-| S96 | definition not confirmed yet | completeness | WARN | socioeconomic |
+| Code | Check | Severity |
+|---|---|---|
+| S80 | Lineage columns not null | FAIL |
+| S81 | Each lineage reference has one build input | FAIL |
+| S82 | Written by one succeeded build | FAIL |
+| S83 | Built from the current bronze loads and reference tables | FAIL |
+| S84 | Control values match | FAIL |
+| S85 | Build inputs carry a load id and file checksum | WARN |
+| S86 | Measure within its hard limits | FAIL |
+| S87 | Value agrees with its flag or status | FAIL |
+| S88 | Expected rows present, no others | FAIL |
+| S89 | Metric source columns complete and valid | FAIL |
+| S90 | Area attributes match the area map | FAIL |
+| S91 | Level-1 shares sum to the total | FAIL |
+| S92 | Financing agent hierarchy resolves | FAIL |
+| S93 | PSGC code unique in geography, same level | FAIL |
+| S94 | Incidence fell by more than 15 points, or reached zero | WARN |
+| S95 | Rows not eligible for comparison with PSGC data | WARN |
+| S96 | Definition not confirmed yet | WARN |
 
 ## 4. Gold (G)
 
@@ -295,6 +296,8 @@ S56 becomes FAIL once `confirmed: true` is set for the controls in `sources_popu
 | G12 | Content fingerprint unchanged since the previous QC run (idempotency) | WARN |
 | G13 | Census population change between censuses plausible | WARN |
 
+G07 has 13 controls. G08 has six consistency rules. The [gold validation page](../gold/analytical-validation-and-traceability.md), section 4, lists both.
+
 ## 5. The same idea under different codes
 
 Each silver domain took its own block of codes, so one idea can have several codes:
@@ -310,10 +313,11 @@ Each silver domain took its own block of codes, so one idea can have several cod
 
 ## 6. Registry
 
-Codes and their default severity live in `public_health.quality.check_registry`, filled by `quality_registry_seed.sql`. The seed does not yet hold every code (GB, HB, B16, S59, the G codes; O-17), so the scripts run with `strict_registry=False`, except population QC. Once the seed is complete, every script switches to `strict_registry=True` and an unknown code stops the run (to-do 7).
+Codes and their default severity live in `public_health.quality.check_registry`, filled by `quality_registry_seed.sql`. The seed does not yet hold every code (GB, HB, B16, S59, SG/AB, the G codes; O-17), so the scripts run with `strict_registry=False`, except population QC. Once the seed is complete, every script switches to `strict_registry=True` and an unknown code stops the run (to-do 7).
 
 ## 7. History of updates
 
 | Date | Change |
 |---|---|
-| 2026-10-20 | Page written from the QC scripts' check lists |
+| 2026-10-20 | Page written from the QC scripts' check lists (silver chat) |
+| 2026-10-20 | Merged with the gold pass: S tables per domain, the gold validation link, named build gates, G07/G08 pointer |

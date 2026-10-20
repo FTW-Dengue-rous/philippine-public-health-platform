@@ -1,5 +1,4 @@
 -- ========================================
--- gold_19_mart_area_priority.sql
 -- 1. Builds the seed table public_health.gold.priority_weight_params
 --      One row is: the weight of one gap type in one weight set
 --      Key: (weight_set, indicator)
@@ -9,7 +8,6 @@
 --      Every unit appears for every burden indicator. A unit with no burden rate is not ranked.
 --   Answers: P1 (which areas combine a high burden with gaps, and which type of gap)
 --            P2 (how stable the ranking is when the weights and rules change)
--- Previous file name: gold_v2_56_mart_area_priority.sql (same logic as gold_56, v1).
 --
 -- Reads: mart_area_service_profile (gold 16), mart_area_burden_indicator (gold 17),
 --        priority_weight_params (this file). It does not read the facts.

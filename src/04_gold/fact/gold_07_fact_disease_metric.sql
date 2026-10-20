@@ -1,65 +1,84 @@
 -- ========================================
 -- Builds public_health.gold.fact_disease_metric
 --   One row is: one metric of one disease, area, period, age group and sex from one source
---   Primary key: fact_disease_metric_key (BIGINT, xxhash64 of the natural key or grain, stable across rebuilds)
---   Grain: (disease_key, area_key, date_key, data_source_key, age_group, sex, metric_name, metric_basis)
+--   Primary key: fact_disease_metric_key = xxhash64 of the natural values of the grain.
+--                Stable across rebuilds.
+--   Grain: (disease_key, area_key, date_key, data_source_key, age_group, sex, metric_name,
+--          metric_basis)
 --
 -- Reads
 --   public_health.silver.diseases_metric_silver
 --   public_health.silver.diseases_source_coverage_silver
 --   public_health.silver.diseases_deaths_age_silver
---   public_health.silver.diseases_tb_programme_silver            (added 2026-10-14 evening)
---   public_health.silver.diseases_hospital_claims_silver         (added 2026-10-14 evening, RESTRICTED)
---   public_health.gold.dim_disease
---   public_health.gold.dim_geography
---   public_health.gold.dim_date
---   public_health.gold.dim_data_source
+--   public_health.silver.diseases_tb_programme_silver
+--   public_health.silver.diseases_hospital_claims_silver   (RESTRICTED, D-47)
+--   public_health.gold.dim_disease, dim_geography, dim_date, dim_data_source (gold 01-03, 05)
 --
 -- Four row sources, told apart by data_source_key and metric_name
 --   * metric         diseases_metric_silver, one row per silver row (cases, deaths, prevalence).
---   * deaths_by_age  diseases_deaths_age_silver, UNIONed in as metric_name = 'deaths',
+--   * deaths_by_age  diseases_deaths_age_silver, as metric_name = 'deaths',
 --                    metric_definition = 'registered_deaths', with their own age group.
 --   * tb_programme   diseases_tb_programme_silver (FHSIS 2025), one row per silver row:
 --                    metric_name = indicator (tpt_given, tpt_eligible_contacts, treatment_cohort,
 --                    treatment_success), metric_definition = indicator_definition. drug_resistance
 --                    is already in disease_key (tb_all_forms vs tb_drug_resistant). This source has
---                    a SEX split, which is why sex is in the grain (see below).
+--                    a SEX split, which is why sex is in the grain.
 --   * claims         diseases_hospital_claims_silver (PhilHealth FOI), AGGREGATED to one row per
---                    area (the hospital's city / municipality) x year x case-rate package x metric:
---                      claims_filed                 claims of every status (utilisation)
---                      claims_paid                  claims with status paid
---                      claims_amount_claimed_php    amount claimed, every status
+--                    area x year x case-rate package x metric:
+--                      claims_filed                    claims of every status (utilisation)
+--                      claims_paid                     claims with status paid
+--                      claims_amount_claimed_php       amount claimed, every status
 --                      claims_paid_amount_claimed_php  amount claimed on paid claims
---                    (silver rule: utilisation = all statuses, money = paid only; the amount is the
---                    amount CLAIMED, not paid). Hospital identity is dropped: FOI terms are aggregate
---                    only. A cell built from fewer than suppression_min_hospitals hospitals is
---                    suppressed (value_status suppressed, value null). Claims are published at
---                    THREE geographic levels, told apart by coverage_basis, each a full pass over
---                    the same silver rows and suppressed at its own level (first run 2026-10-14:
---                    74% of city / municipality cells had fewer than 3 hospitals):
+--                    The amount is the amount CLAIMED, not paid. Hospital identity is dropped:
+--                    restricted source, aggregates only (D-47). A cell built from fewer than
+--                    suppression_min_hospitals hospitals is suppressed (value_status
+--                    suppressed, value null). Claims are published at THREE geographic levels,
+--                    told apart by coverage_basis, each a full pass over the same silver rows and
+--                    suppressed at its own level (first run, 2026-10-14: 74% of city /
+--                    municipality cells had fewer than 3 hospitals):
 --                      facility_location                    the hospital's city / municipality
 --                      facility_location_province_excl_huc  its province (HUCs / ICCs excluded)
 --                      facility_location_region             its region (every hospital)
 --                    The area is where care was delivered, not where the patient lives. Never add
---                    levels together. Series notes for the marts: 2020-2021 is the COVID period;
---                    case rates changed in 2024 (amounts are not comparable across it); IHD with
---                    MI changed definition in 2025; the latest year is preliminary (is_preliminary).
+--                    levels together. Series rules (COVID period, 2024 case-rate change, IHD with
+--                    MI from 2025) are named settings in diseases_silver_06; gold keeps only
+--                    is_preliminary (the latest year).
 --
 -- Rules
 --   * One gold row per silver row for metric, deaths_by_age and tb_programme. Claims are summed
 --     per cell (the only aggregation; the hospital level is not published).
+--   * date_key = xxhash64(period_basis, period_label) with period_label = the silver
+--     period_key, the same as dim_date (gold 02). Weekly rows use iso_week (UP NOAH) and
+--     iso_week_ending_date (HDX), D-44 / D-46.
 --   * For totals filter age_group = 'all_ages' AND sex = 'both_sexes'. The by-age rows add up
 --     to a cause total and the by-sex rows add up to both_sexes: never add them to a total row.
 --   * metric_basis is number: silver holds counts (and the FHSIS TPT eligible-contacts estimate,
---     value_type estimated, which is a count of persons). Rates are computed in the marts.
+--     a count of persons). Rates are computed in the marts.
 --   * value stays null when value_status is not ok. It is never read as 0.
 --   * is_complete_year (metric rows only) = the SOURCE holds every period of the year
---     (diseases_source_coverage_silver.is_complete_year) AND THIS AREA holds every period the
---     source holds (its own distinct periods >= periods_present). Annual rows are complete by
+--     (diseases_source_coverage_silver.is_complete_year: 12 months, or every ISO week, 52 or 53)
+--     AND THIS AREA holds every period the source holds. Annual rows are complete by
 --     definition; tb_programme and claims rows are annual (true). It is null on the by-age
---     rows, and so are coverage_basis and is_preliminary
---   * The preferred source per measure comes from source_priority. Pick the source
---     explicitly in every query until then.
+--     rows, and so are coverage_basis and is_preliminary.
+--   * Sources overlap. The preferred source per metric is in source_priority (gold 10);
+--     v_disease_metric_totals (gold 13) flags it as is_preferred_source.
+--
+-- Build steps (write-audit-publish)
+--   [0] build id and settings
+--   [1] __inputs     every input, with the build that wrote it and its latest silver QC
+--   [2] __candidate  the candidate rows
+--   [3] __gates      every gate must have failures = 0
+--   [4] stop if a gate failed: the failed build is logged, the published table is not touched
+--   [5] write the table from the candidate (full rebuild)
+--   [6] record the build in quality.build_log and quality.build_inputs
+--   [7] drop the staging tables, then show the summary
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_30, v1). TB programme rows and
+--               PhilHealth claims added the same evening; sex added to the grain.
+--   2026-10-20  Moved to public_health.gold and renamed gold_07. Comments updated (D-44, D-46,
+--               D-47, source_priority). 'model' removed from the build log parameters. Weekly
+--               date_key values change with the new period_basis of silver (one-time G12 change).
 -- ========================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -70,10 +89,12 @@ DECLARE OR REPLACE VARIABLE gold_target_version BIGINT DEFAULT NULL;
 -- false: a silver table written by a notebook is allowed. Gold inputs always need one.
 DECLARE OR REPLACE VARIABLE strict_input_builds BOOLEAN DEFAULT false;
 -- true : a silver input whose latest QC (quality.v_table_health) has a FAIL stops the build.
+--        No QC run does not stop it; it makes the approval provisional (step [4]).
 DECLARE OR REPLACE VARIABLE block_on_silver_qc_fail BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
--- Smallest number of hospitals a published claims cell may be built from (same rule as occupancy).
+-- Smallest number of hospitals a published claims cell may be built from (D-47, same rule
+-- as occupancy). Recorded in build_log.parameters.
 DECLARE OR REPLACE VARIABLE suppression_min_hospitals INT DEFAULT 3;
 
 
@@ -430,6 +451,7 @@ LEFT ANTI JOIN public_health.gold.dim_data_source AS d ON d.data_source_key = c.
 -- ========================================
 -- [4] stop if a gate failed. The failed build is logged first and the staging tables are kept:
 --     SELECT * FROM public_health.gold.fact_disease_metric__gates WHERE failures <> 0
+--     approval: provisional while a silver input has no QC run or has WARN findings to review.
 -- ========================================
 CREATE OR REPLACE TEMP VIEW fact_disease_metric_build_log AS
 SELECT gold_build_id                                   AS build_id,
@@ -440,7 +462,7 @@ SELECT gold_build_id                                   AS build_id,
        current_timestamp()                             AS finished_at,
        CASE WHEN g.failed_gates = 0 THEN 'succeeded' ELSE 'failed' END AS status,
        code_version                                    AS code_version,
-       to_json(named_struct('model', 'v2', 'approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds, 'suppression_min_hospitals', suppression_min_hospitals)) AS parameters,
+       to_json(named_struct('approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds, 'suppression_min_hospitals', suppression_min_hospitals)) AS parameters,
        job_run_id                                      AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT count_if(failures <> 0) AS failed_gates,
@@ -475,7 +497,9 @@ SELECT * FROM public_health.gold.fact_disease_metric__candidate;
 
 
 -- ========================================
--- [6] record the build. If your runtime rejects this SET VAR, delete it (version = null).
+-- [6] record the build, with the table version just written. If your runtime rejects this
+--     SET VAR, delete it: the version stays null, and freshness checks (G06,
+--     mart_evidence_readiness) cannot compare this table.
 -- ========================================
 SET VAR gold_target_version = (SELECT max(version) FROM (DESCRIBE HISTORY public_health.gold.fact_disease_metric));
 
@@ -498,7 +522,7 @@ FROM public_health.gold.fact_disease_metric__inputs;
 
 
 -- ========================================
--- [7] summary, then remove the staging tables
+-- [7] remove the staging tables, then show the summary
 -- ========================================
 DROP TABLE IF EXISTS public_health.gold.fact_disease_metric__candidate;
 DROP TABLE IF EXISTS public_health.gold.fact_disease_metric__gates;

@@ -1,14 +1,17 @@
 -- ========================================
 -- Creates four thin views in public_health.gold, one per fact, that apply the fact's
 -- SELECTION CONTRACT: the filters every total must carry so that valid rows are never added
--- twice. Added 2026-10-14 night (review point 2). Nothing is computed here; no new table.
+-- twice. Nothing is computed here; no new table. A view has no _gold_build_id.
 --
 --   v_facility_capacity_totals   fact_facility_capacity  one row per area x date x source x
 --                                 basis x category, ownership total, all hospital levels
---   v_disease_metric_totals      fact_disease_metric     all ages, both sexes, value ok, with
+--   v_disease_metric_totals      fact_disease_metric     all ages, both sexes, with
 --                                 is_preferred_source from source_priority
 --   v_workforce_preferred        fact_workforce_capacity preferred source, analysis eligible
 --   v_area_indicator_latest      fact_area_indicator     value ok, with is_latest_period
+--
+-- Reads: the four facts (gold 06-09), dim_disease, dim_data_source, dim_date, dim_geography,
+--        source_priority (gold 10)
 --
 -- Why
 --   The four facts carry overlapping rows on purpose: fact_facility_capacity holds three
@@ -19,17 +22,25 @@
 --   fact without the contract double counts. The marts follow the contract already; these
 --   views give the dashboard (and Genie) a safe entry point for ad hoc totals.
 --
--- Selection contract per fact (also in gold_v2/README.md)
+-- Selection contract per fact (also in 04_gold/README.md)
 --   fact_facility_capacity   capacity_basis AND coverage_basis AND ownership AND hospital_level
 --                            AND value_status = 'ok'. Registry rows have no 'total' row: sum
 --                            them over ownership and level. Published and occupancy rows have
 --                            ownership = 'total' (and hospital_level = 'all' for occupancy).
 --   fact_disease_metric      one data_source_key (source_priority preferred) AND metric_name
 --                            AND age_group = 'all_ages' AND sex = 'both_sexes' AND one
---                            coverage_basis (claims: facility_location* at one level).
+--                            coverage_basis (claims: one facility_location* level).
 --   fact_workforce_capacity  source_role = 'preferred' AND profession_code AND analysis_eligible.
 --   fact_area_indicator      indicator_name AND indicator_category AND value_status = 'ok';
 --                            one date_key per area for a snapshot (is_latest_period).
+--
+-- Restricted rows (occupancy, claims) stay aggregates with small cells suppressed (D-47). The
+-- views keep suppressed rows (value null) so a blank is explained.
+--
+-- History
+--   2026-10-14  Written the same night as review point 2 (selection contract per fact).
+--   2026-10-20  Moved to public_health.gold and renamed gold_13. Comments updated. No logic
+--               change.
 -- ========================================
 
 -- [1] Facility capacity totals ---------------------------------------------------------------
@@ -138,8 +149,8 @@ WHERE f.value_status = 'ok';
 
 
 -- Checks to read after creating the views (nothing is stopped)
--- 1. Registry totals in the view equal the proof of gold_v2_20 (2,575 registry rows summed per
---    locality and category; hospitals 1,3xx, beds as in the fact)
+-- 1. Registry totals in the view equal the registry rows of gold 06 summed per locality and
+--    category (2,575 rows on 2026-10-14). Facilities and beds equal the fact's registry totals.
 SELECT capacity_basis, facility_category, count(*) AS rows_, sum(facility_count) AS facilities, sum(analysis_beds) AS beds
 FROM public_health.gold.v_facility_capacity_totals
 GROUP BY capacity_basis, facility_category

@@ -28,12 +28,22 @@
 --         are source-specific rates: never compare them with a census-based rate.
 --     Geographic coverage is checked as well as timing: FHSIS counts reach a unit only through
 --     area_coverage_map (fhsis_mapping_outcome); census sums match the unit by construction.
---   * Alignment window = 2 years: a rate is null when its count year and
+--   * Alignment window = 2 years (O-15): a rate is null when its count year and
 --     the population year are further apart.
 --   * Poverty incidence is a published percentage: from a direct row only, never summed or
 --     averaged. A province whose estimate includes its HUC is not used.
 --   * Quintile 1 = lowest, 5 = highest, among units with the value. Equal values share one.
---   * poverty_band limits (10, 20, 30 percent) are a PROPOSAL for the team.
+--   * poverty_band (10, 20, 30 percent) is a display grouping only. No flag or score uses it:
+--     the socioeconomic flag in gold 19 is the highest fifth. Round cut-offs keep the legend
+--     readable (D-56).
+--   * The quintiles feed the gap flags of gold 19. Label them "lowest 20% of planning units",
+--     never "inadequate": the data has no national planning norm (D-56).
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_53, v1). Two labelled
+--               denominators added the same night (review point 3).
+--   2026-10-20  Moved to public_health.gold and renamed gold_16. Reasons for poverty_band and
+--               the quintile labels recorded (D-56). No logic change.
 -- ========================================
 
 CREATE OR REPLACE VIEW public_health.gold.mart_area_service_profile AS

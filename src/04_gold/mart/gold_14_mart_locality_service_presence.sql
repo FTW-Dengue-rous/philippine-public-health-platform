@@ -1,30 +1,40 @@
 -- ========================================
+-- gold_14_mart_locality_service_presence.sql
 -- Creates the view public_health.gold.mart_locality_service_presence
 --   One row is: one city or municipality, with or without a facility
 --   Key: area_key
 --   Answers: A1 (no hospital recorded), A2 (highest hospital level), A3 (no licensed primary
 --   care recorded), A4 (population per hospital, bed, primary care facility)
 --
+-- Reads: dim_geography (gold 01), dim_date (gold 02), fact_facility_capacity (gold 06),
+--        fact_area_indicator (gold 09)
+--
 -- Rules
 --   * Every city and municipality of dim_geography has a row. A Manila submunicipality has
 --     none: its facilities are counted in the City of Manila by the capacity fact.
 --   * "Recorded" is literal. has_hospital_recorded = false means the registry lists no hospital
---     there on its as-of date. It does not confirm that no hospital exists.
---   * The two flags are separate indicators and are never merged.
+--     there on its as-of date. It does not confirm that no hospital exists. On the dashboard,
+--     write "none recorded as of <registry_as_of_date>", never "none" (O-02).
+--   * The hospital and primary care flags are separate indicators and are never merged.
 --   * Counts are 0 when nothing is listed. hospital_beds is 0 when no hospital is listed, and
 --     null when hospitals are listed but none has a bed count.
---   * Population is the latest census count of the locality (source psa_psgc, value_status ok).
---     Null stays null.
+--   * Population = the latest census count of the locality (census rows of fact_area_indicator,
+--     value_status ok). Null stays null.
 --   * A4 ratios are filled only where the locality has at least one facility or bed.
---     Localities with none are reported by the two flags.
+--     Localities with none are reported by the flags.
 --   * The latest registry snapshot is used when the capacity fact holds more than one.
 --   * Registry rows carry ownership and hospital_level in the grain: they are summed here, which
 --     is correct for registry_snapshot (each facility sits in exactly one group).
 --
--- Columns added to the v3 list: area_code, geographic_level, city_class,
+-- Extra columns (not in the v3 column list): area_code, geographic_level, city_class,
 --   has_level3_hospital_recorded, hospitals_without_bed_count, population_per_hospital,
 --   population_per_hospital_bed, population_per_licensed_primary_care.
 -- A view has no _gold_build_id.
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_51, v1).
+--   2026-10-20  Moved to public_health.gold and renamed gold_14. Comments updated (O-02
+--               wording, check numbers dated). No logic change.
 -- ========================================
 
 CREATE OR REPLACE VIEW public_health.gold.mart_locality_service_presence AS
@@ -101,9 +111,10 @@ LEFT JOIN capacity AS c ON c.area_key = g.area_key
 WHERE g.geographic_level IN ('city', 'municipality');
 
 
--- 1,642 localities, 1,114 with no hospital recorded,
---  846 with no primary care recorded (licensed or not): expect the same 1,642 and
--- 1,114 here; without_licensed_primary_care_recorded is >= 846 (licence filter).
+-- Compare with the A1 / A3 proof at the end of gold 06 (2026-10-14: 1,642 localities, 1,114 with
+-- no hospital recorded, 846 with no primary care recorded, licensed or not). Expect the same
+-- localities and without_hospital_recorded; without_licensed_primary_care_recorded is equal or
+-- higher (licence filter).
 SELECT count(*) AS localities,
        count_if(NOT has_hospital_recorded) AS without_hospital_recorded,
        sum(CASE WHEN NOT has_hospital_recorded THEN population END) AS population_without_hospital,

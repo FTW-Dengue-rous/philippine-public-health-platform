@@ -1,5 +1,4 @@
 -- ========================================
--- gold_22_mart_kidney_case_study.sql
 -- Creates the view public_health.gold.mart_kidney_case_study
 --   One row is: one province (or NCR), as IHME publishes it
 --   Key: (kidney_unit_key, unit_basis). unit_basis follows from the key, one value per unit.
@@ -7,9 +6,6 @@
 --   dialysis stations recorded per population?
 --   Story placement: SPECIALIST TREATMENT CAPACITY. Dialysis is treatment, not prevention
 --   (review point 5, 2026-10-14 night). Prevention is the TB case study (gold 21).
--- Previous file name: gold_v2_62_mart_kidney_case_study.sql (gold_62 in v1, rewritten for the
---   v2 tables: fact_facility_capacity with capacity_basis = 'registry_snapshot', dim_date,
---   dim_data_source).
 --
 -- Reads: mart_locality_service_presence (gold 14), huc_province_crosswalk (gold 11),
 --        dim_disease, dim_geography, dim_date, dim_data_source, fact_disease_metric (gold 07),
