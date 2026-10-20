@@ -41,10 +41,10 @@ Counts are from the `run_bronze.py` run of 2026-10-19 (46 source entries; `doh_f
 
 | `source_key` | Publisher | What it holds | Grain | Coverage | Sharing |
 |---|---|---|---|---|---|
-| `doh_foi_dengue` | DOH (eFOI) | Dengue cases and deaths | Region × month | Jan 2021 – Sep 2025 (2025 partial) | restricted |
+| `doh_foi_dengue` | DOH (eFOI, R-01) | Dengue cases and deaths | Region × month | Jan 2021 – Sep 2025 (2025 partial) | restricted |
 | `upnoah` | UP NOAH | Dengue counts (DOH-EB counts via FOI 2026-031) | Region × ISO week | 2016–2019, 2022–2025 | open (ODbL) |
 | `hdx_dengue` | HDX | Dengue cases and deaths | Province/city × week | 2016–2021 (2 files; the 2021 file repeats rows) | open (CC BY) |
-| `doh_foi_tb_region2` | DOH Region II (eFOI) | TB tables (7 stacked) | Mixed | 2020–2025 | restricted · bronze only |
+| `doh_foi_tb_region2` | DOH Region II (eFOI, R-05) | TB tables (7 stacked) | Mixed | 2020–2025 | restricted · bronze only |
 | `psa_deaths_national_monthly` | PSA | Registered deaths by cause | National × month | 5 files (2022–2024 releases) | open |
 | `psa_deaths_region_annual` | PSA OpenSTAT | Registered deaths by cause, age group | Region × year | Multi-year | open |
 | `psa_deaths_national_annual` | PSA | Registered deaths by cause | National × year | 2015–2020 | open |
@@ -56,11 +56,12 @@ Counts are from the `run_bronze.py` run of 2026-10-19 (46 source entries; `doh_f
 | `doh_fhsis_tb_tpt` | DOH FHSIS | TB preventive treatment (added 2026-10-14) | City/municipality × year × sex | 2025 | public |
 | `doh_fhsis_tb_treatment_success` | DOH FHSIS | DS-TB and MDR-TB treatment success (added 2026-10-14) | City/municipality × year × sex | 2025 | public |
 | `doh_fhsis_morbidity` | DOH FHSIS | Heart disease, pneumonia | Province × year | 2024 | public |
-| `davao_hospital_pneumonia` | One government hospital | Pneumonia admissions, de-identified | Patient | Davao region | restricted |
-| `philhealth_foi_tb_claims` | PhilHealth (eFOI) | TB claims | Claim rows | 2017–2019 | restricted · bronze only |
-| `philhealth_foi_claims_hospital` | PhilHealth (FOI-REQ-2026-6223) | Claims by hospital and case-rate package, 14 packages (added 2026-10-14) | Hospital × year × package | Multi-year | restricted |
-| `ihme_gbd` | IHME GBD 2023 | Modelled deaths and prevalence | Province × year | 2019–2023 | restricted (licence) |
+| `davao_hospital_pneumonia` | One government hospital (R-07) | Pneumonia admissions, de-identified | Patient encounter | 2017–2025, Davao region | restricted |
+| `philhealth_foi_tb_claims` | PhilHealth (eFOI, R-06) | TB claims | Claim row | 2017–2019 | restricted · bronze only |
+| `philhealth_foi_claims_hospital` | PhilHealth (FOI-REQ-2026-6223, R-03) | Claims by hospital and case-rate package, 14 packages (added 2026-10-14) | Hospital × year × package × status | 2016–2025 | restricted |
+| `ihme_gbd` | IHME GBD 2023 | Modelled deaths and prevalence | Province × year | 2019–2023 (2 files) | restricted (licence) |
 
+"Bronze only" means no silver build reads the source. The [silver diseases page](../04-pipeline/silver/diseases.md) lists what silver reads.
 The four `doh_fhsis` disease entries write `_source_key = doh_fhsis` (`source_key_override`).
 
 ### Facilities

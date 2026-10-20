@@ -5,7 +5,7 @@ This page lists the data the questions need but the team does not have, or has o
 Owner: LUNASaan Documentation Team
 Last updated: 2026-10-21
 
-Limits on how to *read* the data are in [assumptions and limitations](../01-context/assumptions-and-limitations.md). This page is about *missing* data.
+Limits on how to *read* the data are in [limitations and recommendations](../01-context/limitations-and-recommendations.md), section 2. This page is about *missing* data.
 
 ---
 
@@ -75,9 +75,12 @@ Limits on how to *read* the data are in [assumptions and limitations](../01-cont
 | 3 | G-19 + OHSRS (eFOI 2026-5476) | Already on hand; named hospital utilization |
 | 4 | G-30 BOR definitions | Turns flags into facts |
 
+The data granularity the team asks publishers for is in [limitations and recommendations](../01-context/limitations-and-recommendations.md), section 3.1.
+
 ## 6. History of updates
 
 | Date | Change |
 |---|---|
 | 2026-10-19 | Page written from the silver and gold limits, decision log and FOI notes |
 | 2026-10-21 | Integration pass: added G-08 (2024 regional deaths), G-09 (facility coordinates), G-22 (S2 cohort), G-23 (BHS municipality), G-24 (PSA national series to 2015); labelled BQ2 as previous scope in G-01; added patient-level clinical data and OSM silver deferral to section 4; added Owner/Last updated metadata and link to question framework. Corrected: `facilities_osm_point_silver` is not built (a supplied draft claimed it was built 2026-10-18) |
+| 2026-10-20 | Links point to the limitations and recommendations page (the old "Assumptions and limitations" page was split) |

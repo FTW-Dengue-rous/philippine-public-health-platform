@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import yaml
-from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 # Locate the shared QC helper.
@@ -16,10 +15,7 @@ if "__file__" in globals():
     script_dir = Path(__file__).resolve().parent
     candidates = [script_dir, script_dir.parent]
 
-    quality_dir = next(
-        (p for p in candidates if (p / "dq_utils.py").is_file()),
-        None
-    )
+    quality_dir = next((p for p in candidates if (p / "dq_utils.py").is_file()), None)
 else:
     # Databricks notebook execution
     quality_dir = Path(
@@ -28,9 +24,7 @@ else:
     )
 
 if quality_dir is None or not (quality_dir / "dq_utils.py").is_file():
-    raise FileNotFoundError(
-        f"dq_utils.py not found in expected quality directory: {quality_dir}"
-    )
+    raise FileNotFoundError(f"dq_utils.py not found in expected quality directory: {quality_dir}")
 
 # Register the directory containing dq_utils.py
 if str(quality_dir) not in sys.path:

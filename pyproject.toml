@@ -1,15 +1,22 @@
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["*.ipynb"]
+force-exclude = true
+extend-exclude = [
+    "*.ipynb",
+    "archive",
+    "src/03_silver/facilities/facilities_silver_04a_osm_locate.py",  # Databricks magics (%pip, %restart_python)
+]
 
 [tool.ruff.lint]
 # E/F = errors, I = import order, B = common bugs, UP = modern syntax
 select = ["E", "F", "I", "B", "UP"]
-   ignore = ["E501"]
+ignore = ["E501", "B905", "B007", "E731", "E741"]
+
 # Databricks notebooks exported as .py use `spark`, `dbutils`, `display` globals
 [tool.ruff.lint.per-file-ignores]
-"src/**" = ["F821"]
+"src/**" = ["F821", "E402", "B006", "B023", "B904"]
+"builders/**" = ["B023"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

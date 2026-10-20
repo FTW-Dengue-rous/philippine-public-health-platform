@@ -75,6 +75,7 @@ WITH m AS (
                            WHEN 'week' THEN dz_iso_weeks_in_year(year) END AS periods_expected
   FROM public_health.silver.diseases_metric_silver
 ),
+
 g AS (
   SELECT _source_key, disease_scope, geo_level, period_grain, max(period_basis) AS period_basis, year,
          max(periods_expected) AS periods_expected,
@@ -84,20 +85,23 @@ g AS (
          collect_set(week) AS weeks_present            -- ISO week numbers (weekly sources)
   FROM m GROUP BY _source_key, disease_scope, geo_level, period_grain, year
 ),
+
 per_area AS (
   SELECT _source_key, disease_scope, geo_level, period_grain, year, area_key,
          count(DISTINCT period_key) AS periods
   FROM m GROUP BY _source_key, disease_scope, geo_level, period_grain, year, area_key
 ),
+
 a AS (
   SELECT pa._source_key, pa.disease_scope, pa.geo_level, pa.period_grain, pa.year,
          count(*) AS areas_present, min(pa.periods) AS min_periods_per_area, max(pa.periods) AS max_periods_per_area,
          count_if(pa.periods >= g.periods_present) AS areas_complete
   FROM per_area AS pa
-  JOIN g ON g._source_key = pa._source_key AND g.disease_scope = pa.disease_scope AND g.geo_level = pa.geo_level
+  INNER JOIN g ON g._source_key = pa._source_key AND g.disease_scope = pa.disease_scope AND g.geo_level = pa.geo_level
         AND g.period_grain = pa.period_grain AND g.year = pa.year
   GROUP BY pa._source_key, pa.disease_scope, pa.geo_level, pa.period_grain, pa.year
 )
+
 SELECT g._source_key, g.disease_scope, g.geo_level, g.period_grain, g.year,
        g.periods_expected,
        g.periods_present, g.first_period, g.last_period,
@@ -117,7 +121,7 @@ SELECT g._source_key, g.disease_scope, g.geo_level, g.period_grain, g.year,
        (a.areas_complete = a.areas_present) AS all_areas_complete,
        silver_build_id AS _silver_build_id
 FROM g
-JOIN a
+INNER JOIN a
   ON a._source_key = g._source_key AND a.disease_scope = g.disease_scope AND a.geo_level = g.geo_level
  AND a.period_grain = g.period_grain AND a.year = g.year;
 
@@ -136,8 +140,8 @@ UNION ALL
 SELECT 'no rows: is the metric table empty?', CASE WHEN count(*) = 0 THEN 1 ELSE 0 END FROM public_health.silver.diseases_source_coverage_silver__candidate
 UNION ALL
 SELECT 'source in the metric table without a coverage row', count(*) FROM (
-  SELECT DISTINCT _source_key FROM public_health.silver.diseases_metric_silver) s
-  LEFT ANTI JOIN public_health.silver.diseases_source_coverage_silver__candidate c ON c._source_key = s._source_key
+  SELECT DISTINCT _source_key FROM public_health.silver.diseases_metric_silver) AS s
+  LEFT ANTI JOIN public_health.silver.diseases_source_coverage_silver__candidate AS c ON c._source_key = s._source_key
 UNION ALL
 SELECT 'periods_expected or is_complete_year is null (unknown period_grain?)', count(*)
   FROM public_health.silver.diseases_source_coverage_silver__candidate
@@ -167,7 +171,7 @@ SELECT silver_build_id                                AS build_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT count_if(failures <> 0) AS failed_gates,
              concat_ws(' | ', collect_list(CASE WHEN failures <> 0 THEN concat(gate, ' = ', failures) END)) AS failed_names
-      FROM public_health.silver.diseases_source_coverage_silver__gates) g;
+             FROM public_health.silver.diseases_source_coverage_silver__gates) AS g;
 
 
 -- =============================================================================
