@@ -3,7 +3,6 @@
 --   One row is: one source for one metric, disease scope, geographic level, period grain
 --   and range of years, with its role
 --   Key: (metric, disease_scope, geo_level, period_grain, year_from, year_to, data_source_key)
--- Data model v2. Previous file name: gold_v2_41_source_priority.sql.
 --
 -- What it is for
 --   Sources overlap on purpose. This table says which source gold shows for each metric.
@@ -22,7 +21,8 @@
 -- a subquery first; otherwise the aggregate raises once for every group.
 --
 -- History
---   2026-10-14  Written for v2 (34 rules: 30 preferred, 2 cross_check, 2 fallback).
+--   2026-10-14  Written for the combined data model (34 rules: 30 preferred, 2 cross_check,
+--               2 fallback).
 --   2026-10-18  Reasons and replay eligibility updated after the source checks of 2026-10-18.
 --               No rule, role or key changed.
 --               * UP NOAH: cases are DOH-EB counts (FOI 2026-031) by ISO week, not approximated.

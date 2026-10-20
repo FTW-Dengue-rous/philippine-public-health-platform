@@ -5,7 +5,6 @@
 --   Primary key: date_key = xxhash64(period_basis, period_label). The same period gives the
 --                same key on every rebuild.
 --   Natural key: (period_basis, period_label)
--- Previous file name: gold_v2_12_dim_date.sql
 --
 -- Reads
 --   public_health.silver.diseases_metric_silver          every period, with its dates (weeks too)

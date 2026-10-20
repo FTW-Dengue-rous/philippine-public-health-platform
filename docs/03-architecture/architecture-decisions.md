@@ -4,7 +4,7 @@ The technical choices that shape the pipeline, with the reason and the trade-off
 
 This page is a summary. The full, dated log (business and technical decisions, plus open questions) is the [decision log](../08-governance/decision-log.md). When they disagree, the decision log wins.
 
-Status date: 2026-10-19.
+Status date: 2026-10-20.
 
 ---
 
@@ -28,6 +28,7 @@ Status date: 2026-10-19.
 | AD-14 | Restricted data: aggregates only, suppression under 3 | D-47 |
 | AD-15 | Silver: full rebuild; cost control by skipping unchanged work, not by per-source incremental (for now); runs stay manual | D-57, D-59 |
 | AD-16 | Timezone-aware UTC timestamps | D-54 |
+| AD-17 | Manual acquisition for file-based domains; code ingestion for API sources only | D-03, D-59, D-63 |
 
 ---
 
@@ -159,6 +160,16 @@ Status date: 2026-10-19.
 | **Why** | A naive value was read in the driver's timezone and was 8 hours off on a UTC+8 machine, marking fresh sources STALE. |
 | **Trade-off** | None on Databricks (UTC drivers); stored values unchanged. |
 
+## AD-17 Manual acquisition for file-based domains
+
+| | |
+|---|---|
+| **Decision** | Only the two API sources have ingestion code: the PSGC API snapshot and the HDX COD-AB admin boundaries (`src/01_ingestion`, run by hand). Diseases, facilities, workforce and socioeconomic files are downloaded from their publishers, or received as FOI releases, and uploaded to `<landing_root>/<domain>/<source>/` under the file names declared in `config/sources_<domain>.yaml`. Restricted files go to `<domain>/restricted/`. HDX healthsites GeoJSON is converted to CSV with `builders/landing/` before upload. Landed files are never edited; a new release is a new file. |
+| **Why** | These sources have no stable API. PSA, DOH and PhilHealth publish workbooks, PDFs and CSVs on portals whose layouts change, and FOI data arrives by release letter with no fixed date (D-03). A scraper per portal would cost more than it saves for releases that change a few times a year, and FOI files cannot be fetched by code at all. |
+| **Trade-off** | No unattended refresh: a person must download, upload and then start the job (D-59). A wrong folder or file name is possible. Retrieval is not replayable by code, so the original files on the Volume are the system of record. |
+| **Mitigation** | The YAML entry is the landing contract (folder and file per source, AD-04). Bronze detects new or changed files by checksum and never loads a file twice (AD-05). Bronze QC and contract checks reject wrong layouts. The preload gate blocks silver when a source is FAIL, STALE or NOT_CHECKED, so a missing or forgotten upload stops the run instead of silently feeding old data (AD-12). `run_bronze.py --plan true` shows what will load before anything is written. |
+| **Later** | A trigger on a `_ready/` marker folder, or from the ingestion jobs, to start the job after an upload (D-59, R0). |
+
 ## History of updates
 
 | Date | Change |
@@ -166,3 +177,4 @@ Status date: 2026-10-19.
 | 2026-10-19 | Page written from the decision log D-01 to D-55, the gold README and the layer overviews |
 | 2026-10-19 | AD-15 rewritten for D-57: full rebuild kept; per-source incremental moved to recommendations |
 | 2026-10-20 | AD-15: runs stay manual; R0 and R1 deferred in a safer form (D-59) |
+| 2026-10-20 | AD-17 added: manual acquisition for file-based domains (D-63) |

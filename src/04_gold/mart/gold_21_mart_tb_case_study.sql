@@ -1,5 +1,4 @@
 -- ========================================
--- gold_21_mart_tb_case_study.sql
 -- Creates the view public_health.gold.mart_tb_case_study
 --   One row is: one city or municipality
 --   Key: area_key
@@ -9,7 +8,6 @@
 --         or no hospital recorded (A1)?
 --     T2  How much TB preventive treatment (TPT) reaches eligible contacts, and what share of
 --         treated TB cases succeed, by area? (programme columns, FHSIS 2025)
--- Previous file name: gold_v2_61_mart_tb_case_study.sql
 --
 -- Reads: mart_locality_service_presence (gold 14), dim_disease, dim_date, dim_data_source,
 --        fact_disease_metric (gold 07), fact_workforce_capacity (gold 08)
@@ -41,10 +39,13 @@
 --     notifications.
 --     The view computes the rates. It never copies the printed percentages.
 --     A rate is null when its denominator is null or 0.
---   * programme_small_cohort = true when BOTH the DS and the MDR cohort are under 10 (a missing
---     cohort counts as 0). Small cohorts are flagged, not hidden. The flag covers the locality,
---     not each rate: an MDR rate on a cohort under 10 is not flagged when the DS cohort is 10 or
---     more. Check mdr_treatment_cohort before showing an MDR rate.
+--   * Small cohorts are flagged, not hidden.
+--       ds_small_cohort         the DS cohort is under 10. Use it with ds_treatment_success_rate_pct.
+--       mdr_small_cohort        the MDR cohort is under 10. Use it with mdr_treatment_success_rate_pct.
+--       Both are null when the cohort is missing (the rate is null too).
+--       programme_small_cohort  older locality flag: true when BOTH cohorts are under 10 (a
+--                               missing cohort counts as 0). Kept so existing charts keep
+--                               working. Prefer the two flags above.
 --   * comparison_eligible (T1) = the locality has 2025 notifications, a 2024 population, and
 --     usable doctors, nurses and midwives. exclusion_reason names the first missing item, in
 --     that order.
@@ -54,7 +55,8 @@
 --   2026-10-14  Written for data model v2. TB programme columns (T2) added the same day.
 --   2026-10-18  Moved to public_health.gold and renamed gold_21. Comments corrected (scope of
 --               programme_small_cohort, population year of the workforce rates, source note).
---               No logic change.
+--   2026-10-19  Added ds_small_cohort and mdr_small_cohort, one flag per success rate.
+--               programme_small_cohort is unchanged.
 -- ========================================
 
 CREATE OR REPLACE VIEW public_health.gold.mart_tb_case_study AS
@@ -178,6 +180,9 @@ SELECT area_key,
          AS mdr_treatment_success_rate_pct,
        -- true only when both cohorts are under 10 (see header)
        (coalesce(ds_treatment_cohort, 0) < 10 AND coalesce(mdr_treatment_cohort, 0) < 10) AS programme_small_cohort,
+       -- one flag per success rate: the cohort is under 10 (null when there is no cohort)
+       (ds_treatment_cohort < 10) AS ds_small_cohort,
+       (mdr_treatment_cohort < 10) AS mdr_small_cohort,
        (tpt_eligible_contacts > 0 OR ds_treatment_cohort > 0 OR mdr_treatment_cohort > 0) AS programme_available,
        programme_year,
        area_code,

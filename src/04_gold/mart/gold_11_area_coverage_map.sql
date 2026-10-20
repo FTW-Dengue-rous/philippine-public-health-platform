@@ -7,12 +7,16 @@
 --      One row is: one area published by one source in one year in one fact table, with how
 --      it maps to a planning unit.
 --      Key: (fact_table, data_source_key, geo_coverage_basis, area_key, date_key)
+-- Previous file name: gold_v2_42_area_coverage_map.sql
+--
+-- Reads: dim_geography, dim_date, dim_data_source, fact_workforce_capacity, fact_area_indicator,
+--        fact_facility_capacity, fact_disease_metric
 --
 -- Why
 --   Sources publish province values on different bases: with or without the highly urbanized
 --   cities, with or without the cities listed apart. A planning unit is a province without its
---   HUCs, each HUC on its own, and NCR as one unit (open decision 2). This map says, for each
---   published row, whether it IS a planning unit, is ONE PART of one, or cannot be used.
+--   HUCs, each HUC on its own, and NCR as one unit (O-01). This map says, for each published
+--   row, whether it IS a planning unit, is ONE PART of one, or cannot be used.
 --
 -- mapping_outcome
 --   direct         the row is the planning unit
@@ -30,21 +34,38 @@
 --                                   (..listed_separately): then both are parts
 --   province_incl...                not_separable (it holds a HUC, which is its own unit)
 --   modelled_province_coverage_unconfirmed (IHME)
---                                   ASSUMED to include the HUCs (decision D5 is open):
---                                   direct when the province has no HUC, else not_separable
+--                                   IHME provinces include their HUCs (D-42): direct when the
+--                                   province has no HUC, else not_separable
+--   province_listed_cities_separate_unconfirmed (HDX dengue)
+--                                   province rows exclude the cities listed apart (D-43):
+--                                   not_separable when a HUC of the province is not listed
+--                                   apart that year; aggregate when component cities are
+--                                   listed apart (province + those cities); else direct
 --   anything else                   not_separable
---   A HUC row and the NCR region row are direct. Rows of NCR cities are not_used.
+--   A HUC row and the NCR region row are direct. Rows of NCR cities are not_used when the
+--   source publishes NCR, else they are the parts of the NCR unit (HDX lists the cities).
+--   The two *_unconfirmed basis names come from the silver area map. They are kept until that
+--   reference is renamed; D-42 and D-43 settled what they mean.
 --
 -- Not in this map: registry_snapshot and occupancy_report rows of fact_facility_capacity
 -- (their areas are cities / municipalities or the gold roll-ups, already on planning-unit
--- terms), the census population rows (same), and the diseases rows other than IHME.
+-- terms), the census population rows (same), and the diseases rows other than IHME and HDX.
+-- HDX rows are mapped once per area and calendar year (date_key of the year), for the dengue
+-- peak view (gold 23).
 --
--- huc_province_crosswalk is a name list (17 HUCs outside NCR). Codes are looked up in
--- dim_geography by name, level and region. CHECK the first query of this file: every HUC
--- outside NCR must be matched.
+-- cities_included lists the component cities added to a province row (never a HUC): gold 23
+-- subtracts their beds from the province's beds.
 --
--- Reads: dim_geography, dim_date, dim_data_source, fact_workforce_capacity, fact_area_indicator,
---        fact_facility_capacity, fact_disease_metric
+-- huc_province_crosswalk is a reviewed name list of the HUCs outside NCR. Codes are looked up in
+-- dim_geography by name, level and region. Check 1 must show every HUC as 'matched'; a new HUC
+-- in PSGC appears as not_in_name_list. Moving the crosswalk to silver is to-do 19.
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_42, v1). HDX dengue rows added
+--               the same night (review point 4).
+--   2026-10-20  Moved to public_health.gold and renamed gold_11. Rules and the note column
+--               updated for D-42 and D-43 (the "Assumed ... Not confirmed (D5)" notes are gone).
+--               No change to any mapping_outcome.
 -- ========================================
 
 CREATE OR REPLACE VIEW public_health.gold.huc_province_crosswalk AS
@@ -97,8 +118,9 @@ WITH published AS (
   INNER JOIN public_health.gold.dim_data_source AS s
     ON s.data_source_key = f.data_source_key AND s.source_dataset = 'ihme_gbd'
   UNION
-  -- HDX dengue (province or city x dated week): one row per area and year, so the dengue peak
-  -- view (63) can apply the same coverage rule (added 2026-10-14 night, review point 4)
+  -- HDX dengue (province or city x week): one row per area and year (the ISO year of the
+  -- week, keyed as a calendar_year date), so the dengue peak view (gold 23) can apply the
+  -- same coverage rule
   SELECT 'fact_disease_metric', f.data_source_key, f.area_key,
          xxhash64('calendar_year', CAST(d.year AS STRING)), f.coverage_basis
   FROM public_health.gold.fact_disease_metric AS f
@@ -183,10 +205,10 @@ mapped AS (
              THEN CASE WHEN c.cities_listed_separately > 0 THEN 'aggregate' ELSE 'direct' END
            WHEN c.coverage_basis = 'modelled_province_coverage_unconfirmed'
              THEN CASE WHEN coalesce(h.huc_in_province, 0) > 0 THEN 'not_separable' ELSE 'direct' END
-           -- HDX dengue: a province whose HUCs are not all listed apart that year cannot be split
-           -- (D5 open); one whose component cities are listed apart is one part of the unit
-           -- (aggregate: province + its listed cities); otherwise the row is the unit. The
-           -- assumption that the source excludes the cities it lists apart is not confirmed (D5)
+           -- HDX dengue (D-43: province rows exclude the cities listed apart): a province whose
+           -- HUCs are not all listed apart that year cannot be split; one whose component cities
+           -- are listed apart is one part of the unit (province + its listed cities); otherwise
+           -- the row is the unit
            WHEN c.coverage_basis = 'province_listed_cities_separate_unconfirmed'
              THEN CASE WHEN coalesce(h.huc_in_province, 0) > 0 AND coalesce(hl.hucs_listed, 0) < h.huc_in_province
                          THEN 'not_separable'
@@ -235,22 +257,22 @@ SELECT c.fact_table,
        CASE c.mapping_outcome
          WHEN 'direct' THEN
            CASE WHEN c.coverage_basis = 'modelled_province_coverage_unconfirmed'
-                THEN 'Province has no HUC, so the open coverage question (D5) does not change it'
+                THEN 'Province has no HUC, so the IHME province is the planning unit (D-42)'
                 WHEN c.coverage_basis = 'province_listed_cities_separate_unconfirmed'
                      AND coalesce(c.huc_in_province, 0) > 0
-                THEN 'Assumed to exclude the HUCs the source lists apart. Not confirmed (D5)'
+                THEN 'The source lists the HUCs apart, so the province row excludes them (D-43)'
                 ELSE 'The row is the planning unit' END
          WHEN 'aggregate' THEN
            CASE WHEN c.coverage_basis IN ('province_listed_cities_separate_unconfirmed', 'city_listed_separately')
                      AND c.source_dataset = 'hdx_dengue'
-                THEN 'One part of the planning unit (province excl. the cities listed apart, assumed; D5). Add the parts'
+                THEN 'One part of the planning unit (province excl. the cities listed apart, D-43). Add the parts'
                 ELSE 'One part of the planning unit. Add the parts, counts only' END
          WHEN 'not_separable' THEN
            CASE WHEN c.coverage_basis LIKE 'province_incl%' THEN 'Province value includes its HUC'
                 WHEN c.coverage_basis = 'modelled_province_coverage_unconfirmed'
-                  THEN 'Assumed to include the HUC of the province. Not confirmed (D5)'
+                  THEN 'IHME province estimate includes its HUC (D-42)'
                 WHEN c.coverage_basis = 'province_listed_cities_separate_unconfirmed'
-                  THEN 'Province has a HUC the source does not list apart that year. Not confirmed (D5)'
+                  THEN 'Province has a HUC the source does not list apart that year, so the row cannot be split from it (D-43)'
                 ELSE 'Coverage of the row is not confirmed' END
          WHEN 'not_used' THEN 'Already inside a published province or region row'
          ELSE 'Not a planning unit level'
@@ -261,7 +283,8 @@ LEFT JOIN public_health.gold.huc_province_crosswalk AS x
 
 
 -- Checks to read after creating the views (nothing is stopped)
--- 1. Every HUC outside NCR must be matched. Expected: 17 rows, all 'matched'.
+-- 1. Every HUC outside NCR must be matched. Expect every row 'matched' (17 HUCs outside NCR in
+--    PSGC Q2_2024). A not_in_name_list row is a new HUC: add it to the seed list.
 SELECT match_status, count(*) AS hucs, array_join(collect_list(huc_name), '; ') AS names
 FROM public_health.gold.huc_province_crosswalk
 GROUP BY match_status;

@@ -1,17 +1,23 @@
 -- ========================================
 -- Builds public_health.gold.fact_facility_capacity
---   One row is: one capacity measurement of one facility group (category, ownership, hospital level) in one area and period, from one source and capacity basis
---   Primary key: fact_facility_capacity_key (BIGINT, xxhash64 of the natural key or grain, stable across rebuilds)
---   Grain: (area_key, date_key, data_source_key, capacity_basis, facility_category, ownership, hospital_level)
+--   One row is: one capacity measurement of one facility group (category, ownership,
+--   hospital level) in one area and period, from one source and capacity basis
+--   Primary key: fact_facility_capacity_key = xxhash64 of the grain (hospital_level null
+--                hashed as '-'). Stable across rebuilds.
+--   Grain: (area_key, date_key, data_source_key, capacity_basis, facility_category, ownership,
+--          hospital_level)
 --
 -- Reads
 --   public_health.silver.facilities_registry_silver
 --   public_health.silver.facilities_metric_silver
 --   public_health.silver.facilities_bed_occupancy_silver
---   public_health.gold.dim_geography
---   public_health.gold.dim_date
---   public_health.gold.dim_data_source
-
+--   public_health.gold.dim_geography, dim_date, dim_data_source (gold 01-03)
+--
+-- Three capacity bases (capacity_basis)
+--   registry_snapshot    the facility registry today, counted per city / municipality and group
+--   published_statistic  PSA and FHSIS published counts by year
+--   occupancy_report     DOH/HFSRB bed occupancy by year (restricted source)
+--
 -- Rules
 --   * ALWAYS filter capacity_basis before adding anything up. The three bases overlap on
 --     purpose: a hospital is counted in the registry and in the PSA tables.
@@ -19,27 +25,30 @@
 --   * Registry: only facility_status = listed is counted. A facility in a Manila
 --     submunicipality is counted in the City of Manila. hospital_level is Level 1, 2, 3 or
 --     unknown for hospitals and null for the other categories. dialysis_stations is null
---     when no facility in the group has a known count.
+--     when no facility in the group has a known count. The date is the registry snapshot
+--     (the later of the NHFR and HFSRB as-of dates), the same label as dim_date.
 --   * Published: sources overlap on purpose, so filter data_source_key too. total rows sit
 --     beside government and private rows: never sum across ownership. Never add ph, region
 --     and child rows together. hospital_level is null (not published by level).
---   * Occupancy: RESTRICTED source, aggregates only, never matched to facilities. Since 2026-10-14
---     the source is doh_foi_hospital_beds: 2018-2025, both ownerships, city / municipality and
---     authorized beds every year, so every year has a weighted rate. A group of
---     fewer than suppression_min_records records is suppressed (value_status suppressed, bor
---     measures null). Roll up with sum(bor_weighted_pct * bor_weighted_beds_sum) /
+--   * Occupancy: restricted source (D-47: academic use, aggregates only, suppress small cells).
+--     Never matched to facilities. Source doh_foi_hospital_beds, 2018-2025, both ownerships,
+--     city / municipality, authorized beds every year. A group of fewer than
+--     suppression_min_records records is suppressed (value_status suppressed, bor measures
+--     null). Roll up with sum(bor_weighted_pct * bor_weighted_beds_sum) /
 --     sum(bor_weighted_beds_sum). Never average a rate.
---   * Occupancy is published at THREE levels, told apart by coverage_basis, each suppressed at
---     its own level (first Databricks run, 2026-10-14: 89% of city / municipality groups had
---     fewer than 3 hospitals, so a roll-up from those rows alone would lose most records):
+--     baseline_validated stays false until HFSRB confirms the bed basis and the reporting
+--     period (O-12).
+--   * Occupancy is published at THREE geographic levels, told apart by coverage_basis, each
+--     suppressed at its own level (first run, 2026-10-14: 89% of city / municipality groups had
+--     fewer than 3 hospitals):
 --       - the silver level (city / municipality; coverage_basis as silver gives it),
 --       - province_excl_huc: the parent province of municipalities and component cities
 --         (HUCs and ICCs hang on the region and are not in a province row),
 --       - region: every record, by region.
 --     Each level is a complete pass over the same silver records (gates check it). Never add
 --     levels together, and always filter coverage_basis with capacity_basis = occupancy_report.
---   * Occupancy also carries THREE breakdowns at every geographic level (second Databricks run:
---     province rows were still 61% suppressed because ownership x level cells are small):
+--   * Occupancy also carries THREE breakdowns at every geographic level (second run: province
+--     rows were still 61% suppressed because ownership x level cells are small):
 --       - ownership and hospital_level as reported (government / private x Level 1 / 2 / 3 / unknown),
 --       - ownership with hospital_level 'all',
 --       - ownership 'total' with hospital_level 'all' (every hospital of the area-year).
@@ -47,7 +56,25 @@
 --     (and hospital_level) before adding anything. For "capacity pressure of a province" read
 --     coverage_basis = 'province_excl_huc', ownership = 'total', hospital_level = 'all'.
 --   * A locality with no facility has no registry row. "No hospital recorded" (A1) comes
---     from dim_geography left joined to this fact, in the marts.
+--     from dim_geography left joined to this fact, in the marts (gold 14).
+--   * Safe totals: v_facility_capacity_totals (gold 13) applies these filters.
+--
+-- Build steps (write-audit-publish)
+--   [0] build id and settings
+--   [1] __inputs     every input, with the build that wrote it and its latest silver QC
+--   [2] __candidate  the candidate rows
+--   [3] __gates      every gate must have failures = 0
+--   [4] stop if a gate failed: the failed build is logged, the published table is not touched
+--   [5] write the table from the candidate (full rebuild)
+--   [6] record the build in quality.build_log and quality.build_inputs
+--   [7] drop the staging tables, then show the summary
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_20, v1). Occupancy source
+--               changed to doh_foi_hospital_beds; three geographic levels and three
+--               breakdowns added after the first two runs.
+--   2026-10-20  Moved to public_health.gold and renamed gold_06. Comments updated (D-47, O-12).
+--               'model' removed from the build log parameters. No change to the table.
 -- ========================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -58,10 +85,12 @@ DECLARE OR REPLACE VARIABLE gold_target_version BIGINT DEFAULT NULL;
 -- false: a silver table written by a notebook is allowed. Gold inputs always need one.
 DECLARE OR REPLACE VARIABLE strict_input_builds BOOLEAN DEFAULT false;
 -- true : a silver input whose latest QC (quality.v_table_health) has a FAIL stops the build.
+--        No QC run does not stop it; it makes the approval provisional (step [4]).
 DECLARE OR REPLACE VARIABLE block_on_silver_qc_fail BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
--- Smallest number of hospital records a published occupancy group may be built from (open decision 6).
+-- Smallest number of hospital records a published occupancy group may be built from
+-- (D-47: suppress cells under 3). Recorded in build_log.parameters.
 DECLARE OR REPLACE VARIABLE suppression_min_records INT DEFAULT 3;
 
 
@@ -475,6 +504,7 @@ LEFT ANTI JOIN public_health.gold.dim_data_source AS d ON d.data_source_key = c.
 -- ========================================
 -- [4] stop if a gate failed. The failed build is logged first and the staging tables are kept:
 --     SELECT * FROM public_health.gold.fact_facility_capacity__gates WHERE failures <> 0
+--     approval: provisional while a silver input has no QC run or has WARN findings to review.
 -- ========================================
 CREATE OR REPLACE TEMP VIEW fact_facility_capacity_build_log AS
 SELECT gold_build_id                                   AS build_id,
@@ -485,7 +515,7 @@ SELECT gold_build_id                                   AS build_id,
        current_timestamp()                             AS finished_at,
        CASE WHEN g.failed_gates = 0 THEN 'succeeded' ELSE 'failed' END AS status,
        code_version                                    AS code_version,
-       to_json(named_struct('model', 'v2', 'approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds, 'suppression_min_records', suppression_min_records)) AS parameters,
+       to_json(named_struct('approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds, 'suppression_min_records', suppression_min_records)) AS parameters,
        job_run_id                                      AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT count_if(failures <> 0) AS failed_gates,
@@ -520,7 +550,9 @@ SELECT * FROM public_health.gold.fact_facility_capacity__candidate;
 
 
 -- ========================================
--- [6] record the build. If your runtime rejects this SET VAR, delete it (version = null).
+-- [6] record the build, with the table version just written. If your runtime rejects this
+--     SET VAR, delete it: the version stays null, and freshness checks (G06,
+--     mart_evidence_readiness) cannot compare this table.
 -- ========================================
 SET VAR gold_target_version = (SELECT max(version) FROM (DESCRIBE HISTORY public_health.gold.fact_facility_capacity));
 
@@ -543,7 +575,7 @@ FROM public_health.gold.fact_facility_capacity__inputs;
 
 
 -- ========================================
--- [7] summary, then remove the staging tables
+-- [7] remove the staging tables, then show the summary
 -- ========================================
 DROP TABLE IF EXISTS public_health.gold.fact_facility_capacity__candidate;
 DROP TABLE IF EXISTS public_health.gold.fact_facility_capacity__gates;

@@ -5,16 +5,27 @@
 --   Answers: why an area is missing from a comparison, and where the platform's evidence is
 --   not enough (Supporting)
 --
--- Reads: mart_area_service_profile, mart_area_burden_indicator, mart_base_planning_unit,
---        dim_data_source
+-- Reads: mart_area_service_profile (gold 16), mart_area_burden_indicator (gold 17),
+--        mart_base_planning_unit (gold 15), dim_data_source (gold 03)
 --
 -- Rules
 --   * Indicators: the eight rates of the service profile, plus every burden indicator.
 --   * value_available      the unit has a value for the indicator
 --   * coverage_compatible  the source's area could be mapped to the unit (direct or aggregate)
 --   * comparison_eligible  the unit enters comparisons and rankings on this indicator
---   * exclusion_reason     why not, in the words of the mart that owns the indicator
+--   * exclusion_reason     why not, in the words of the mart that owns the indicator. For the
+--                          service profile rates without an owner reason: no_population for a
+--                          census-based rate, else outside_alignment_window. Burden reasons come
+--                          from gold 17 (for example province_estimate_includes_its_huc).
 --   * Nothing is computed here. The view only turns the two marts into one long list.
+--
+-- Extra columns (not in the v3 column list): area_code, area_name, unit_level,
+--   indicator_group, value. A view has no _gold_build_id.
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_55, v1).
+--   2026-10-20  Moved to public_health.gold and renamed gold_18. Comments updated. No logic
+--               change.
 -- ========================================
 
 CREATE OR REPLACE VIEW public_health.gold.mart_area_evidence AS
@@ -80,7 +91,8 @@ LEFT JOIN public_health.gold.dim_data_source AS s ON s.source_dataset = l.source
 
 
 -- Where the evidence is not enough: share of planning units without each indicator.
--- Expect 109 units per indicator; beds 1 missing (Sulu, no 2024 population), poverty 42 missing.
+-- Checked 2026-10-14: 109 units per indicator; beds 1 missing (Sulu, no 2024 population, D-41),
+-- poverty 42 missing.
 SELECT indicator_group, indicator_key, count(*) AS units, count_if(value_available) AS with_value,
        round(100.0 * count_if(NOT value_available) / count(*), 1) AS pct_missing,
        array_join(array_sort(collect_set(exclusion_reason)), '; ') AS exclusion_reasons

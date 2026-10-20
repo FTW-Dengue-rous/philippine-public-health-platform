@@ -1,21 +1,31 @@
 -- ========================================
+-- gold_15_mart_base_planning_unit.sql
 -- Creates the view public_health.gold.mart_base_planning_unit (helper for the BQ1 marts)
 --   One row is: one planning unit, with its census population
 --   Key: planning_unit_key
 --
--- Reads: dim_geography, dim_data_source, mart_locality_service_presence
+-- Reads: dim_geography (gold 01), dim_data_source (gold 03),
+--        mart_locality_service_presence (gold 14)
 --
 -- Rules
 --   * A planning unit is every area that cities and municipalities roll up to in
---     dim_geography.planning_unit_key: a province without its HUCs, each HUC, and NCR
---     (open decision 2). A city or municipality with no province row is its own unit and gets
---     unit_level = other (Isabela City, the Special Geographic Area municipalities).
---   * population is the sum of the census counts of the unit's cities and municipalities, all
+--     dim_geography.planning_unit_key (O-01): a province without its HUCs, each HUC, and NCR.
+--     A city or municipality with no province row is its own unit and gets unit_level = other
+--     (Isabela City, the Special Geographic Area municipalities). Whether the dashboard shows
+--     them is open (O-16).
+--   * population = the sum of the census counts of the unit's cities and municipalities, all
 --     from the latest census year. They do not overlap and come from one source, so the sum is
 --     allowed (proposal section 7). The census province row is not used: its coverage differs
 --     by year.
 --   * population is null when one locality of the unit has no count for that year. The number
---     of such localities is in localities_without_population. Null is not zero.
+--     of such localities is in localities_without_population. Null is not zero. Sulu has no
+--     2024 census count in the source, so its population stays null; it is never filled from
+--     2020 (D-41).
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_52, v1).
+--   2026-10-20  Moved to public_health.gold and renamed gold_15. Comments updated (O-01, O-16,
+--               Sulu). No logic change.
 -- ========================================
 
 CREATE OR REPLACE VIEW public_health.gold.mart_base_planning_unit AS
@@ -56,7 +66,8 @@ LEFT JOIN public_health.gold.dim_geography AS r ON r.area_key = u.region_key
 LEFT JOIN public_health.gold.dim_data_source AS s ON s.source_dataset = 'psa_psgc';
 
 
--- Expected: about 82 provinces, 17 HUCs outside NCR, 1 NCR, a few 'other' (Isabela City, SGA municipalities)
+-- Checked 2026-10-14: 82 provinces, 17 HUCs outside NCR, 1 NCR, 9 other (Isabela City and the
+-- SGA municipalities). units_without_population includes Sulu (D-41).
 SELECT unit_level, count(*) AS units, sum(localities) AS localities, sum(population) AS population,
        count_if(population IS NULL) AS units_without_population, max(population_year) AS population_year
 FROM public_health.gold.mart_base_planning_unit

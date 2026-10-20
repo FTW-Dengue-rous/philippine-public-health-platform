@@ -22,14 +22,14 @@ flowchart TB
         S5[PSGC API · HDX boundaries API]
     end
 
-    subgraph ING[Ingestion - src/01_ingestion, outside the job]
+    subgraph ING[Ingestion - src/01_ingestion, API sources only, run by hand]
         API[API landing jobs<br/>PSGC snapshot, HDX boundaries]
     end
 
     LAND[(Landing volume<br/>&lt;domain&gt;/&lt;source&gt;/)]
 
     subgraph JOB[Pipeline job: ph-public-health-pipeline]
-        SET[setup<br/>quality schema, load log]
+        SET[setup<br/>schemas, quality tables, load log]
         BRZ[bronze_&lt;domain&gt; x6<br/>run_bronze.py: load + bronze QC]
         GATE[gate_&lt;domain&gt; x6<br/>bronze_gate.py]
         SIL[silver per domain<br/>00_reference → builds → QC]
@@ -39,9 +39,9 @@ flowchart TB
     end
 
     QUAL[(public_health.quality)]
-    DASH[Dashboard<br/>AI/BI + Genie]
+    DASH[Dashboard<br/>AI/BI + Genie<br/>reads gold marts]
 
-    S1 & S2 & S3 & S4 --> LAND
+    S1 & S2 & S3 & S4 -->|manual download + upload<br/>AD-17| LAND
     S5 --> API --> LAND
     SET --> BRZ --> GATE --> SIL --> XQC --> GLD --> GQC --> DASH
     LAND --> BRZ
@@ -108,11 +108,11 @@ erDiagram
 - `dim_facility` joins to `dim_geography` only. Joining it to a fact would repeat area totals (D-39).
 - Seeds (`source_priority`, `priority_weight_params`), a crosswalk, a coverage map, 4 default views and the marts sit on top.
 
-Detail: `src/04_gold/README.md` and [gold docs](../04-pipeline/gold/).
+Detail: `src/04_gold/README.md` and [gold docs](../04-pipeline/gold/README.md).
 
 ## 6. Orchestration
 
-One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public_health_job.yml` and deployed with Asset Bundles.
+One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public_health_job.yml` and deployed with Asset Bundles. A second job, `ph-public-health-setup` (`resources/ph_public_health_setup_job.yml`), creates the schemas (bronze, silver, gold, quality), the quality tables and the load log; the pipeline runs it as its first task.
 
 | Stage | Tasks | Waits for |
 |---|---|---|
@@ -121,7 +121,7 @@ One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public
 | 2. Preload gate | `gate_<domain>` × 6: `bronze_gate.py` | that domain's bronze |
 | 3. Silver | Geography first; then facilities, diseases, workforce, socioeconomic: `00_reference` → builds → domain QC | the domain gate and geography silver QC |
 | 4. Cross-domain QC | `qc_silver_cross_domain` | every silver QC task |
-| 5. Gold | `gold_01` → dimensions → facts → marts (task key = file name); the setup job creates the `gold` schema | cross-domain QC |
+| 5. Gold | `gold_01` → dimensions → facts → marts (task key = file name, files in `src/04_gold/{dimension,fact,mart}`); the setup job creates the `gold` schema | cross-domain QC |
 | 6. Gold QC | `qc_gold` (G01–G13) | `gold_24` |
 
 **Dependency rule:** a task waits for the tables it reads *and* for the QC of those tables. A FAIL stops everything downstream.
@@ -131,9 +131,31 @@ One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public
 | Concurrency | `max_concurrent_runs: 1` (PSGC and HDX loaders allow one writer) |
 | Compute | Serverless. Python tasks on environment `default` (pyyaml, openpyxl); `geo` adds shapely for the OSM point-in-polygon step. SQL tasks on a SQL warehouse |
 | Schedule | Defined, paused (Monday 06:00 Asia/Manila). Runs stay manual (D-59) |
-| Not in the job | `src/01_ingestion` (API landing) and `builders/` (reference CSV generators), run by hand |
+| Not in the job | `src/01_ingestion` (API landing: PSGC, HDX boundaries), manual uploads for the other four domains (AD-17), and `builders/` (reference CSV generators), all run by hand |
 
-## 7. Quality architecture
+## 7. Serving
+
+The dashboard is a Databricks AI/BI (Lakeview) dashboard with Genie, deployed by the bundle from `dashboard/*.lvdash.json` (`resources/ph_public_health_dashboard.yml`). It reads **gold marts and default views only**, never silver or the raw facts.
+
+| Dashboard page (D-29) | Gold objects |
+|---|---|
+| Need | `mart_area_burden_indicator`; `v_disease_metric_totals` for trends |
+| Access to early care | `mart_locality_service_presence`, `fact_area_access` |
+| Gaps and equity | `mart_area_service_profile`, `mart_area_priority`, `mart_area_evidence` |
+| Case studies | `mart_tb_case_study`, `mart_kidney_case_study` |
+| Preparedness | `mart_dengue_peak_capacity` |
+| About the data | `mart_evidence_readiness`, `mart_area_evidence`, `dim_data_source` (sources, sharing, notes) |
+
+| Item | Value |
+|---|---|
+| Viewer permissions | `embed_credentials: false`: viewers query with their own permissions, so table grants decide what each viewer sees |
+| Refresh | Marts are views, so the dashboard shows the latest gold build on its next query. A `dashboard_refresh` task after `qc_gold` is defined in the job YAML but commented out; it would run only when gold QC passes |
+| Restricted data | Aggregates only, cells under 3 suppressed (D-47); IHME and OpenStreetMap attribution lines on their charts |
+| Wording | "Recorded", "lowest 20% of planning units", "straight-line distance" ([gold usage rules](../04-pipeline/gold/gold-usage-rules.md)) |
+
+The mapping above follows the dashboard story in D-29; check it against the final `.lvdash.json` before submission.
+
+## 8. Quality architecture
 
 Three kinds of check, one record:
 
@@ -148,9 +170,9 @@ Plus two job-level gates:
 - **Preload gate** (`bronze_gate.py`): stops a domain's silver when a bronze source is FAIL, CRASHED, STALE or NOT_CHECKED (D-51).
 - **Silver-QC gate in gold**: every gold build refuses a silver input whose latest QC has a FAIL.
 
-Detail: [quality docs](../04-pipeline/quality/).
+Detail: [quality docs](../04-pipeline/quality/README.md).
 
-## 8. Lineage
+## 9. Lineage
 
 | Level | How |
 |---|---|
@@ -162,7 +184,7 @@ Detail: [quality docs](../04-pipeline/quality/).
 
 A dashboard number traces back to a source cell. See [data lineage map](../02-data/data-lineage-map.md).
 
-## 9. Reliability properties
+## 10. Reliability properties
 
 | Property | How |
 |---|---|
@@ -172,17 +194,17 @@ A dashboard number traces back to a source cell. See [data lineage map](../02-da
 | Recoverable | Failed builds leave published tables untouched; Delta history keeps old versions; every failure has a rerun path |
 | Auditable | Lineage columns, build tables, QC results linked to the job run id |
 
-## 10. Environments
+## 11. Environments
 
 | Item | Value |
 |---|---|
 | Workspace | Personal Databricks workspace (the FTW org workspace could not reach the external volume) |
 | Catalog | `public_health` |
-| Schemas | `bronze`, `silver`, `gold`, `quality`; `test_gold`, `test_gold2` (testing, to archive) |
+| Schemas | `bronze`, `silver`, `gold`, `quality`; `test_gold`, `test_gold2` (testing, to archive once the dashboard reads `gold`) |
 | Landing | Unity Catalog Volume under the team folder (`g5_landing`) |
-| Deploy target | `dev` (Asset Bundles) |
+| Deploy target | `dev` (Asset Bundles). `databricks.yml` also defines a `prod` target whose service principal is not set yet; it is not used for the capstone |
 
-## 11. History of updates
+## 12. History of updates
 
 | Date | Change |
 |---|---|
@@ -194,3 +216,4 @@ A dashboard number traces back to a source cell. See [data lineage map](../02-da
 | 2026-10-18 | Gold promoted to `public_health.gold`; `gold_qc.py` |
 | 2026-10-19 | Preload gate, QC re-queue, geography inside `run_bronze.py`. Page written |
 | 2026-10-20 | Reliability: silver full rebuild per D-57 (was "per-source rebuild next"); gold starts at `gold_01` (no gold setup file); runs stay manual (D-59) |
+| 2026-10-20 | Manual download and upload shown in the diagram (AD-17, D-63); setup job named; serving section added; `prod` target noted as defined but unused |

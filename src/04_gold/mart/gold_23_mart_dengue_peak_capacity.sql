@@ -12,7 +12,6 @@
 --   It does NOT answer BQ2 ("which areas would exceed capacity"). That needs the replay
 --   (stretch 2) with admission and length-of-stay assumptions. Nothing here converts cases to
 --   beds (review point 4, 2026-10-14 night).
--- Previous file name: gold_v2_63_mart_dengue_peak_capacity.sql
 --
 -- Reads: fact_disease_metric (gold 07), fact_facility_capacity (gold 06),
 --        fact_area_indicator (gold 09), area_coverage_map (gold 11),
