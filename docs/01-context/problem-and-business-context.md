@@ -2,23 +2,25 @@
 
 This page explains why LUNASaan? exists, who it is for and which questions it answers. Read it first if you are new to the project.
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-20
+
 | Item | Value |
 |---|---|
 | Project | LUNASaan? — Philippine Public Health Platform |
 | Programme | FTW Data Engineering, capstone (final project) |
 | Team | Learning Team 5 |
 | Client (persona) | Inter-Agency Technical Working Group on Health Facility Data (IATWG-HFD) |
-| Status date | 2026-10-20 |
 
 ---
 
 ## 1. The situation
 
-Many Filipinos go to a hospital only when an illness is already severe. Three barriers show up again and again: there is no facility nearby, the facility has no capacity, or care costs too much.
+For many Filipinos, getting sick means facing difficult choices: where to seek care, whether help will be available, and how much it will cost. These barriers can delay treatment, allowing manageable conditions to become more serious.
 
-Hospitals that do exist are often full. Patients share beds and hallways become wards. Serious care, such as a Level 3 hospital, is often far away.
+Access is more than having a hospital nearby. A facility must also have enough beds, health workers, and services to meet patients’ needs. When capacity is stretched, patients may face long waits, crowded wards, or referrals to another hospital. Those who need specialized care may have to travel farther, adding transportation costs and lost income to an already difficult situation.
 
-The team framed the story as one question: **why is it hard to get sick in the Philippines?**
+These challenges led the team to one central question: **Why is it so hard to get the care you need when you get sick in the Philippines?**
 
 ## 2. The data problem
 
@@ -47,13 +49,14 @@ The client wants one consistent view of facility availability and disease trends
 | Primary | DOH, LGUs, health policymakers | Where to add facilities, beds, primary care and staff |
 | Secondary | General public | A clear picture of access to care where they live |
 | Secondary (later) | Researchers | Analysis-ready data. Out of scope for now (see [scope](scope.md)) |
+| Secondary (now) | Capstone reviewers, and any engineer who replaces the team | Reproduce and validate the pipeline from the documentation ([setup guide](../07-operations/setup-guide.md), [runbook](../07-operations/runbook.md)) |
 
 ## 5. Business questions
 
 | ID | Question | Priority |
 |---|---|---|
-| **BQ1** | Where are the biggest gaps between healthcare needs and available health services, and how do these gaps relate to poverty and other socioeconomic conditions? | **Core** |
-| BQ2 | Which regions or provinces would exceed hospital capacity if a past dengue peak recurred today? | Stretch goal 2 |
+| **BQ1** | Which areas show the largest gaps in health-service availability relative to population and selected indicators of disease burden, and how do these gaps differ by socioeconomic conditions? | **Core** |
+| BQ2 | Which regions or provinces would exceed hospital capacity if a past dengue peak recurred today? | Previous scope (stretch 2) |
 
 BQ1 has three parts:
 
@@ -65,12 +68,12 @@ BQ2 needs admissions and bed data per disease, which the team does not have yet.
 
 ## 6. Analytical questions
 
-The business questions break into analytical questions. Each one is answered by a gold mart. The full list, with wording and the mart that answers it, is in the question map workbook (`capstone_gold_question_map.xlsx`).
+The business questions break into analytical questions. Each one is answered by a gold mart or fact table. The full list, with wording and the mart that answers it, is in the question map workbook (`capstone_gold_question_map.xlsx`).
 
 | Group | IDs | What it asks | Gold object |
 |---|---|---|---|
-| Need | N2, N3, N4 | Disease burden by area (TB notifications, modelled deaths and prevalence, dengue peaks) | `mart_area_burden_indicator`, `mart_dengue_peak_capacity` |
-| Supply | S1, S3 | Beds, health stations and health centres per population | `mart_area_service_profile` |
+| Need | N1–N4 | Disease burden by area: cause-of-death shares (N1), modelled deaths and prevalence (N2), dengue peaks (N3), TB notifications (N4) | `fact_disease_metric` (N1), `mart_area_burden_indicator`, `mart_dengue_peak_capacity` |
+| Supply | S1, S2, S3 | Hospital and bed supply, bed occupancy, health stations and health centres | `mart_area_service_profile` (S1, S3), `fact_facility_capacity` (S2) |
 | Access | A1–A4 | Areas with no hospital or primary care recorded; highest hospital level; population per facility or bed; distance to care | `mart_locality_service_presence`, `fact_area_access` |
 | Workforce | W1, W2 | Doctors, nurses, midwives and barangay health workers per population | `mart_area_service_profile` |
 | Equity | E1, E2 | Service gaps by poverty band | `mart_area_service_profile` |
@@ -78,6 +81,7 @@ The business questions break into analytical questions. Each one is answered by 
 | TB case study | T1, T2 | TB rates against workers and primary care; preventive treatment and treatment success | `mart_tb_case_study` |
 | Kidney case study | K1 | High kidney disease mortality with few dialysis stations (specialist treatment capacity) | `mart_kidney_case_study` |
 | Dengue (core view) | — | Historical dengue peaks relative to current recorded capacity | `mart_dengue_peak_capacity` |
+| Evidence readiness | SUP6 | Is each table built, checked and built from the latest inputs? | `mart_evidence_readiness` |
 
 **Access questions, as reworded on 2026-10-12**
 
@@ -88,6 +92,8 @@ The business questions break into analytical questions. Each one is answered by 
 | A3 | Using the latest available HFSRB list, how many residents live in each area without a recorded facility? |
 | A4 | Which cities and municipalities have the highest population per recorded hospital, licensed primary care facility or hospital bed? |
 
+**Where the questions stand (2026-10-20).** The gold model is built: 5 dimensions, 4 facts, and the marts in the table above, as views over the facts ([gold README](../../src/04_gold/README.md)). Every group in the table can be queried in `public_health.gold`; live row counts are in `quality.build_log`. Two tables are not built: `mart_capacity_gap`, which would join need and supply in one row per area — until then BQ1 is answered by reading `mart_area_service_profile` (supply, workforce, poverty, access) and `mart_area_burden_indicator` (disease burden) side by side — and `mart_surge_stress_test` of BQ2 (previous scope).
+
 ## 7. Success criteria
 
 | # | Criterion | How we show it |
@@ -97,8 +103,9 @@ The business questions break into analytical questions. Each one is answered by 
 | 3 | Areas that cannot be compared fairly are flagged, not hidden | `comparison_eligible`, `exclusion_reason` and `mapping_outcome` on mart rows |
 | 4 | The pipeline can rerun safely | Idempotency evidence: three full runs on the same inputs; every gold QC G12 row passes on runs 2 and 3 ([evidence](../06-evidence/README.md)) |
 | 5 | Restricted data stays restricted | Aggregates only; cells under 3 suppressed; raw files not in the repo |
+| 6 | A new engineer can reproduce the pipeline end to end from the documentation | [Setup guide](../07-operations/setup-guide.md), [runbook](../07-operations/runbook.md), [reproducibility](../07-operations/reproducibility.md) |
 
-Confirm criteria 1–5 against the team's success-criteria slide before the final submission.
+Criteria 1–5 come from the team's success-criteria slide — confirm them against the slide before the final submission. Criterion 6 was added during the documentation pass; it is not on the slide.
 
 ## 8. The platform name
 
@@ -119,3 +126,4 @@ Motto: **Tamang Datos. Tamang Lugar. Tamang Tugon.** The right data, for the rig
 | 2026-10-14 | Core dengue question reworded to "largest relative to current recorded capacity" (D-39) |
 | 2026-10-19 | Page written from the decision log and the presentation script |
 | 2026-10-20 | Criterion 4: three evidence runs |
+| 2026-10-20 |  N1 and S2 added to the question table with their gold objects; evidence-readiness row and a build-status note added; criterion 6 (reproduction from the documentation) added; status-date row merged into the page metadata; criterion 6 provenance noted |
