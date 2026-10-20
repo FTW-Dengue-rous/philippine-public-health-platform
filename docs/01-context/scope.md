@@ -1,8 +1,9 @@
 # Scope
 
-This page says what LUNASaan? covers, what it leaves for later, and what it will not do. Use it to check whether a request belongs in this project.
+This page says what LUNASaan? covers, what it leaves for later, and what it will not do. Use it to check whether a request belongs to this project.
 
-Status date: 2026-10-20.
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-20
 
 ---
 
@@ -17,9 +18,12 @@ Status date: 2026-10-20.
 | **Core** | Dengue peaks relative to current recorded capacity (minimal view) | Built (mart 23) |
 | **Core** | Pipeline status page (evidence readiness) | Built (mart 24) |
 | Stretch 1 | Immunization coverage | Not built |
-| Stretch 2 | BQ2: full dengue capacity replay | Not built |
+| Previous scope (stretch 2) | BQ2: full dengue capacity replay | Not built |
 | Stretch (later) | Forecasting; a COVID-like worst-case scenario | Not built |
-| Out of scope | See section 5 | — |
+| Conditional | PSMO oncologist supply vs cancer burden estimates (CON2) | Inputs built to silver (`workforce_silver_04_specialist`); the comparison is not built |
+| Out of scope | See [section 5](#5-out-of-scope) | — |
+
+The question framework behind these tiers — BQ1, its supporting questions and the previous-scope BQ2 — is in [problem and business context](problem-and-business-context.md). BQ1 is answered by the marts above side by side; a single `mart_capacity_gap` that joins need and supply in one row is designed but not built.
 
 ## 2. Deliverables
 
@@ -63,7 +67,7 @@ The output is a **dashboard only** (D-02). A researcher dataset is not delivered
 | Gold star schema and marts | Write-audit-publish builds |
 | Quality checks at every layer, with gates | One `quality` schema |
 | One orchestrated job, started by hand | Databricks Asset Bundles; the person who lands new data starts the job (D-59) |
-| CI on pull requests | Lint and tests. Failing checks on `dev` are fixed after submission |
+| CI/CD on GitHub Actions | CI on pull requests and pushes: Python lint and format (ruff), unit tests (pytest), SQL lint (sqlfluff), secret scan (gitleaks), repo hygiene. CD deploys the Databricks bundle after CI passes on a push: `dev` branch to the `dev` target, `main` to `prod`. Failing checks on `dev` are fixed after submission |
 
 | Recommended, not planned (post-capstone) | Why |
 |---|---|
@@ -84,7 +88,9 @@ The output is a **dashboard only** (D-02). A researcher dataset is not delivered
 | COVID as a core disease | It could overestimate the need for facilities; stretch only |
 | Travel time or road distance | Distances are straight-line |
 | Record-level publication of FOI data | Aggregates only, suppression under 3 |
+| Patient-level clinical data | All sources are aggregated or facility-level. The one restricted release with daily counts (Davao hospital pneumonia) stays in silver and is not redistributed |
 | Real-time or daily updates | Sources publish yearly, monthly or weekly |
+| Deployment outside the team's Databricks workspace | The pipeline is one Databricks job; the output is a Databricks dashboard (D-02) |
 
 ## 6. Timeline
 
@@ -111,3 +117,6 @@ Detail: [Team and timeline](../08-governance/team-and-timeline.md).
 | 2026-10-19 | Page written |
 | 2026-10-19 | Full rebuild kept in scope; incremental silver moved to recommendations (D-57) |
 | 2026-10-20 | Runs stay manual; trigger and skip deferred (D-59). CI fixes on `dev` after submission |
+| 2026-10-20 | BQ2 relabelled previous scope to match the context page; Owner and Last updated metadata added |
+| 2026-10-20 | Scope-page integration pass: question-framework link and `mart_capacity_gap` status added; CI row expanded to the actual GitHub Actions checks; deployment boundary added to out of scope |
+| 2026-10-20 | Conditional CON2 (PSMO vs cancer estimates) row and patient-level clinical data out-of-scope row added. Draft's GLOBOCAN source, "priority scoring gated" claim, and stretch-listing of already-built CON1 and CASE rejected as unsupported or contradicted by the build |

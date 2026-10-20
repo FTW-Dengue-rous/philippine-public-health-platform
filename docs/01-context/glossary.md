@@ -1,6 +1,9 @@
 # Glossary
 
-Terms used in this project, in alphabetical order within each group. When a term is also a column or table, the name is in `code`.
+Terms used in this project, in alphabetical order within each group. When a term is also a column or table, the name is in `code`. Detailed column definitions are in the [data dictionary](../04-pipeline/gold/data-dictionary.md).
+
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-20
 
 ---
 
@@ -23,17 +26,17 @@ Terms used in this project, in alphabetical order within each group. When a term
 | **eFOI / FOI** | (Electronic) Freedom of Information request to a government agency |
 | **FHSIS** | Field Health Services Information System (DOH). Source of TB, morbidity, workforce and facility counts |
 | **HDX** | Humanitarian Data Exchange. Source of weekly dengue data, boundaries and healthsites |
-| **HFSRB** | Health Facilities and Services Regulatory Bureau (DOH). Licenses facilities |
+| **HFSRB** | Health Facilities and Services Regulatory Bureau (DOH). Licenses hospitals, infirmaries, primary care facilities, dialysis clinics and blood service facilities |
 | **Hospital level** | Level 1, 2 or 3 (Level 3 = most specialised). `unknown` when the source has none |
 | **IHME GBD** | Institute for Health Metrics and Evaluation, Global Burden of Disease. Modelled estimates |
 | **LGU** | Local government unit |
-| **NCR** | National Capital Region (Metro Manila) |
-| **NHFR** | National Health Facility Registry (DOH) |
+| **NCR** | National Capital Region (Metro Manila). Has no provinces |
+| **NHFR** | National Health Facility Registry (DOH). The spine of the facility registry: the HFSRB licensed lists are matched to it |
 | **OHSRS** | Online Health Facility Statistical Report System (DOH) |
 | **OSM / healthsites.io** | OpenStreetMap; healthsites.io publishes its health facility points |
 | **PhilHealth** | Philippine Health Insurance Corporation |
 | **PSA** | Philippine Statistics Authority |
-| **PSGC** | Philippine Standard Geographic Code. 10-digit code for every region, province, city, municipality and barangay |
+| **PSGC** | Philippine Standard Geographic Code. 10-digit code for every region, province, city, municipality and barangay. The platform uses the Q2 2024 snapshot for every year |
 | **PSMO** | Philippine Society of Medical Oncology |
 | **SGA** | Special Geographic Area (BARMM) |
 | **TPT** | TB preventive treatment |
@@ -45,6 +48,7 @@ Terms used in this project, in alphabetical order within each group. When a term
 |---|---|
 | **Broad unit** | A province together with its HUCs. Used where a source cannot separate them |
 | **Comparison eligible** | `comparison_eligible = true` when a row describes the same place as the unit it is compared with |
+| **`facility_key`** | Stable id of one facility establishment. Assigned once, reused from the previous id map on every rebuild, never derived from a name or a code. Join on it, not on names |
 | **Focus disease** | A disease used in the burden mart and case studies (`is_focus_disease`) |
 | **IATWG-HFD** | The client persona: Inter-Agency Technical Working Group on Health Facility Data |
 | **LUNASaan?** | The platform name: *lunas* (cure) + *saan* (where) |
@@ -52,7 +56,9 @@ Terms used in this project, in alphabetical order within each group. When a term
 | **Named area** | An area with no PSGC code, kept with a named code (for example the 4 NCR districts) |
 | **Planning unit** | The unit every comparison uses: each province without its HUCs, each HUC, and NCR |
 | **Preferred source** | The source gold displays for a metric. Other roles: `cross_check`, `fallback`. We avoid "source of truth" (D-13) |
-| **Recorded** | Listed in the source registry. "No hospital recorded" does not prove no hospital exists |
+| **Recorded** | Listed in the source registry. Not listed does not mean absent: a facility may be unregistered, unlisted or listed under a variant name |
+| **Reference year** | The year a value describes (the 2025 poverty estimate, the 2024 census count). Not the file's release date, `_as_of_date` |
+| **Registered vs reported** | Registered data comes from a registry (NHFR, HFSRB); reported data comes from periodic reporting (FHSIS, surveillance). They can disagree; each keeps its own rows |
 | **Restricted** | `sharing: restricted`. Published as aggregates only; raw files never committed |
 | **Selection contract** | The filters that make a total valid for each fact (for example one source, all ages, both sexes) |
 
@@ -89,9 +95,15 @@ Terms used in this project, in alphabetical order within each group. When a term
 | **Row disposition** | Why a bronze row was not loaded: `dropped_non_data`, `duplicate_of`, `quarantined`, `merged_into` |
 | **Row override** | A reviewed decision for one bronze row (file, sheet, row), bound to the file version it was reviewed in. Used when a printed label or code is wrong |
 | **Seed** | A small reviewed table defined in code (for example `source_priority`) |
-| **`source_key`** | The YAML entry name of a source. Carried as `_source_key` |
+| **`source_key`** | The YAML entry name of a source. Carried as `_source_key`. Never changed once in use |
 | **STALE** | A source loaded again after its latest QC, so QC never saw the new load |
 | **Surrogate key** | A generated key. Gold uses `xxhash64` of the natural key |
 | **Unity Catalog / Volume** | Databricks catalog with three-part names / file storage inside it |
 | **`value_status`** | Per-value status: `ok`, `missing`, `invalid`, `suppressed` and others. A null value is never treated as 0 |
 | **Write-audit-publish** | Write a candidate, check it, publish only if every gate passes |
+
+## 4. History of updates
+
+| Date | Change |
+|---|---|
+| 2026-10-20 | Owner and update-date header added; data-dictionary link; PSGC snapshot and NCR notes; NHFR and HFSRB scope; `facility_key`, reference year and registered-vs-reported entries; `source_key` note; "Recorded" reworded |
