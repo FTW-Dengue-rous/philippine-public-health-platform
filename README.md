@@ -180,7 +180,7 @@ archive/             Obsolete notebooks and SQL (not deployed)
 
 ## Team
 
-Learning Team 5: Jemma Santiago (team lead), Shiena Arico, Virna Pomendia, Via Cabuyao, Ma. Cristina Villota, and Margarette Legaspi. 
+Learning Team 5: Jemma Santiago (team lead), Shiena Arico, Virna Pomendia, Via Cabuyao, Ma. Cristina Villota, and Margarette Legaspi.
 
 Roles and timeline: [team and timeline](docs/08-governance/team-and-timeline.md).
 
