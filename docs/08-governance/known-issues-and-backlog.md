@@ -1,12 +1,14 @@
 # Known issues and backlog
 
-What is open after the capstone: known issues that affect results or operations today, the backlog ordered by priority, and the recommendations that wait for a trigger. Item numbers are the ones used in the team's to-do list and in the other pages (for example "to-do 13").
+What is open after the capstone: known issues that affect results or operations today, the engineering limitations of the pipeline, the backlog ordered by priority, and the recommendations that wait for a trigger. Item numbers are the ones used in the team's to-do list and in the other pages (for example "to-do 13").
 
-Status date: 2026-10-20. Decisions: [decision log](decision-log.md). Limits on reading the data: [assumptions and limitations](../01-context/assumptions-and-limitations.md).
+Status date: 2026-10-20. Decisions: [decision log](decision-log.md). Assumptions: [assumptions](../01-context/assumptions.md). Limits on reading the data and the team's recommendations: [limitations and recommendations](../01-context/limitations-and-recommendations.md).
 
 ---
 
-## 1. Known issues
+## 1. Known issues and engineering limitations
+
+### 1.1 Known issues
 
 | ID | Issue | Effect | Treatment | Item |
 |---|---|---|---|---|
@@ -21,7 +23,24 @@ Status date: 2026-10-20. Decisions: [decision log](decision-log.md). Limits on r
 | KI-09 | `quality_migrate_bronze_qc.sql` run not confirmed; the `batch_id` column comment in `quality_setup.sql` predates the contract | Old results may still sit in `bronze.qc_results`; a misleading comment | Confirm, drop the old table, fix the comment | 7a |
 | KI-10 | Deploy of the latest job through the Asset Bundle not recorded | The deployed job may differ from the repo | Record it with the evidence runs; optional `dashboard_refresh` task | 10 |
 | KI-11 | A teammate workspace's `ingestion_metadata` fix (runbook incident 3) not confirmed as run | Silver builds fail there with `UNRESOLVED_COLUMN` | Run `ingestion_metadata_fix.sql` in that workspace | — |
-| KI-12 | eFOI 2026-5476 (bed sheets 2016–2017, named OHSRS 2023 hospitals) received but not ingested | Occupancy starts in 2018; no named hospital utilization | Decide whether to land it after submission | 12 |
+| KI-12 | eFOI 2026-5476 (bed sheets 2016–2017, named OHSRS 2023 hospitals) received 2026-10-16 but not ingested | Occupancy starts in 2018; no named hospital utilization | Data freeze before submission. Decide whether to land it after submission | 12 |
+| KI-13 | DOH OHSRS regional release (annual consolidated, 2016–2025, government / private by region): inpatient average length of stay (ALOS) and outpatient re-visits; received 2026-10-20, not ingested | No length of stay in the pipeline; the dengue peak view compares cases with beds, not bed-days | Data freeze before submission. Region grain only, so it does not join the province / municipality marts. Main use: bed-day demand for stretch 2 | 36 |
+
+### 1.2 Engineering limitations
+
+These limits affect how the pipeline runs, not what the data means.
+
+| ID | Limitation | Current treatment |
+|---|---|---|
+| EL-01 | Silver observation tables and gold rebuild in full on every run, even when no bronze file changed. Cost grows with total rows, not new rows | Deliberate at current volume (D-57). Every gate checks the whole table, and a rule change reaches every row. Cost steps R0–R5 are in section 3. Full explanation: [silver rebuild strategy](../04-pipeline/silver/rebuild-strategy.md) |
+| EL-02 | Silver reads bronze at its current version, not a pinned version | Silver runs right after bronze QC in the same job |
+| EL-03 | `check_registry` is not fully seeded. Most QC scripts run with `strict_registry=False` | Seed it at the end of the project (KI-03, O-17) |
+| EL-04 | Four domain files hold copies of the bronze loader and QC code | Kept identical by hand. A shared module is item 14 |
+| EL-05 | `sharing: restricted` is declared, not enforced by grants | Unity Catalog grants are item 23 (KI-05) |
+| EL-06 | The loader does not detect parsing-setting changes in the YAML | Reload with `--force_keys`. Detection is item 17 |
+| EL-07 | The team runs on a personal Databricks workspace | The FTW org workspace could not reach the external volume |
+| EL-08 | The job has no trigger or active schedule. A person starts each run | Data arrives through people, so whoever lands it starts the job (D-59). Trigger and skip rules are R0 and R1 |
+| EL-09 | CI checks on `dev` fail and automated tests are thin | Fix after submission (KI-02, item 21) |
 
 ## 2. Backlog
 
@@ -42,7 +61,8 @@ Status date: 2026-10-20. Decisions: [decision log](decision-log.md). Limits on r
 | 7a | Confirm the migration; drop `bronze.qc_results`; fix the `batch_id` comment | quality | 0.5 day |
 | 7b | `qc.expected_rows` for every file | bronze | 0.5 day |
 | 10 | Confirm the bundle deploy; optional `dashboard_refresh` task after `qc_gold` | job | 0.5 day |
-| 12 | Decide on eFOI 2026-5476 | bronze, silver | 1–2 days |
+| 12 | Decide on eFOI 2026-5476 (KI-12). Decide together with 36 | bronze, silver | 1–2 days |
+| 36 | Decide on the OHSRS regional release (KI-13). Profile every tab first. Parse issues seen so far: 3-row header (metric / year / ownership), text `Started 2025` in a numeric cell (NIR 2016), NOTE footer row | bronze, silver | 1 day |
 | — | Fix the failing CI checks on `dev` | CI | — |
 
 ### Tier 3: structural improvements
@@ -78,7 +98,7 @@ Status date: 2026-10-20. Decisions: [decision log](decision-log.md). Limits on r
 | # | Item |
 |---|---|
 | 31 | Stretch 1: immunization coverage (`fact_service_coverage`, `mart_immunization_coverage`) |
-| 32 | Stretch 2: full dengue capacity replay (BQ2) |
+| 32 | Stretch 2: full dengue capacity replay (BQ2). Length of stay for bed-day demand comes from item 36; 2016–2017 occupancy baseline from item 12 |
 | 33 | Facility-grain capacity fact |
 | 34 | Specialist workforce fact (PSMO) |
 | 35 | Spark reads for large bronze files; ADM4 boundaries; WKT / WKB beside GeoJSON |
@@ -112,3 +132,5 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | 2026-10-16 | To-do list written for the week after the capstone |
 | 2026-10-19 | Updated with the bronze and silver passes; cost recommendations from D-57 |
 | 2026-10-20 | Moved to `08-governance/known-issues-and-backlog.md` with a known-issues table; R0 / R1 per D-59; CI on `dev` added |
+| 2026-10-20 | Late FOI releases: KI-13 and item 36 added for the OHSRS regional release; KI-12 / item 12 (eFOI 2026-5476) linked to it; stretch 32 notes both as inputs |
+| 2026-10-20 | Engineering limitations EL-01 to EL-09 moved here from "Assumptions and limitations" as section 1.2. Links point to the new assumptions page and the limitations and recommendations page |
