@@ -1,9 +1,10 @@
-# Pipeline job: setup (Run Job) -> bronze (+ bronze QC) -> silver -> silver QC
-#               -> cross-domain silver QC (gold: next)
+# Pipeline job: setup (Run Job) -> bronze (+ bronze QC) -> preload gate -> silver -> silver QC
+#               -> cross-domain silver QC -> gold -> gold QC
 #
 # Setup is its own job (ph_public_health_setup_job.yml). The first task here runs it as a
 # Run Job task; every bronze task waits for it. The setup scripts only create what is missing,
 # so this adds seconds per run, and a fresh or reset workspace works on the first run.
+# The setup job also creates the gold schema (schema_setup.sql): gold has no setup file.
 # The setup job can still be run on its own.
 # Ingestion (src/01_ingestion) is NOT in this job and not synced (see databricks.yml).
 # Bronze reads what is already in the landing volume.
@@ -16,25 +17,50 @@
 #   plain .py                                 -> spark_python_task (env "default" or "geo")
 #   plain .sql                                -> sql_task.file (${var.warehouse_id})
 #
-# Environments (2026-10-15): two serverless environments, both on environment_version 2
-# (numpy 1.26 base). "default" has no geometry library. "geo" adds shapely for the single
-# task that needs it (facilities 04a point-in-polygon) and pins numpy<2 + shapely<2.1: an
-# unpinned shapely resolves to 2.1 whose wheels are built against numpy 2, and installing it
-# into every task broke pandas imports ("numpy.dtype size changed"). All dependencies are
-# pinned so a run resolves to the same versions every time.
+# Environments (2026-10-15, unchanged 2026-10-20): two serverless environments, both on
+# environment_version 2 (numpy 1.26 base).
+#   default  pyyaml + openpyxl. Every Python task except the OSM locate step: run_bronze.py and
+#            the loaders it starts (YAML, Excel), bronze_gate.py, every QC script and dq_utils.py
+#            (standard library only), geography / boundaries / population silver, gold_qc.py.
+#   geo      adds shapely for the single task that needs it (facilities 04a point-in-polygon)
+#            and pins numpy<2 + shapely<2.1: an unpinned shapely resolves to 2.1, whose wheels
+#            are built against numpy 2, and installing it into every task broke pandas imports
+#            ("numpy.dtype size changed").
+#   SQL tasks (silver SQL builds, every gold file) run on the SQL warehouse, ANSI mode on.
+#   All dependencies are pinned so a run resolves to the same versions every time. The
+#   2026-10-19 bronze and silver revisions added no library.
 #
-# Bronze
-#   diseases / facilities / socioeconomic / workforce: one task per domain runs
-#     run_bronze.py --domains <domain>, which is loader (incremental) -> bronze QC for the
-#     sources that actually loaded. A QC FAIL fails the task, so silver does not start.
-#   geography / admin_boundaries: own loader + own QC task (PR #96), unchanged:
-#     geography: bronze_geography publishes its QC handoff as task values ->
-#       qc_bronze_geography reads {{tasks.bronze_geography.values.*}}
-#     admin_boundaries: job parameter admin_boundaries_run_dir (ingestion _runs/<RUN_ID> folder)
-#       -> bronze reads handoff.json, QC reads bronze_handoff.json in the same folder
+# Bronze (revised 2026-10-19, D-50 to D-54)
+#   geography / admin_boundaries / diseases / facilities / socioeconomic / workforce: one task
+#     per domain runs run_bronze.py --domains <domain>: loader (incremental) -> bronze QC for the
+#     sources that loaded, plus unchanged sources whose QC is not cleared (re-queue).
+#     A QC FAIL fails the task, so silver does not start.
+#     admin_boundaries: the loader finds the latest prepared HDX ingestion run from
+#     config/sources_geography.yaml, so there is no hard-coded _runs/<RUN_ID> path and no
+#     admin_boundaries_run_dir job parameter any more. The latest HDX ingestion run must be
+#     complete; an incomplete latest run stops the task (it never falls back to an older run).
+#     geography: run_bronze passes the loader's handoff (batch_id, checksum, landing batch,
+#     record count) straight to geography_bronze_qc.py, and runs the population payload QC
+#     (psgc_population_bronze_qc.py) in the same task. The old qc_bronze_geography,
+#     qc_bronze_admin_boundaries and qc_bronze_psgc_population tasks are gone.
+#
+# Preload gate (2026-10-19, D-51)
+#   gate_<domain> runs bronze_gate.py --domains <domain> before that domain's first silver
+#   task. It stops silver when a bronze source the domain reads is FAIL, CRASHED, STALE or
+#   NOT_CHECKED in public_health.quality (e.g. a FAIL left by an earlier run, or a source loaded
+#   with QC switched off). gate_geography also covers psgc_population.
+#
+# Silver (revised 2026-10-19): full rebuild of every table (D-57); settings recorded in
+#   build_log.parameters and read by QC (rule 2a). facilities 04a and 04 must run in the same
+#   run (04 reads the nearest_max_km column 04a writes).
+#
+# Gold (revised 2026-10-20): files gold_01-gold_24, dimension/ fact/ mart/. qc_gold is the last
+#   task. Evidence: run the job three times on the same inputs; every G12 row of runs 2 and 3
+#   should PASS ("same as previous"). Capture plan: docs/06-evidence/README.md. The first run after the D-44 / D-46 rebuild shows G12 WARN once for
+#   the weekly rows (their date_key changed).
 #
 # Dependency rule: a task waits for the tables it reads AND the QC of those tables,
-# so a failing QC (dq_utils raises on ERROR) stops everything downstream of it.
+# so a failing QC (dq_utils raises on FAIL) stops everything downstream of it.
 
 resources:
   jobs:
@@ -45,18 +71,12 @@ resources:
         project: ph-public-health
         team: ftw-dengue-rous
 
-      # Set per run ("Run now with different parameters") after admin_boundaries ingestion, e.g.
-      #   /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/<RUN_ID>
-      # No trailing slash. Blank fails fast in bronze_admin_boundaries (not a /Volumes path) and
-      # that failure blocks admin boundaries silver -> facilities 00a/04a/04 -> facilities QC ->
-      # cross-domain QC -> gold. Until the loader treats a blank dir as "no new run, skip"
-      # (exit 0), every run must set this parameter to the latest completed _runs folder.
-      parameters:
-        - name: admin_boundaries_run_dir
-          default: ""
-          # schedule:                          # auto-paused in dev target
-          #   quartz_cron_expression: "0 0 6 ? * MON"
-          #   timezone_id: Asia/Manila
+      # Run cost (file-arrival trigger, change check, incremental builds): not applied.
+      # See the recommendations R0-R5 in docs/04-pipeline/silver/rebuild-strategy.md (D-57).
+
+      # schedule:                          # auto-paused in dev target
+      #   quartz_cron_expression: "0 0 6 ? * MON"
+      #   timezone_id: Asia/Manila
 
       # email_notifications:
       #   on_failure:
@@ -89,29 +109,36 @@ resources:
         # ================================================================
         # 1. BRONZE (landing -> bronze), all in parallel after setup
         # ================================================================
-        - task_key: bronze_geography # PSGC geography + population payload
+        # loader (incremental) + bronze QC of the loaded and re-queued sources, one task per domain
+        - task_key: bronze_geography # PSGC geography + population payload; latest completed batch
           depends_on:
             - task_key: setup
           environment_key: default
           spark_python_task:
-            python_file: ../src/02_bronze/geography_bronze.py
-            parameters: # blank --landing_batch_path = latest completed batch
-              - --config_path
-              - ${workspace.file_path}/config/sources_geography.yaml
-              - --write_to_bronze
-              - "yes" # script default is "no" (preview only)
-
-        - task_key: bronze_admin_boundaries # needs job parameter admin_boundaries_run_dir
-          depends_on:
-            - task_key: setup
-          max_retries: 0 # a blank run dir fails fast; retrying cannot fix it
-          environment_key: default
-          spark_python_task:
-            python_file: ../src/02_bronze/admin_boundaries_bronze.py
+            python_file: ../src/02_bronze/run_bronze.py
             parameters:
-              - --handoff_path
-              - /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2/handoff.json
-        # loader (incremental) + bronze QC of the loaded sources, one task per domain
+              - --domains
+              - geography
+              - --repo_root
+              - ${workspace.file_path}
+              - --job_run_id
+              - "{{job.run_id}}"
+
+        - task_key: bronze_admin_boundaries # latest prepared HDX run, found from the YAML
+          depends_on:
+            - task_key: setup
+          max_retries: 0 # an incomplete latest HDX run fails fast; retrying cannot fix it
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/02_bronze/run_bronze.py
+            parameters:
+              - --domains
+              - admin_boundaries
+              - --repo_root
+              - ${workspace.file_path}
+              - --job_run_id
+              - "{{job.run_id}}"
+
         - task_key: bronze_diseases
           depends_on:
             - task_key: setup
@@ -123,6 +150,8 @@ resources:
               - diseases
               - --repo_root
               - ${workspace.file_path}
+              - --job_run_id
+              - "{{job.run_id}}"
 
         - task_key: bronze_facilities
           depends_on:
@@ -135,6 +164,8 @@ resources:
               - facilities
               - --repo_root
               - ${workspace.file_path}
+              - --job_run_id
+              - "{{job.run_id}}"
 
         - task_key: bronze_socioeconomic
           depends_on:
@@ -147,6 +178,8 @@ resources:
               - socioeconomic
               - --repo_root
               - ${workspace.file_path}
+              - --job_run_id
+              - "{{job.run_id}}"
 
         - task_key: bronze_workforce
           depends_on:
@@ -159,51 +192,89 @@ resources:
               - workforce
               - --repo_root
               - ${workspace.file_path}
-
-        # ================================================================
-        # 2. BRONZE QC (geography, admin boundaries, population only;
-        #    the other domains run their QC inside run_bronze.py)
-        # ================================================================
-        - task_key: qc_bronze_geography # inputs = bronze_geography QC handoff (task values)
-          depends_on:
-            - task_key: bronze_geography
-          environment_key: default
-          spark_python_task:
-            python_file: ../src/05_quality/bronze/geography_bronze_qc.py
-            parameters:
-              - --config_path
-              - ${workspace.file_path}/config/sources_geography.yaml
-              - --landing_batch_path
-              - "{{tasks.bronze_geography.values.landing_batch_path}}"
-              - --bronze_batch_id
-              - "{{tasks.bronze_geography.values.batch_id}}"
-              - --content_checksum
-              - "{{tasks.bronze_geography.values.content_checksum}}"
-              - --expected_record_count
-              - "{{tasks.bronze_geography.values.expected_record_count}}"
-              - --run_id
+              - --job_run_id
               - "{{job.run_id}}"
 
-        - task_key: qc_bronze_admin_boundaries
-          depends_on:
-            - task_key: bronze_admin_boundaries
-          max_retries: 0
-          environment_key: default
-          spark_python_task:
-            python_file: ../src/05_quality/bronze/admin_boundaries_bronze_qc.py
-            parameters:
-              - --bronze_handoff_path
-              - /Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries/_runs/0b68b72b-7d94-4e0f-ab5b-221f3978acf2/bronze_handoff.json
-              - --fail_on_error
-              - "true"
-              - --profile
-              - "false"
-        - task_key: qc_bronze_psgc_population
+        # ================================================================
+        # 2. BRONZE QC runs inside run_bronze.py for every domain, including the population
+        #    payload QC (psgc_population_bronze_qc.py), which runs in bronze_geography.
+        # ================================================================
+        # 2b. PRELOAD GATE (bronze_gate.py), one per domain, before its silver tasks
+        #     Fails when a bronze source the domain reads is FAIL / CRASHED / STALE /
+        #     NOT_CHECKED. Sources = enabled YAML sources + inputs of the latest silver build.
+        #     A source silver no longer reads: add --exclude_keys <key>.
+        # ================================================================
+        - task_key: gate_geography
           depends_on:
             - task_key: bronze_geography
           environment_key: default
           spark_python_task:
-            python_file: ../src/05_quality/bronze/psgc_population_bronze_qc.py
+            python_file: ../src/05_quality/bronze/bronze_gate.py
+            parameters:
+              - --domains
+              - geography
+              - --repo_root
+              - ${workspace.file_path}
+
+        - task_key: gate_admin_boundaries
+          depends_on:
+            - task_key: bronze_admin_boundaries
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/bronze_gate.py
+            parameters:
+              - --domains
+              - admin_boundaries
+              - --repo_root
+              - ${workspace.file_path}
+
+        - task_key: gate_facilities
+          depends_on:
+            - task_key: bronze_facilities
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/bronze_gate.py
+            parameters:
+              - --domains
+              - facilities
+              - --repo_root
+              - ${workspace.file_path}
+
+        - task_key: gate_diseases
+          depends_on:
+            - task_key: bronze_diseases
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/bronze_gate.py
+            parameters:
+              - --domains
+              - diseases
+              - --repo_root
+              - ${workspace.file_path}
+
+        - task_key: gate_workforce
+          depends_on:
+            - task_key: bronze_workforce
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/bronze_gate.py
+            parameters:
+              - --domains
+              - workforce
+              - --repo_root
+              - ${workspace.file_path}
+
+        - task_key: gate_socioeconomic
+          depends_on:
+            - task_key: bronze_socioeconomic
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/bronze/bronze_gate.py
+            parameters:
+              - --domains
+              - socioeconomic
+              - --repo_root
+              - ${workspace.file_path}
 
         # ================================================================
         # 3. SILVER — geography backbone (+ its QC)
@@ -211,7 +282,7 @@ resources:
         # ================================================================
         - task_key: silver_geography
           depends_on:
-            - task_key: qc_bronze_geography
+            - task_key: gate_geography
           environment_key: default
           spark_python_task:
             python_file: ../src/03_silver/geography/geography_silver.py
@@ -225,7 +296,7 @@ resources:
 
         - task_key: silver_admin_boundaries
           depends_on:
-            - task_key: qc_bronze_admin_boundaries
+            - task_key: gate_admin_boundaries
             - task_key: qc_silver_geography
           environment_key: default
           spark_python_task:
@@ -238,9 +309,8 @@ resources:
           spark_python_task:
             python_file: ../src/05_quality/silver/admin_boundaries_silver_qc.py
 
-        - task_key: silver_psgc_population
+        - task_key: silver_psgc_population # population payload checked by gate_geography
           depends_on:
-            - task_key: qc_bronze_psgc_population
             - task_key: qc_silver_geography
           environment_key: default
           spark_python_task:
@@ -274,7 +344,7 @@ resources:
 
         - task_key: silver_facilities_00_reference
           depends_on:
-            - task_key: bronze_facilities
+            - task_key: gate_facilities
             - task_key: qc_silver_geography # validates against geography checksum
           sql_task:
             warehouse_id: ${var.warehouse_id}
@@ -307,7 +377,7 @@ resources:
 
         - task_key: silver_facilities_04a_osm_locate
           depends_on:
-            - task_key: bronze_facilities
+            - task_key: gate_facilities
             - task_key: silver_facilities_00a_area_boundary
           environment_key: geo # the only task that needs shapely
           spark_python_task:
@@ -355,7 +425,7 @@ resources:
         # ================================================================
         - task_key: silver_diseases_00_reference
           depends_on:
-            - task_key: bronze_diseases
+            - task_key: gate_diseases
             - task_key: qc_silver_geography # area map codes are checked against geography_silver
           sql_task:
             warehouse_id: ${var.warehouse_id}
@@ -428,7 +498,7 @@ resources:
         # ================================================================
         - task_key: silver_workforce_00_reference
           depends_on:
-            - task_key: bronze_workforce
+            - task_key: gate_workforce
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
@@ -483,7 +553,7 @@ resources:
         # ================================================================
         - task_key: silver_socioeconomic_00_reference
           depends_on:
-            - task_key: bronze_socioeconomic
+            - task_key: gate_socioeconomic
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
@@ -499,7 +569,7 @@ resources:
 
         - task_key: silver_socioeconomic_02_health_expenditure_share
           depends_on:
-            - task_key: bronze_socioeconomic
+            - task_key: gate_socioeconomic
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
@@ -507,7 +577,7 @@ resources:
 
         - task_key: silver_socioeconomic_03_health_expenditure_per_capita
           depends_on:
-            - task_key: bronze_socioeconomic
+            - task_key: gate_socioeconomic
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
@@ -515,7 +585,7 @@ resources:
 
         - task_key: silver_socioeconomic_04_child_mortality
           depends_on:
-            - task_key: bronze_socioeconomic
+            - task_key: gate_socioeconomic
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
@@ -562,254 +632,277 @@ resources:
               - "{{job.run_id}}"
 
         # ================================================================
-        # 9. GOLD — data model v2 (public_health.test_gold2), every file is plain .sql
+        # 9. GOLD — final data model (public_health.gold), every file is plain .sql
         #    -> sql_task.file on the warehouse. Each file stops itself on a failed gate
         #    (raise_error), which fails the task and everything downstream.
-        #    Dependencies follow what each file reads; files that read only silver run in
-        #    parallel after 00. Files live in src/04_gold/test_v2/ (test_gold2 schema); move the paths when promoted.
-        #    Order: 00 -> {11,21,31,12,13} -> {20,30,35,40} -> {41,43,42,44} -> 51 -> 52 ->
-        #    {53,54} -> {55,56,57} ; 61,62,63 ; 71 last (reads build_log of every table).
+        #    Files: dimension/ (01-05), fact/ (06-09), mart/ (10-24). There is no gold setup
+        #    file: the setup job (first task of this job) creates public_health.gold.
+        #    The number is the run order; dependencies follow what each file reads, so files
+        #    that read only silver run in parallel after the cross-domain silver QC.
+        #    Task keys = file names. Previous names (gold_v2_NN): see 04_gold/README.md.
+        #    Order: {01,02,03,05} -> 04 -> {06,07,08,09} -> {10,11,12,13} -> 14 -> 15 ->
+        #    {16,17} -> {18,19,20} ; 21,22,23 ; 24 -> qc_gold (last task).
         # ================================================================
-        # --- gold: dims and setup
-        - task_key: gold_00_setup
+
+        # --- gold: dimensions (dimension/)
+        - task_key: gold_01_dim_geography
           depends_on:
             - task_key: qc_silver_cross_domain
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_00_setup.sql
+              path: ../src/04_gold/dimension/gold_01_dim_geography.sql
 
-        - task_key: gold_11_dim_geography
+        - task_key: gold_02_dim_date
           depends_on:
-            - task_key: gold_00_setup
+            - task_key: qc_silver_cross_domain
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_11_dim_geography.sql
+              path: ../src/04_gold/dimension/gold_02_dim_date.sql
 
-        - task_key: gold_21_dim_facility
+        - task_key: gold_03_dim_data_source
           depends_on:
-            - task_key: gold_00_setup
+            - task_key: qc_silver_cross_domain
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_21_dim_facility.sql
+              path: ../src/04_gold/dimension/gold_03_dim_data_source.sql
 
-        - task_key: gold_31_dim_disease
+        - task_key: gold_04_dim_facility # reads dim_geography
           depends_on:
-            - task_key: gold_00_setup
+            - task_key: gold_01_dim_geography
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_31_dim_disease.sql
+              path: ../src/04_gold/dimension/gold_04_dim_facility.sql
 
-        - task_key: gold_12_dim_date
+        - task_key: gold_05_dim_disease
           depends_on:
-            - task_key: gold_00_setup
+            - task_key: qc_silver_cross_domain
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_12_dim_date.sql
+              path: ../src/04_gold/dimension/gold_05_dim_disease.sql
 
-        - task_key: gold_13_dim_data_source
+        # --- gold: facts (fact/)
+        - task_key: gold_06_fact_facility_capacity
           depends_on:
-            - task_key: gold_00_setup
+            - task_key: gold_01_dim_geography
+            - task_key: gold_04_dim_facility
+            - task_key: gold_02_dim_date
+            - task_key: gold_03_dim_data_source
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_13_dim_data_source.sql
+              path: ../src/04_gold/fact/gold_06_fact_facility_capacity.sql
 
-        # --- gold: facts
-        - task_key: gold_20_fact_facility_capacity
+        - task_key: gold_07_fact_disease_metric
           depends_on:
-            - task_key: gold_11_dim_geography
-            - task_key: gold_21_dim_facility
-            - task_key: gold_12_dim_date
-            - task_key: gold_13_dim_data_source
+            - task_key: gold_01_dim_geography
+            - task_key: gold_05_dim_disease
+            - task_key: gold_02_dim_date
+            - task_key: gold_03_dim_data_source
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_20_fact_facility_capacity.sql
+              path: ../src/04_gold/fact/gold_07_fact_disease_metric.sql
 
-        - task_key: gold_30_fact_disease_metric
+        - task_key: gold_08_fact_workforce_capacity
           depends_on:
-            - task_key: gold_11_dim_geography
-            - task_key: gold_31_dim_disease
-            - task_key: gold_12_dim_date
-            - task_key: gold_13_dim_data_source
+            - task_key: gold_01_dim_geography
+            - task_key: gold_02_dim_date
+            - task_key: gold_03_dim_data_source
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_30_fact_disease_metric.sql
+              path: ../src/04_gold/fact/gold_08_fact_workforce_capacity.sql
 
-        - task_key: gold_35_fact_workforce_capacity
+        - task_key: gold_09_fact_area_indicator
           depends_on:
-            - task_key: gold_11_dim_geography
-            - task_key: gold_12_dim_date
-            - task_key: gold_13_dim_data_source
+            - task_key: gold_01_dim_geography
+            - task_key: gold_02_dim_date
+            - task_key: gold_03_dim_data_source
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_35_fact_workforce_capacity.sql
+              path: ../src/04_gold/fact/gold_09_fact_area_indicator.sql
 
-        - task_key: gold_40_fact_area_indicator
+        # --- gold: seeds, maps, reference, default views (mart/)
+        - task_key: gold_10_source_priority
           depends_on:
-            - task_key: gold_11_dim_geography
-            - task_key: gold_12_dim_date
-            - task_key: gold_13_dim_data_source
+            - task_key: gold_03_dim_data_source
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_40_fact_area_indicator.sql
+              path: ../src/04_gold/mart/gold_10_source_priority.sql
 
-        # --- gold: seeds, maps, reference, default views
-        - task_key: gold_41_source_priority
+        - task_key: gold_11_area_coverage_map
           depends_on:
-            - task_key: gold_13_dim_data_source
+            - task_key: gold_06_fact_facility_capacity
+            - task_key: gold_07_fact_disease_metric
+            - task_key: gold_08_fact_workforce_capacity
+            - task_key: gold_09_fact_area_indicator
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_41_source_priority.sql
+              path: ../src/04_gold/mart/gold_11_area_coverage_map.sql
 
-        - task_key: gold_43_ref_osm_healthsite_point
+        - task_key: gold_12_ref_osm_healthsite_point
           depends_on:
-            - task_key: gold_11_dim_geography
-            - task_key: gold_13_dim_data_source
+            - task_key: gold_01_dim_geography
+            - task_key: gold_03_dim_data_source
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_43_ref_osm_healthsite_point.sql
+              path: ../src/04_gold/mart/gold_12_ref_osm_healthsite_point.sql
 
-        - task_key: gold_42_area_coverage_map
+        - task_key: gold_13_fact_default_views
           depends_on:
-            - task_key: gold_20_fact_facility_capacity
-            - task_key: gold_30_fact_disease_metric
-            - task_key: gold_35_fact_workforce_capacity
-            - task_key: gold_40_fact_area_indicator
+            - task_key: gold_10_source_priority
+            - task_key: gold_06_fact_facility_capacity
+            - task_key: gold_07_fact_disease_metric
+            - task_key: gold_08_fact_workforce_capacity
+            - task_key: gold_09_fact_area_indicator
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_42_area_coverage_map.sql
+              path: ../src/04_gold/mart/gold_13_fact_default_views.sql
 
-        - task_key: gold_44_fact_default_views
+        # --- gold: marts, BQ1 spine (mart/)
+        - task_key: gold_14_mart_locality_service_presence
           depends_on:
-            - task_key: gold_41_source_priority
-            - task_key: gold_20_fact_facility_capacity
-            - task_key: gold_30_fact_disease_metric
-            - task_key: gold_35_fact_workforce_capacity
-            - task_key: gold_40_fact_area_indicator
+            - task_key: gold_06_fact_facility_capacity
+            - task_key: gold_09_fact_area_indicator
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_44_fact_default_views.sql
+              path: ../src/04_gold/mart/gold_14_mart_locality_service_presence.sql
 
-        # --- gold: marts: BQ1 spine
-        - task_key: gold_51_mart_locality_service_presence
+        - task_key: gold_15_mart_base_planning_unit
           depends_on:
-            - task_key: gold_20_fact_facility_capacity
-            - task_key: gold_40_fact_area_indicator
+            - task_key: gold_14_mart_locality_service_presence
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_51_mart_locality_service_presence.sql
+              path: ../src/04_gold/mart/gold_15_mart_base_planning_unit.sql
 
-        - task_key: gold_52_mart_base_planning_unit
+        - task_key: gold_16_mart_area_service_profile
           depends_on:
-            - task_key: gold_51_mart_locality_service_presence
+            - task_key: gold_15_mart_base_planning_unit
+            - task_key: gold_11_area_coverage_map
+            - task_key: gold_08_fact_workforce_capacity
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_52_mart_base_planning_unit.sql
+              path: ../src/04_gold/mart/gold_16_mart_area_service_profile.sql
 
-        - task_key: gold_53_mart_area_service_profile
+        - task_key: gold_17_mart_area_burden_indicator
           depends_on:
-            - task_key: gold_52_mart_base_planning_unit
-            - task_key: gold_42_area_coverage_map
-            - task_key: gold_35_fact_workforce_capacity
+            - task_key: gold_15_mart_base_planning_unit
+            - task_key: gold_11_area_coverage_map
+            - task_key: gold_10_source_priority
+            - task_key: gold_07_fact_disease_metric
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_53_mart_area_service_profile.sql
+              path: ../src/04_gold/mart/gold_17_mart_area_burden_indicator.sql
 
-        - task_key: gold_54_mart_area_burden_indicator
+        - task_key: gold_18_mart_area_evidence
           depends_on:
-            - task_key: gold_52_mart_base_planning_unit
-            - task_key: gold_42_area_coverage_map
-            - task_key: gold_41_source_priority
-            - task_key: gold_30_fact_disease_metric
+            - task_key: gold_16_mart_area_service_profile
+            - task_key: gold_17_mart_area_burden_indicator
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_54_mart_area_burden_indicator.sql
+              path: ../src/04_gold/mart/gold_18_mart_area_evidence.sql
 
-        - task_key: gold_55_mart_area_evidence
+        - task_key: gold_19_mart_area_priority
           depends_on:
-            - task_key: gold_53_mart_area_service_profile
-            - task_key: gold_54_mart_area_burden_indicator
+            - task_key: gold_16_mart_area_service_profile
+            - task_key: gold_17_mart_area_burden_indicator
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_55_mart_area_evidence.sql
+              path: ../src/04_gold/mart/gold_19_mart_area_priority.sql
 
-        - task_key: gold_56_mart_area_priority
+        - task_key: gold_20_fact_area_access
           depends_on:
-            - task_key: gold_53_mart_area_service_profile
-            - task_key: gold_54_mart_area_burden_indicator
+            - task_key: gold_14_mart_locality_service_presence
+            - task_key: gold_12_ref_osm_healthsite_point
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_56_mart_area_priority.sql
+              path: ../src/04_gold/mart/gold_20_fact_area_access.sql
 
-        - task_key: gold_57_fact_area_access
+        # --- gold: marts, case studies, preparedness, readiness (mart/)
+        - task_key: gold_21_mart_tb_case_study
           depends_on:
-            - task_key: gold_51_mart_locality_service_presence
-            - task_key: gold_43_ref_osm_healthsite_point
+            - task_key: gold_14_mart_locality_service_presence
+            - task_key: gold_07_fact_disease_metric
+            - task_key: gold_08_fact_workforce_capacity
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_57_fact_area_access.sql
+              path: ../src/04_gold/mart/gold_21_mart_tb_case_study.sql
 
-        # --- gold: marts: case studies, preparedness, readiness
-        - task_key: gold_61_mart_tb_case_study
+        - task_key: gold_22_mart_kidney_case_study
           depends_on:
-            - task_key: gold_51_mart_locality_service_presence
-            - task_key: gold_30_fact_disease_metric
-            - task_key: gold_35_fact_workforce_capacity
+            - task_key: gold_14_mart_locality_service_presence
+            - task_key: gold_11_area_coverage_map
+            - task_key: gold_07_fact_disease_metric
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_61_mart_tb_case_study.sql
+              path: ../src/04_gold/mart/gold_22_mart_kidney_case_study.sql
 
-        - task_key: gold_62_mart_kidney_case_study
+        - task_key: gold_23_mart_dengue_peak_capacity
           depends_on:
-            - task_key: gold_51_mart_locality_service_presence
-            - task_key: gold_42_area_coverage_map
-            - task_key: gold_30_fact_disease_metric
+            - task_key: gold_14_mart_locality_service_presence
+            - task_key: gold_11_area_coverage_map
+            - task_key: gold_07_fact_disease_metric
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_62_mart_kidney_case_study.sql
+              path: ../src/04_gold/mart/gold_23_mart_dengue_peak_capacity.sql
 
-        - task_key: gold_63_mart_dengue_peak_capacity
+        - task_key: gold_24_mart_evidence_readiness
           depends_on:
-            - task_key: gold_51_mart_locality_service_presence
-            - task_key: gold_42_area_coverage_map
-            - task_key: gold_30_fact_disease_metric
+            - task_key: gold_13_fact_default_views
+            - task_key: gold_18_mart_area_evidence
+            - task_key: gold_19_mart_area_priority
+            - task_key: gold_20_fact_area_access
+            - task_key: gold_21_mart_tb_case_study
+            - task_key: gold_22_mart_kidney_case_study
+            - task_key: gold_23_mart_dengue_peak_capacity
           sql_task:
             warehouse_id: ${var.warehouse_id}
             file:
-              path: ../src/04_gold/test_v2/gold_v2_63_mart_dengue_peak_capacity.sql
+              path: ../src/04_gold/mart/gold_24_mart_evidence_readiness.sql
 
-        - task_key: gold_71_mart_evidence_readiness
+        # ================================================================
+        # 10. GOLD QC (G01-G13) on the published gold objects. Raises on FAIL.
+        #     Run the job three times on the same inputs: every G12 row of runs 2 and 3 should PASS
+        #     ("same as previous") as idempotency evidence.
+        # ================================================================
+        - task_key: qc_gold
           depends_on:
-            - task_key: gold_44_fact_default_views
-            - task_key: gold_55_mart_area_evidence
-            - task_key: gold_56_mart_area_priority
-            - task_key: gold_57_fact_area_access
-            - task_key: gold_61_mart_tb_case_study
-            - task_key: gold_62_mart_kidney_case_study
-            - task_key: gold_63_mart_dengue_peak_capacity
-          sql_task:
-            warehouse_id: ${var.warehouse_id}
-            file:
-              path: ../src/04_gold/test_v2/gold_v2_71_mart_evidence_readiness.sql
+            - task_key: gold_24_mart_evidence_readiness
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/05_quality/gold/gold_qc.py
+            parameters:
+              - --job_run_id
+              - "{{job.run_id}}"
+
+        # ================================================================
+        # 11. DASHBOARD REFRESH (to-do 10, optional). Uncomment when the dashboard queries
+        #     public_health.gold and should refresh after every successful run. It runs only
+        #     when qc_gold passes. Check the field names with `databricks bundle validate`.
+        # ================================================================
+        # - task_key: dashboard_refresh
+        #   depends_on:
+        #     - task_key: qc_gold
+        #   dashboard_task:
+        #     dashboard_id: ${resources.dashboards.ph_public_health_dashboard.id}
+        #     warehouse_id: ${var.warehouse_id}
