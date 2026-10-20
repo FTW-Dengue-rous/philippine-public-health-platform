@@ -35,8 +35,10 @@
 # Needs: pip install shapely (if the runtime does not have it), facilities_silver_00a_area_boundary.sql.
 # Args : --catalog public_health (use '' for two-part names in local tests)
 # 2026-10-14: reads only the newest Healthsites file (latest _as_of_date).
-# =============================================================================
 
+#%pip install shapely
+#%restart_python
+# =============================================================================
 
 import argparse
 import json
