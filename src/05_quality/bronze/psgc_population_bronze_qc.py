@@ -428,11 +428,19 @@ def run_checks(
     bad_skip = sorted(c for c in skip if c not in CHECKS or c == "B00")
     bad_sev = {c: v for c, v in overrides.items() if c not in CHECKS or v not in ("WARN", "FAIL")}
     if bad_skip or bad_sev:
-        raise ValueError(f"invalid qc block in the YAML: skip_checks {bad_skip}, severity {bad_sev}. "
-                         "Use known check codes (not B00) and WARN or FAIL only.")
-    yaml_qc = "; ".join(x for x in (f"skip_checks={sorted(skip)}" if skip else "",
-                                     f"severity={dict(sorted(overrides.items()))}" if overrides else "") if x)
-    state = {"qc_batch": None}                        # set once the snapshot is known
+        raise ValueError(
+            f"invalid qc block in the YAML: skip_checks {bad_skip}, severity {bad_sev}. "
+            "Use known check codes (not B00) and WARN or FAIL only."
+        )
+    yaml_qc = "; ".join(
+        x
+        for x in (
+            f"skip_checks={sorted(skip)}" if skip else "",
+            f"severity={dict(sorted(overrides.items()))}" if overrides else "",
+        )
+        if x
+    )
+    state = {"qc_batch": None}  # set once the snapshot is known
 
     def rec(
         check_id,
@@ -448,7 +456,7 @@ def run_checks(
 
         if ok is not None:
             kwargs["status"] = "PASS" if ok else severity
-        kwargs["batch_id"] = state["qc_batch"]         # contract form, same for every check
+        kwargs["batch_id"] = state["qc_batch"]  # contract form, same for every check
 
         return dq.record(
             check_id,
@@ -486,7 +494,7 @@ def run_checks(
 
         return
 
-    batch_id = batch["batch_id"]                      # loader run id: selects the snapshot rows
+    batch_id = batch["batch_id"]  # loader run id: selects the snapshot rows
     state["qc_batch"] = f"{SOURCE_KEY}:{batch['content_checksum']}"
 
     df = spark.table(table_name).where(
@@ -507,8 +515,14 @@ def run_checks(
         ok=total > 0,
         observed=total,
         expected="> 0",
-        detail="; ".join(x for x in (f"loader batch_id={batch_id}",
-                                     f"YAML qc overrides: {yaml_qc}" if yaml_qc else "") if x),
+        detail="; ".join(
+            x
+            for x in (
+                f"loader batch_id={batch_id}",
+                f"YAML qc overrides: {yaml_qc}" if yaml_qc else "",
+            )
+            if x
+        ),
     )
 
     # ------------------------------------------------------------------

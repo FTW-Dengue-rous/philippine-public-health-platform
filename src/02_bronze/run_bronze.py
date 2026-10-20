@@ -80,13 +80,18 @@ import yaml
 FILE_DOMAINS = ("diseases", "facilities", "workforce", "socioeconomic")
 GEO, GEO_KEY = "geography", "psgc"
 ADMIN, ADMIN_KEY = "admin_boundaries", "hdx_phl_admin"
-FIXED = {GEO: GEO_KEY, ADMIN: ADMIN_KEY}           # domain -> its one source key
-POP_KEY, POP_DOMAIN = "psgc_population", "population"   # QC of the population payload in geography_bronze
-DOMAINS = (GEO, ADMIN) + FILE_DOMAINS              # geography first: every silver domain reads it
+FIXED = {GEO: GEO_KEY, ADMIN: ADMIN_KEY}  # domain -> its one source key
+POP_KEY, POP_DOMAIN = (
+    "psgc_population",
+    "population",
+)  # QC of the population payload in geography_bronze
+DOMAINS = (GEO, ADMIN) + FILE_DOMAINS  # geography first: every silver domain reads it
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Bronze load (incremental) + bronze QC for every domain")
+    p = argparse.ArgumentParser(
+        description="Bronze load (incremental) + bronze QC for every domain"
+    )
     p.add_argument("--domains", default="all")
     p.add_argument("--source_keys", default="")
     p.add_argument("--plan", default="false", choices=["true", "false"])
@@ -110,11 +115,13 @@ def repo_root(explicit):
         return os.path.abspath(explicit)
     try:
         here = os.path.dirname(os.path.abspath(__file__))
-    except NameError:                                   # pasted into a notebook cell
+    except NameError:  # pasted into a notebook cell
         here = os.getcwd()
     folder = here
     for _ in range(6):
-        if os.path.isdir(os.path.join(folder, "src")) and os.path.isdir(os.path.join(folder, "config")):
+        if os.path.isdir(os.path.join(folder, "src")) and os.path.isdir(
+            os.path.join(folder, "config")
+        ):
             return folder
         parent = os.path.dirname(folder)
         if parent == folder:
@@ -124,10 +131,15 @@ def repo_root(explicit):
 
 
 def find_one(root, sub, name):
-    hits = [h for h in sorted(glob.glob(os.path.join(root, sub, "**", name), recursive=True))
-            if "/.ipynb_checkpoints/" not in h]
+    hits = [
+        h
+        for h in sorted(glob.glob(os.path.join(root, sub, "**", name), recursive=True))
+        if "/.ipynb_checkpoints/" not in h
+    ]
     if len(hits) != 1:
-        raise SystemExit(f"STOPPED: {name}: expected 1 file under {os.path.join(root, sub)}, found {len(hits)}: {hits}")
+        raise SystemExit(
+            f"STOPPED: {name}: expected 1 file under {os.path.join(root, sub)}, found {len(hits)}: {hits}"
+        )
     return hits[0]
 
 
@@ -155,8 +167,10 @@ def load_gate(path, attempts=3, wait_s=2):
             return runpy.run_path(path, run_name="bronze_gate")
         except FileNotFoundError:
             if attempt == attempts:
-                raise SystemExit(f"STOPPED: {path} is listed but cannot be opened after {attempts} tries. "
-                                 "If it is a notebook, replace it with a plain .py file (Import -> File).")
+                raise SystemExit(
+                    f"STOPPED: {path} is listed but cannot be opened after {attempts} tries. "
+                    "If it is a notebook, replace it with a plain .py file (Import -> File)."
+                )
             time.sleep(wait_s)
 
 
@@ -173,7 +187,10 @@ def qc_source_keys(cfg_path):
     out = {}
     for key, entry in (cfg.get("sources") or {}).items():
         e = {**defaults, **(entry or {})}
-        out[key] = {"source_key": e.get("source_key_override", key), "enabled": bool(e.get("enabled", True))}
+        out[key] = {
+            "source_key": e.get("source_key_override", key),
+            "enabled": bool(e.get("enabled", True)),
+        }
     return out
 
 
@@ -183,17 +200,27 @@ def qc_source_keys(cfg_path):
 # or None when the loader stopped before it produced a result (error in `err`).
 # -----------------------------------------------------------------------------
 
+
 def load_file_domain(d, p, a, keys, force_keys):
     result_path = os.path.join(tempfile.gettempdir(), f"bronze_result_{d}_{os.getpid()}.json")
     if os.path.exists(result_path):
         os.remove(result_path)
-    args = ["--config_path", p["config"], "--result_path", result_path, "--plan", a.plan, "--force", a.force]
+    args = [
+        "--config_path",
+        p["config"],
+        "--result_path",
+        result_path,
+        "--plan",
+        a.plan,
+        "--force",
+        a.force,
+    ]
     if keys:
         args += ["--source_keys", ",".join(keys)]
     if force_keys:
         args += ["--force_keys", ",".join(force_keys)]
     err = run_script(p["bronze"], args)
-    if not os.path.exists(result_path):                # the loader stopped before its result was written
+    if not os.path.exists(result_path):  # the loader stopped before its result was written
         return None, err or "no result written"
     return json.load(open(result_path, encoding="utf-8")), None
 
@@ -204,7 +231,14 @@ def load_admin_boundaries(p, a):
     # common result shape. Its QC needs the bronze_handoff.json path, kept in "handoff".
     if a.force == "true":
         print(f"  note: --force does not apply to {ADMIN}; a new source version loads by itself")
-    r = {"loaded": [], "unchanged": [], "failed": [], "would_load": [], "audit_failed": [], "handoff": None}
+    r = {
+        "loaded": [],
+        "unchanged": [],
+        "failed": [],
+        "would_load": [],
+        "audit_failed": [],
+        "handoff": None,
+    }
     try:
         module = runpy.run_path(p["bronze"], run_name="admin_boundaries_bronze")
         out = module["main"](["--config_path", p["config"], "--plan", a.plan])
@@ -216,7 +250,7 @@ def load_admin_boundaries(p, a):
     except Exception as e:
         r["failed"].append(ADMIN_KEY)
         return r, f"{type(e).__name__}: {str(e)[:500]}"
-    if a.plan == "true":                               # unchanged too, so the plan shows QC re-queue
+    if a.plan == "true":  # unchanged too, so the plan shows QC re-queue
         action = out.get("load_action") if isinstance(out, dict) else None
         (r["would_load"] if action == "LOAD" else r["unchanged"]).append(ADMIN_KEY)
         return r, None
@@ -234,11 +268,19 @@ def load_geography(p, a):
     #   blocked: preview reports it; a load raises, so the source counts as failed
     if a.force == "true":
         print(f"  note: --force does not apply to {GEO}; a new snapshot loads by itself")
-    r = {"loaded": [], "unchanged": [], "failed": [], "would_load": [], "audit_failed": [], "handoff": None}
+    r = {
+        "loaded": [],
+        "unchanged": [],
+        "failed": [],
+        "would_load": [],
+        "audit_failed": [],
+        "handoff": None,
+    }
     try:
         module = runpy.run_path(p["bronze"], run_name="geography_bronze")
-        out = module["main"](["--config_path", p["config"],
-                              "--write_to_bronze", "no" if a.plan == "true" else "yes"])
+        out = module["main"](
+            ["--config_path", p["config"], "--write_to_bronze", "no" if a.plan == "true" else "yes"]
+        )
     except Exception as e:
         r["failed"].append(GEO_KEY)
         return r, f"{type(e).__name__}: {str(e)[:500]}"
@@ -246,7 +288,7 @@ def load_geography(p, a):
     if a.plan == "true":
         if action in ("load", "repair", "backfill_audit"):
             r["would_load"].append(GEO_KEY)
-        elif action == "unchanged":                    # so the plan shows QC re-queue
+        elif action == "unchanged":  # so the plan shows QC re-queue
             r["unchanged"].append(GEO_KEY)
         elif action == "blocked":
             r["failed"].append(GEO_KEY)
@@ -270,17 +312,27 @@ def qc_args(d, p, a, keys, r):
     common = common_qc_args(a)
     if d == ADMIN:
         return ["--bronze_handoff_path", r["handoff"]] + common
-    if d == GEO:                                       # the loader's handoff identifies the snapshot
+    if d == GEO:  # the loader's handoff identifies the snapshot
         h = r["handoff"]
-        return ["--config_path", p["config"], "--landing_batch_path", h["landing_batch_path"],
-                "--bronze_batch_id", h["batch_id"], "--content_checksum", h["content_checksum"],
-                "--expected_record_count", str(h["expected_record_count"])] + common
+        return [
+            "--config_path",
+            p["config"],
+            "--landing_batch_path",
+            h["landing_batch_path"],
+            "--bronze_batch_id",
+            h["batch_id"],
+            "--content_checksum",
+            h["content_checksum"],
+            "--expected_record_count",
+            str(h["expected_record_count"]),
+        ] + common
     return ["--config_path", p["config"], "--source_keys", ",".join(keys)] + common
 
 
 # -----------------------------------------------------------------------------
 # Run
 # -----------------------------------------------------------------------------
+
 
 def main():
     a = parse_args()
@@ -301,9 +353,13 @@ def main():
         else:
             cfg_path = find_one(root, "config", f"sources_{d}.yaml")
             keys = yaml_keys(cfg_path)
-        plan[d] = {"bronze": find_one(root, "src", f"{d}_bronze.py"), "qc": find_one(root, "src", f"{d}_bronze_qc.py"),
-                   "config": cfg_path, "keys": keys,
-                   "qc_keys": {} if d in FIXED else qc_source_keys(cfg_path)}
+        plan[d] = {
+            "bronze": find_one(root, "src", f"{d}_bronze.py"),
+            "qc": find_one(root, "src", f"{d}_bronze_qc.py"),
+            "config": cfg_path,
+            "keys": keys,
+            "qc_keys": {} if d in FIXED else qc_source_keys(cfg_path),
+        }
         if d == GEO:
             plan[d]["pop_qc"] = find_one(root, "src", "psgc_population_bronze_qc.py")
             plan[d]["pop_config"] = find_one(root, "config", "sources_population.yaml")
@@ -311,16 +367,21 @@ def main():
     for k in wanted + forced:
         owners = [d for d in plan if k in plan[d]["keys"]]
         if len(owners) != 1:
-            raise SystemExit(f"STOPPED: source key '{k}' is in {len(owners)} of the selected domains: {owners}")
+            raise SystemExit(
+                f"STOPPED: source key '{k}' is in {len(owners)} of the selected domains: {owners}"
+            )
     for k in set(forced) & set(FIXED.values()):
-        raise SystemExit(f"STOPPED: --force_keys {k}: this source cannot be forced. A new snapshot or source "
-                         "version loads by itself; a partial load must be deleted by hand first.")
+        raise SystemExit(
+            f"STOPPED: --force_keys {k}: this source cannot be forced. A new snapshot or source "
+            "version loads by itself; a partial load must be deleted by hand first."
+        )
 
     # QC state lookup (bronze_gate.py), only when QC or the plan needs it.
     gate, spark = None, None
     if a.qc == "true":
         gate = load_gate(find_one(root, "src", "bronze_gate.py"))
         from pyspark.sql import SparkSession
+
         spark = SparkSession.builder.getOrCreate()
 
     # {source_key: ingestion_metadata.source_name} where they differ (psgc, psgc_population ->
@@ -338,7 +399,9 @@ def main():
 
     def pop_state():
         """State of the population payload QC. Its run_log domain is 'population'."""
-        return gate["source_states"](spark, {POP_KEY: POP_DOMAIN}, metadata_names=meta_names)[POP_KEY]
+        return gate["source_states"](spark, {POP_KEY: POP_DOMAIN}, metadata_names=meta_names)[
+            POP_KEY
+        ]
 
     def with_shared_key(keys, p):
         """Add the enabled entries that share a source_key with one in keys. The gate reads the
@@ -346,17 +409,21 @@ def main():
         FAIL of a sibling entry would be hidden."""
         info = p["qc_keys"]
         shared = {(info.get(k) or {}).get("source_key") for k in keys} - {None}
-        siblings = [k for k, v in sorted(info.items()) if v["source_key"] in shared and v["enabled"]]
+        siblings = [
+            k for k, v in sorted(info.items()) if v["source_key"] in shared and v["enabled"]
+        ]
         return list(dict.fromkeys(keys + siblings))
 
-    print(f"repo root: {root}\nmode: {'PLAN (nothing written)' if a.plan == 'true' else 'load'}"
-          f"{' | force all' if a.force == 'true' else ''}\n")
+    print(
+        f"repo root: {root}\nmode: {'PLAN (nothing written)' if a.plan == 'true' else 'load'}"
+        f"{' | force all' if a.force == 'true' else ''}\n"
+    )
 
     summary, failed, qc_failed, qc_not_blocking = [], [], [], []
     for d, p in plan.items():
         keys = [k for k in wanted if k in p["keys"]]
         if wanted and not keys:
-            continue                                    # no requested source in this domain
+            continue  # no requested source in this domain
         force_keys = [k for k in forced if k in p["keys"]]
 
         print(f"========== {d}: bronze {'plan' if a.plan == 'true' else 'load'}")
@@ -369,12 +436,23 @@ def main():
             r, err = load_file_domain(d, p, a, keys, force_keys)
         if r is None:
             failed.append(f"{d}: {err}")
-            summary.append({"domain": d, "loaded": [], "unchanged": [], "failed": [], "requeued": [],
-                            "would_load": [], "qc": f"loader stopped: {err}"})
+            summary.append(
+                {
+                    "domain": d,
+                    "loaded": [],
+                    "unchanged": [],
+                    "failed": [],
+                    "requeued": [],
+                    "would_load": [],
+                    "qc": f"loader stopped: {err}",
+                }
+            )
             continue
         if r.get("failed") or r.get("audit_failed"):
-            failed.append(f"{d}: failed {r.get('failed')}, audit log not written {r.get('audit_failed')}"
-                          + (f" ({err})" if err else ""))
+            failed.append(
+                f"{d}: failed {r.get('failed')}, audit log not written {r.get('audit_failed')}"
+                + (f" ({err})" if err else "")
+            )
 
         # Re-queue: unchanged sources whose bronze QC is not cleared.
         unchanged = r.get("unchanged") or []
@@ -395,7 +473,9 @@ def main():
         shown_requeued = requeued + ([POP_KEY] if pop_requeue else [])
 
         if a.plan == "true":
-            summary.append({"domain": d, "would_load": r.get("would_load") or [], "requeued": shown_requeued})
+            summary.append(
+                {"domain": d, "would_load": r.get("would_load") or [], "requeued": shown_requeued}
+            )
             continue
 
         loaded = r.get("loaded") or []
@@ -403,7 +483,9 @@ def main():
         if qc_keys:
             expanded = with_shared_key(qc_keys, p)
             if len(expanded) > len(qc_keys):
-                print(f"  QC also for {[k for k in expanded if k not in qc_keys]} (same source_key)")
+                print(
+                    f"  QC also for {[k for k in expanded if k not in qc_keys]} (same source_key)"
+                )
             qc_keys = expanded
         qc_status = "not run"
         if qc_keys and gate:
@@ -417,9 +499,11 @@ def main():
                 stop = gate["blocking"](st)
                 warns = [k for k in qc_keys if st[k]["state"] == "WARN"]
                 if stop:
-                    qc_status = "FAIL " + "; ".join(f"{k}: {gate['reason'](s)}" for k, s in sorted(stop.items()))
+                    qc_status = "FAIL " + "; ".join(
+                        f"{k}: {gate['reason'](s)}" for k, s in sorted(stop.items())
+                    )
                     (qc_failed if a.fail_on_qc == "true" else qc_not_blocking).append(d)
-                elif qc_err:                            # script error but every key cleared: report it
+                elif qc_err:  # script error but every key cleared: report it
                     qc_status = f"FAIL (QC script: {qc_err[:120]})"
                     (qc_failed if a.fail_on_qc == "true" else qc_not_blocking).append(d)
                 else:
@@ -434,7 +518,9 @@ def main():
                 pop_status = "not run: geography QC not cleared"
             else:
                 print(f"\n========== {d}: bronze QC for {POP_KEY} (population payload)")
-                pop_err = run_script(p["pop_qc"], ["--config_path", p["pop_config"]] + common_qc_args(a))
+                pop_err = run_script(
+                    p["pop_qc"], ["--config_path", p["pop_config"]] + common_qc_args(a)
+                )
                 pst = pop_state()
                 if pst["state"] in gate["BLOCKING"]:
                     pop_status = f"FAIL {gate['reason'](pst)}"
@@ -445,13 +531,23 @@ def main():
                 else:
                     pop_status = "WARN" if pst["state"] == "WARN" else "PASS"
             qc_status = f"{qc_status} | {POP_KEY}: {pop_status}"
-        elif d == GEO and pst is not None:               # not re-run: show its state, so the run log proves it was checked
+        elif (
+            d == GEO and pst is not None
+        ):  # not re-run: show its state, so the run log proves it was checked
             qc_status = f"{qc_status} | {POP_KEY}: {pst['state']} (cleared, not re-run)"
-        summary.append({"domain": d, "loaded": loaded, "unchanged": unchanged, "failed": r.get("failed") or [],
-                        "requeued": shown_requeued, "qc": qc_status})
+        summary.append(
+            {
+                "domain": d,
+                "loaded": loaded,
+                "unchanged": unchanged,
+                "failed": r.get("failed") or [],
+                "requeued": shown_requeued,
+                "qc": qc_status,
+            }
+        )
         print(f"   {d} done in {time.time() - started:.0f}s\n")
         if qc_failed and a.fail_on_qc == "true":
-            break                                       # stop before the next domain
+            break  # stop before the next domain
 
     def show(xs):
         return ",".join(xs) or "-"
@@ -460,21 +556,31 @@ def main():
     for s in summary:
         d = s["domain"]
         if a.plan == "true":
-            print(f"  {d:16s} would load: {show(s.get('would_load', []))}\n"
-                  f"  {'':16s} QC would rerun: {show(s.get('requeued', []))}")
+            print(
+                f"  {d:16s} would load: {show(s.get('would_load', []))}\n"
+                f"  {'':16s} QC would rerun: {show(s.get('requeued', []))}"
+            )
         else:
-            print(f"  {d:16s} loaded: {show(s.get('loaded', []))}\n"
-                  f"  {'':16s} unchanged: {show(s.get('unchanged', []))}\n"
-                  f"  {'':16s} QC re-queued: {show(s.get('requeued', []))}\n"
-                  f"  {'':16s} failed: {show(s.get('failed', []))} | QC: {s['qc']}")
+            print(
+                f"  {d:16s} loaded: {show(s.get('loaded', []))}\n"
+                f"  {'':16s} unchanged: {show(s.get('unchanged', []))}\n"
+                f"  {'':16s} QC re-queued: {show(s.get('requeued', []))}\n"
+                f"  {'':16s} failed: {show(s.get('failed', []))} | QC: {s['qc']}"
+            )
     rerun = [s["domain"] for s in summary if s.get("loaded")]
     if a.plan != "true" and rerun:
-        print(f"\nBronze changed for: {rerun}. Rerun their silver builds (gate -> reference -> builds -> silver QC), then gold.")
+        print(
+            f"\nBronze changed for: {rerun}. Rerun their silver builds (gate -> reference -> builds -> silver QC), then gold."
+        )
     if qc_not_blocking:
-        print(f"\nQC FAIL recorded but not blocking (--fail_on_qc false): {qc_not_blocking}. "
-              "The preload gate (bronze_gate.py) will still stop their silver builds.")
+        print(
+            f"\nQC FAIL recorded but not blocking (--fail_on_qc false): {qc_not_blocking}. "
+            "The preload gate (bronze_gate.py) will still stop their silver builds."
+        )
     if failed or qc_failed:
-        raise RuntimeError(f"bronze run failed. Loader: {failed or 'ok'}; QC failed: {qc_failed or 'none'}")
+        raise RuntimeError(
+            f"bronze run failed. Loader: {failed or 'ok'}; QC failed: {qc_failed or 'none'}"
+        )
     print("\nBronze run complete.")
 
 

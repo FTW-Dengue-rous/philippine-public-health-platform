@@ -81,8 +81,11 @@ def _add_dq_utils_to_path():
             candidates = [folder]
             for base in (folder, os.path.join(folder, "src")):
                 try:
-                    candidates += [os.path.join(base, d) for d in sorted(os.listdir(base))
-                                   if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))]
+                    candidates += [
+                        os.path.join(base, d)
+                        for d in sorted(os.listdir(base))
+                        if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))
+                    ]
                 except OSError:
                     pass
             for c in candidates:
@@ -97,7 +100,8 @@ def _add_dq_utils_to_path():
             folder = parent
     raise ModuleNotFoundError(
         "dq_utils.py not found. It must be a Python FILE named dq_utils.py (not a notebook) in "
-        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched)))
+        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 _add_dq_utils_to_path()
@@ -112,9 +116,15 @@ spark = SparkSession.builder.getOrCreate()
 # -----------------------------------------------------------------------------
 def parse_args():
     p = argparse.ArgumentParser(description="HDX administrative boundaries Silver QC")
-    p.add_argument("--config_path", default=None, help="Default: config/sources_geography.yaml above this file")
-    p.add_argument("--source_version", default=None, help="Default: the single HDX source version in Silver")
-    p.add_argument("--batch_id", default=None, help="Default: the single batch Silver holds for that version")
+    p.add_argument(
+        "--config_path", default=None, help="Default: config/sources_geography.yaml above this file"
+    )
+    p.add_argument(
+        "--source_version", default=None, help="Default: the single HDX source version in Silver"
+    )
+    p.add_argument(
+        "--batch_id", default=None, help="Default: the single batch Silver holds for that version"
+    )
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--fail_on_error", default=None, help="true (default): raise if any check FAILs")
     p.add_argument("--dq_schema", default=None, help=f"Default {DQ_SCHEMA}")
@@ -128,6 +138,7 @@ def _dbutils():
         return handle
     try:
         from databricks.sdk.runtime import dbutils as handle
+
         return handle
     except Exception:
         return None
@@ -164,7 +175,8 @@ def find_config(explicit, name="sources_geography.yaml"):
                 return candidate.resolve()
     raise FileNotFoundError(
         f"{name} not found. Pass --config_path (or the job parameter config_path). Looked in:\n  "
-        + "\n  ".join(dict.fromkeys(searched)))
+        + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 ARGS = parse_args()
@@ -196,22 +208,30 @@ _special = hdx_silver_qc.get("special_structures") or {}
 SPECIAL_ADM2_PREFIXES = [str(v) for v in _special.get("adm2_name_prefixes") or []]
 SPECIAL_ADM2_NAMES = [str(v) for v in _special.get("adm2_names") or []]
 SPECIAL_ADM3_PARENTS = [str(v) for v in _special.get("adm3_parent_adm2_names") or []]
-for _name, _values in (("hdx_phl_admin.required_levels", ADMIN_LEVELS),
-                       ("hdx_phl_admin.silver_qc.accepted_geometry_types", GEOMETRY_TYPES),
-                       ("hdx_phl_admin.silver_qc.special_structures",
-                        SPECIAL_ADM2_PREFIXES + SPECIAL_ADM2_NAMES + SPECIAL_ADM3_PARENTS)):
+for _name, _values in (
+    ("hdx_phl_admin.required_levels", ADMIN_LEVELS),
+    ("hdx_phl_admin.silver_qc.accepted_geometry_types", GEOMETRY_TYPES),
+    (
+        "hdx_phl_admin.silver_qc.special_structures",
+        SPECIAL_ADM2_PREFIXES + SPECIAL_ADM2_NAMES + SPECIAL_ADM3_PARENTS,
+    ),
+):
     if not _values:
         raise ValueError(f"{_name} is missing or empty in {CONFIG_PATH}")
 
 # SQL for "this row is a documented special structure" (AS08)
-_adm2_terms = [f"boundary_name LIKE '{p.replace(chr(39), chr(39) * 2)}%'" for p in SPECIAL_ADM2_PREFIXES]
+_adm2_terms = [
+    f"boundary_name LIKE '{p.replace(chr(39), chr(39) * 2)}%'" for p in SPECIAL_ADM2_PREFIXES
+]
 if SPECIAL_ADM2_NAMES:
     _adm2_terms.append(f"boundary_name IN ({sql_list(SPECIAL_ADM2_NAMES)})")
 _special_terms = []
 if _adm2_terms:
     _special_terms.append(f"(admin_level = '2' AND ({' OR '.join(_adm2_terms)}))")
 if SPECIAL_ADM3_PARENTS:
-    _special_terms.append(f"(admin_level = '3' AND adm2_name IN ({sql_list(SPECIAL_ADM3_PARENTS)}))")
+    _special_terms.append(
+        f"(admin_level = '3' AND adm2_name IN ({sql_list(SPECIAL_ADM3_PARENTS)}))"
+    )
 SPECIAL_STRUCTURE_SQL = " OR ".join(_special_terms)
 
 print(f"Config          : {CONFIG_PATH}")

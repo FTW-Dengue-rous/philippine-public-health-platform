@@ -298,7 +298,8 @@ WHERE check_id = 'B03' AND expected = 'not set';
 
 ```python
 import runpy, sys
-sys.argv = ["bronze_gate.py", "--allow_unchecked", "true"]     # prints every source's state
+
+sys.argv = ["bronze_gate.py", "--allow_unchecked", "true"]  # prints every source's state
 runpy.run_path("<repo>/src/05_quality/bronze/bronze_gate.py", run_name="__main__")
 ```
 

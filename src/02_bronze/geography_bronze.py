@@ -73,7 +73,7 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -96,21 +96,21 @@ LINEAGE_COLUMNS = [
 # Ingestion metadata: same 15 columns, order and meaning as the other bronze loaders
 # (<domain>_bronze.py) and the API ingestion job. One row per run for this API snapshot.
 METADATA_SCHEMA = [
-    ("batch_id", "string"),          # equals the Bronze rows' batch_id for 'processed'
-    ("source_name", "string"),       # source_name from YAML / manifest
-    ("source_version", "string"),    # PSGC version from YAML / manifest
-    ("endpoint", "string"),          # API endpoint
+    ("batch_id", "string"),  # equals the Bronze rows' batch_id for 'processed'
+    ("source_name", "string"),  # source_name from YAML / manifest
+    ("source_version", "string"),  # PSGC version from YAML / manifest
+    ("endpoint", "string"),  # API endpoint
     ("content_checksum", "string"),  # manifest content checksum
-    ("raw_file_path", "string"),     # landing batch folder
-    ("record_count", "bigint"),      # rows of this snapshot in Bronze (reconciled after the write)
-    ("page_count", "int"),           # API pages in the landing batch
-    ("retrieved_at", "timestamp"),   # load time (UTC); equals the rows' ingested_at for 'processed'
-    ("status", "string"),            # processed | skipped_duplicate
+    ("raw_file_path", "string"),  # landing batch folder
+    ("record_count", "bigint"),  # rows of this snapshot in Bronze (reconciled after the write)
+    ("page_count", "int"),  # API pages in the landing batch
+    ("retrieved_at", "timestamp"),  # load time (UTC); equals the rows' ingested_at for 'processed'
+    ("status", "string"),  # processed | skipped_duplicate
     ("bronze_table", "string"),
-    ("source_sheet", "string"),      # null for API loads
-    ("column_count", "int"),         # data columns written (lineage columns excluded)
-    ("file_size_bytes", "bigint"),   # landing page + record files
-    ("error_message", "string"),     # note on a backfilled / repaired / skipped row
+    ("source_sheet", "string"),  # null for API loads
+    ("column_count", "int"),  # data columns written (lineage columns excluded)
+    ("file_size_bytes", "bigint"),  # landing page + record files
+    ("error_message", "string"),  # note on a backfilled / repaired / skipped row
 ]
 
 
@@ -351,7 +351,7 @@ def ingest_source(spark, args):
     FILE_SIZE_BYTES = sum((BATCH_PATH / name).stat().st_size for name in MANIFEST["files"])
     # One timestamp per run: used for the rows' ingested_at and the audit row's retrieved_at,
     # so the two match exactly (the lineage lookup joins on them).
-    LOAD_TS = datetime.now(timezone.utc)
+    LOAD_TS = datetime.now(UTC)
     print("Config:", str(CONFIG_PATH))
     print("Verified landing batch:", str(BATCH_PATH))
     print("Records:", RECORD_COUNT)
@@ -502,9 +502,7 @@ def ingest_source(spark, args):
     EXISTING_COUNT = target_snapshot().count()
 
     # Decide what this run does, like the incremental file loaders.
-    ALREADY_LOGGED = EXISTING_COUNT > 0 and has_processed_metadata(
-        spark, METADATA_TABLE, BATCH_ID
-    )
+    ALREADY_LOGGED = EXISTING_COUNT > 0 and has_processed_metadata(spark, METADATA_TABLE, BATCH_ID)
     if EXISTING_COUNT == 0:
         ACTION = "load"
     elif EXISTING_COUNT == RECORD_COUNT:
@@ -533,8 +531,13 @@ def ingest_source(spark, args):
         print("Preview complete. No Bronze or metadata rows were written.")
         print("To load, set write_to_bronze to yes (the default) and Run All again.")
         # Planned action for run_bronze.py --plan (load | unchanged | backfill_audit | repair | blocked).
-        return {"preview": True, "action": ACTION, "load_issue": LOAD_ISSUE, "batch_id": BATCH_ID,
-                "expected_record_count": RECORD_COUNT}
+        return {
+            "preview": True,
+            "action": ACTION,
+            "load_issue": LOAD_ISSUE,
+            "batch_id": BATCH_ID,
+            "expected_record_count": RECORD_COUNT,
+        }
 
     if ACTION == "blocked":
         raise RuntimeError(LOAD_ISSUE + " No Bronze or metadata rows were written.")
@@ -606,12 +609,18 @@ def ingest_source(spark, args):
     )
     if ACTION == "load":
         audit = metadata_row(
-            batch_id=BATCH_ID, record_count=STORED_COUNT, retrieved_at=LOAD_TS,
-            status="processed", error_message=None, **common,
+            batch_id=BATCH_ID,
+            record_count=STORED_COUNT,
+            retrieved_at=LOAD_TS,
+            status="processed",
+            error_message=None,
+            **common,
         )
     elif ACTION == "repair":
         audit = metadata_row(
-            batch_id=BATCH_ID, record_count=STORED_COUNT, retrieved_at=LOAD_TS,
+            batch_id=BATCH_ID,
+            record_count=STORED_COUNT,
+            retrieved_at=LOAD_TS,
             status="processed",
             error_message=(
                 f"repaired: {RECORD_COUNT - EXISTING_COUNT} missing rows inserted into load "
@@ -621,7 +630,9 @@ def ingest_source(spark, args):
         )
     elif ACTION == "backfill_audit":
         audit = metadata_row(
-            batch_id=BATCH_ID, record_count=STORED_COUNT, retrieved_at=SNAPSHOT_LOADED_AT,
+            batch_id=BATCH_ID,
+            record_count=STORED_COUNT,
+            retrieved_at=SNAPSHOT_LOADED_AT,
             status="processed",
             error_message=(
                 "audit row backfilled: bronze rows were loaded earlier without a log row; "
@@ -631,7 +642,9 @@ def ingest_source(spark, args):
         )
     else:  # unchanged
         audit = metadata_row(
-            batch_id=str(uuid.uuid4()), record_count=STORED_COUNT, retrieved_at=LOAD_TS,
+            batch_id=str(uuid.uuid4()),
+            record_count=STORED_COUNT,
+            retrieved_at=LOAD_TS,
             status="skipped_duplicate",
             error_message=(
                 f"unchanged: bronze rows are from load {BATCH_ID} "
@@ -647,11 +660,16 @@ def ingest_source(spark, args):
             f"({type(exc).__name__}: {str(exc)[:300]}). Rerun this loader: it will backfill "
             "the audit row without rewriting Bronze."
         ) from exc
-    print(f"Audit logged: {audit[METADATA_SCHEMA.index(('status', 'string'))]} "
-          f"for batch {BATCH_ID} in {METADATA_TABLE}")
+    print(
+        f"Audit logged: {audit[METADATA_SCHEMA.index(('status', 'string'))]} "
+        f"for batch {BATCH_ID} in {METADATA_TABLE}"
+    )
 
-    print("Landing → Bronze completed." if ACTION in ("load", "repair")
-          else "Bronze unchanged; audit up to date.")
+    print(
+        "Landing → Bronze completed."
+        if ACTION in ("load", "repair")
+        else "Bronze unchanged; audit up to date."
+    )
     print("Bronze table:", BRONZE_TABLE)
     print("Records in this snapshot:", STORED_COUNT)
     print("Landing batch:", str(BATCH_PATH))
