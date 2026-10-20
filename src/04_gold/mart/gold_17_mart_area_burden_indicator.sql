@@ -5,7 +5,6 @@
 --   When a unit has no value, the row says why (exclusion_reason).
 --   Key: (planning_unit_key, burden_indicator_key)
 --   Answers: N2 (modelled deaths and prevalence by province), N4 (TB notifications)
-
 --
 -- Reads: mart_base_planning_unit, area_coverage_map, source_priority, dim_disease,
 --        dim_geography, dim_date, dim_data_source, fact_disease_metric
@@ -39,14 +38,22 @@
 --     with the same rate get the same quintile.
 --   * IHME licence: no row-level export. Put the IHME attribution line on every chart.
 --
--- Note on exclusion_reason: the value 'province_estimate_assumed_to_include_its_huc' predates
--- D-42, which confirmed the inclusion. The value is kept so dashboard filters keep working.
--- Read it as "the province estimate includes its HUC". Rename it in a later revision.
+-- exclusion_reason values
+--   locality_without_report                      FHSIS: a locality of the unit has no report
+--   no_source_row                                the source has no row for the unit
+--   province_estimate_includes_its_huc           IHME: the province estimate holds a HUC (D-42)
+--   published_only_inside_the_province_estimate  IHME: a HUC; its value is inside the province
+--   no_population                                no census population for the unit
+--   outside_alignment_window                     value year and census year > 2 years apart
+--   null                                         the rate can be computed
 --
 -- History
 --   2026-10-14  Written for data model v2 (from gold_54, v1).
 --   2026-10-18  Moved to public_health.gold and renamed gold_17. Comments updated for D-42
---               (IHME provinces include their HUCs), D-43 and D-45 (HDX). No logic change.
+--               (IHME provinces include their HUCs), D-43 and D-45 (HDX).
+--   2026-10-19  exclusion_reason 'province_estimate_assumed_to_include_its_huc' renamed
+--               'province_estimate_includes_its_huc' (D-42 confirmed it). mart_area_evidence
+--               (gold 18) passes the new value through. Update any dashboard filter on the old one.
 -- ========================================
 
 CREATE OR REPLACE VIEW public_health.gold.mart_area_burden_indicator AS
@@ -156,8 +163,7 @@ rated AS (
          CASE WHEN g.value IS NULL THEN
                 CASE WHEN g.is_locality_sum AND g.localities_reporting IS NOT NULL THEN 'locality_without_report'
                      WHEN g.is_locality_sum THEN 'no_source_row'
-                     -- value name predates D-42: the province estimate includes its HUC
-                     WHEN g.is_blocked THEN 'province_estimate_assumed_to_include_its_huc'
+                     WHEN g.is_blocked THEN 'province_estimate_includes_its_huc'
                      WHEN g.unit_level = 'HUC' THEN 'published_only_inside_the_province_estimate'
                      ELSE 'no_source_row' END
               WHEN g.is_locality_sum AND g.localities_reporting < g.localities THEN 'locality_without_report'
@@ -191,21 +197,22 @@ SELECT planning_unit_key,
             THEN CAST(least(5, floor(percent_rank() OVER (
                    PARTITION BY disease_key, metric_name, data_source_key, rate IS NOT NULL ORDER BY rate) * 5) + 1) AS INT)
        END AS quintile,
-       area_code,
-       area_name,
-       disease_code,
-       disease_name,
-       source_dataset,
-       value_type,
-       population_year,
-       localities_reporting,
+       area_code,                 -- extra
+       area_name,                 -- extra
+       disease_code,              -- extra
+       disease_name,              -- extra
+       source_dataset,            -- extra
+       value_type,                -- extra
+       population_year,           -- extra
+       localities_reporting,      -- extra
        CASE WHEN is_locality_sum THEN CASE WHEN localities_reporting IS NOT NULL THEN 'aggregate' END
             WHEN value IS NOT NULL THEN 'direct'
-            WHEN is_blocked THEN 'not_separable' END AS mapping_outcome,
-       exclusion_reason
+            WHEN is_blocked THEN 'not_separable' END AS mapping_outcome,   -- extra
+       exclusion_reason           -- extra
 FROM final;
 
 
+-- Check after creating the view.
 -- Expect one TB indicator (tb_all_forms:cases:doh_fhsis, 2025) and the IHME deaths and prevalence
 -- pairs of the focus diseases and ihme_589.
 -- TB: the sum of unit values is close to the national 535,254, less the localities without a report.

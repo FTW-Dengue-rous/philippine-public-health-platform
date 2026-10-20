@@ -1,28 +1,46 @@
 -- ========================================
 -- Builds public_health.gold.fact_workforce_capacity
 --   One row is: headcount of one profession in one area and year from one source
---   Primary key: fact_workforce_capacity_key (BIGINT, xxhash64 of the natural key or grain, stable across rebuilds)
+--   Primary key: fact_workforce_capacity_key = xxhash64 of the natural values of the grain.
+--                Stable across rebuilds.
 --   Grain: (area_key, date_key, profession_code, data_source_key)
 --
 -- Reads
 --   public_health.silver.workforce_headcount_silver
 --   profession names and groups (reviewed list in this file)
---   public_health.gold.dim_geography
---   public_health.gold.dim_date
---   public_health.gold.dim_data_source
-
+--   public_health.gold.dim_geography, dim_date, dim_data_source (gold 01-03)
+--
 -- Rules
 --   * One gold row per silver row. Rows that are not analysis_eligible are KEPT.
---   * Null is not zero. A headcount is filled only when its own silver status is ok. Silver
---     stores a 0 for the 2018 legend "0 = No Data": that becomes null.
+--   * Null is not zero. A headcount is filled only when its own silver status is ok (silver
+--     marks the 2018 legend "0 = No Data" as not ok).
 --   * analysis_eligible refers to headcount_total. Use it to pick rows for a rate.
 --   * source_role (preferred, cross_check): PSA and FHSIS overlap for 2018 to 2023; the PSA rows
 --     of those years are cross_check (compared with FHSIS national totals, silver check S71,
 --     never shown as the value). Filter source_role = 'preferred' or one source, or the query
---     double counts.
+--     double counts. v_workforce_preferred (gold 13) applies the filter.
 --   * Country, region, province, city and municipality rows sit together. Never add a
 --     province to its listed cities. The nurse series changes definition in 2019
---     (is_break_year).
+--     (is_break_year; silver setting nurse_definition_break_year).
+--   * core_clinical = doctors, nurses, midwives. A gate checks the list keeps exactly three:
+--     the workforce gap rule (gold 19, "two of three") depends on it.
+--
+-- Build steps (write-audit-publish)
+--   [0] build id and settings
+--   [1] __inputs     every input, with the build that wrote it and its latest silver QC
+--   [2] __candidate  the candidate rows
+--   [3] __gates      every gate must have failures = 0
+--   [4] stop if a gate failed: the failed build is logged, the published table is not touched
+--   [5] write the table from the candidate (full rebuild)
+--   [6] record the build in quality.build_log and quality.build_inputs
+--   [7] drop the staging tables, then show the summary
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_35, v1). source_role
+--               cross_check (not alternate), to match source_priority.
+--   2026-10-20  Moved to public_health.gold and renamed gold_08. The profession list is
+--               defined before [1], and its row count is read from it (was typed as 9).
+--               'model' removed from the build log parameters. No change to the table.
 -- ========================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -33,9 +51,27 @@ DECLARE OR REPLACE VARIABLE gold_target_version BIGINT DEFAULT NULL;
 -- false: a silver table written by a notebook is allowed. Gold inputs always need one.
 DECLARE OR REPLACE VARIABLE strict_input_builds BOOLEAN DEFAULT false;
 -- true : a silver input whose latest QC (quality.v_table_health) has a FAIL stops the build.
+--        No QC run does not stop it; it makes the approval provisional (step [4]).
 DECLARE OR REPLACE VARIABLE block_on_silver_qc_fail BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
+
+
+-- Profession names and groups, reviewed list. [1] counts its rows; a gate checks that
+-- core_clinical keeps exactly doctors, nurses and midwives.
+CREATE OR REPLACE TEMP VIEW fact_workforce_capacity_profession AS
+SELECT profession_code, profession_name, profession_group
+FROM VALUES
+  ('doctors', 'Doctors', 'core_clinical'),
+  ('nurses', 'Nurses', 'core_clinical'),
+  ('midwives', 'Midwives', 'core_clinical'),
+  ('bhw', 'Barangay health workers', 'community'),
+  ('dentists', 'Dentists', 'other'),
+  ('medtech', 'Medical technologists', 'other'),
+  ('nutritionists', 'Nutritionists', 'other'),
+  ('sanitary_engineers', 'Sanitary engineers', 'other'),
+  ('sanitary_inspectors', 'Sanitary inspectors', 'other')
+  AS t (profession_code, profession_name, profession_group);
 
 
 -- ========================================
@@ -52,7 +88,7 @@ FROM (
   FROM public_health.silver.workforce_headcount_silver
   UNION ALL
   SELECT 'reference' AS input_kind, CAST(NULL AS STRING) AS input_table, 'profession names and groups' AS source_file,
-         CAST(9 AS BIGINT) AS input_rows
+         (SELECT count(*) FROM fact_workforce_capacity_profession) AS input_rows
   UNION ALL
   SELECT 'table' AS input_kind, 'public_health.gold.dim_geography' AS input_table, CAST(NULL AS STRING) AS source_file,
          count(*) AS input_rows
@@ -74,20 +110,6 @@ LEFT JOIN public_health.quality.v_table_health AS h
 -- ========================================
 -- [2] candidate rows
 -- ========================================
-CREATE OR REPLACE TEMP VIEW fact_workforce_capacity_profession AS
-SELECT profession_code, profession_name, profession_group
-FROM VALUES
-  ('doctors', 'Doctors', 'core_clinical'),
-  ('nurses', 'Nurses', 'core_clinical'),
-  ('midwives', 'Midwives', 'core_clinical'),
-  ('bhw', 'Barangay health workers', 'community'),
-  ('dentists', 'Dentists', 'other'),
-  ('medtech', 'Medical technologists', 'other'),
-  ('nutritionists', 'Nutritionists', 'other'),
-  ('sanitary_engineers', 'Sanitary engineers', 'other'),
-  ('sanitary_inspectors', 'Sanitary inspectors', 'other')
-  AS t (profession_code, profession_name, profession_group);
-
 CREATE OR REPLACE TABLE public_health.gold.fact_workforce_capacity__candidate AS
 SELECT xxhash64(h.area_key, CAST(h.year AS STRING), h.profession, h._source_key) AS fact_workforce_capacity_key,
        xxhash64(h.area_key)                       AS area_key,
@@ -174,6 +196,7 @@ LEFT ANTI JOIN public_health.gold.dim_data_source AS d ON d.data_source_key = c.
 -- ========================================
 -- [4] stop if a gate failed. The failed build is logged first and the staging tables are kept:
 --     SELECT * FROM public_health.gold.fact_workforce_capacity__gates WHERE failures <> 0
+--     approval: provisional while a silver input has no QC run or has WARN findings to review.
 -- ========================================
 CREATE OR REPLACE TEMP VIEW fact_workforce_capacity_build_log AS
 SELECT gold_build_id                                   AS build_id,
@@ -184,7 +207,7 @@ SELECT gold_build_id                                   AS build_id,
        current_timestamp()                             AS finished_at,
        CASE WHEN g.failed_gates = 0 THEN 'succeeded' ELSE 'failed' END AS status,
        code_version                                    AS code_version,
-       to_json(named_struct('model', 'v2', 'approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds)) AS parameters,
+       to_json(named_struct('approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds)) AS parameters,
        job_run_id                                      AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT count_if(failures <> 0) AS failed_gates,
@@ -219,7 +242,9 @@ SELECT * FROM public_health.gold.fact_workforce_capacity__candidate;
 
 
 -- ========================================
--- [6] record the build. If your runtime rejects this SET VAR, delete it (version = null).
+-- [6] record the build, with the table version just written. If your runtime rejects this
+--     SET VAR, delete it: the version stays null, and freshness checks (G06,
+--     mart_evidence_readiness) cannot compare this table.
 -- ========================================
 SET VAR gold_target_version = (SELECT max(version) FROM (DESCRIBE HISTORY public_health.gold.fact_workforce_capacity));
 
@@ -242,7 +267,7 @@ FROM public_health.gold.fact_workforce_capacity__inputs;
 
 
 -- ========================================
--- [7] summary, then remove the staging tables
+-- [7] remove the staging tables, then show the summary
 -- ========================================
 DROP TABLE IF EXISTS public_health.gold.fact_workforce_capacity__candidate;
 DROP TABLE IF EXISTS public_health.gold.fact_workforce_capacity__gates;

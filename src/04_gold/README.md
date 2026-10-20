@@ -7,14 +7,16 @@ Use this guide to rebuild the layer, understand what each row represents, and ch
 | Setting | What you need to know |
 |---|---|
 | Catalog / schema | `public_health.gold` |
-| Model | The combined model agreed on 2026-10-14. It was called "data model v2" while it was tested in `test_gold2`. It is the final model. |
+| Model | The combined model agreed on 2026-10-14. The team called it "data model v2" while testing it in `test_gold2`. It is the final model. |
 | Inputs | Silver tables and reviewed seeds. Gold never reads bronze. |
 | Table build pattern | Write a candidate, check it, then publish it. The build stops if any gate fails. After publishing, it records the build in `quality.build_log` and `quality.build_inputs`. |
 | Checks after the build | Run `gold_qc.py` against the published tables. It runs G01–G13. If the script itself crashes, it records G00. See [section 8](#8-quality). |
 
 If you are rebuilding gold, start with section 1. If you are querying it, read the selection rules in section 6 before adding up fact rows. Section 9 lists the decisions that remain open and the limits you need to carry into your analysis.
 
-> The testing schema, `public_health.test_gold2`, still holds the same model. Keep it until the queries have been copied into the current gold layer and the testing schema is archived. Nothing in `public_health.gold` reads it.
+This README is the **reference** for engineers. The overview pages for reviewers and analysts are in `docs/04-pipeline/gold/`: [overview](../../docs/04-pipeline/gold/README.md), [conceptual model](../../docs/04-pipeline/gold/conceptual-model.md), [logical model and ERD](../../docs/04-pipeline/gold/logical-data-model-and-erd.md), [data dictionary](../../docs/04-pipeline/gold/data-dictionary.md), [usage rules](../../docs/04-pipeline/gold/gold-usage-rules.md), [validation and traceability](../../docs/04-pipeline/gold/analytical-validation-and-traceability.md). When this README and an overview page differ, the code and this README win.
+
+> The testing schema, `public_health.test_gold2`, still holds the same model. Keep it until you copy the queries into the current gold layer and archive the testing schema. Nothing in `public_health.gold` reads it.
 
 ---
 
@@ -86,7 +88,19 @@ Within each folder, run the files in alphabetical order. The number in each file
 | 23 | `mart_dengue_peak_capacity` | view | gold_v2_63 | 11, 14 |
 | 24 | `mart_evidence_readiness` | view | gold_v2_71 | always last |
 
-After file 24 finishes, run `src/05_quality/.../gold_qc.py`. Stop the job if a build or a FAIL-level quality check fails.
+After file 24 finishes, run `src/05_quality/gold/gold_qc.py`. Stop the job if a build or a FAIL-level quality check fails.
+
+**In the job** (`resources/ph_public_health_job.yml`, section 9 and 10): one SQL task per file, task key = file name, on the SQL warehouse. The tasks follow what each file reads, not the number, so files that read only silver run in parallel:
+
+```
+qc_silver_cross_domain -> {01, 02, 03, 05} -> 04 -> {06, 07, 08, 09} -> {10, 11, 12, 13} -> 14 -> 15
+  -> {16, 17} -> {18, 19, 20} ; {21, 22, 23} ; 24 -> qc_gold
+```
+
+- The dimensions wait for `qc_silver_cross_domain`, so a silver FAIL anywhere stops gold before it starts.
+- `qc_gold` is the last task. The YAML holds an optional `dashboard_refresh` task after it, commented out.
+- Runs stay manual for the capstone. The recommendations cover the file-arrival trigger and the change check (R0, R1) (D-59).
+- Environment: SQL tasks need only the warehouse (ANSI on). `gold_qc.py` runs on the `default` serverless environment (pyyaml, openpyxl); it needs no extra library.
 
 **When you add or maintain files**
 
@@ -135,7 +149,7 @@ The dimensions describe the areas, periods, sources, facilities and diseases use
 - **Levels:** keep region, province, city, municipality, submunicipality (Manila) and the Special Geographic Area. Exclude barangays.
 - **Region:** take the first 2 digits of the PSGC code.
 - **Province:** take the first 5 digits only when that code identifies a province row. Leave the province unset for a highly urbanized city (HUC).
-- **Planning units:** treat each province without its HUCs, each HUC, and NCR as separate units. The rule was built as proposed (O-01).
+- **Planning units:** treat each province without its HUCs, each HUC, and NCR as separate units. Gold applies the rule as proposed (O-01).
 - **`broad_unit_key`:** leave it null for HUCs outside NCR. The province of such a HUC comes from `huc_province_crosswalk` (file 11), which runs after this table.
 - **Boundaries:** read `area_sqkm`, `center_lat`, `center_lon` and `has_boundary` from the HDX boundaries. Join on the matched `psgc_code` and level. Use the latest source version for each level.
 - **Named areas:** add Philippines, foreign country, undivided Maguindanao and the 4 NCR districts. These 7 areas have no PSGC code.
@@ -368,7 +382,7 @@ Use this view to map published geographic coverage to planning units. Sources ma
 |---|---|
 | `direct` | The published area is a planning unit. |
 | `aggregate` | The published area is one part of a planning unit. |
-| `not_separable` | The row covers more or less than a planning unit and cannot be split. Leave it out of the comparison. |
+| `not_separable` | The row covers more or less than a planning unit. Nobody can split it. Leave it out of the comparison. |
 | `not_used` | A province or region row the same source publishes already counts this area. Use that row instead. |
 | `out_of_scope` | The level is not a planning-unit level (country, region, district, historical area). |
 
@@ -567,7 +581,7 @@ This view does not estimate which areas would exceed capacity. That requires the
 
 ### `mart_evidence_readiness` (24)
 
-Use this view for the **pipeline status page**. It shows whether each silver and gold table has been built, checked and built from the latest inputs. It includes `schema_name`, which separates `public_health.gold` from the old test schemas.
+Use this view for the **pipeline status page**. It shows whether each silver and gold table has a build, a QC run and the latest inputs. It includes `schema_name`, which separates `public_health.gold` from the old test schemas.
 
 | Property | Details |
 |---|---|
@@ -618,7 +632,7 @@ Gold uses `CAST`, not `try_cast`. This is deliberate.
   - widen measures to one type (`CAST(value AS DECIMAL(20, 4))`)
   - set key and year types (`CAST(year AS INT)`)
   - turn gate results into 0 or 1 (`CAST(count(*) = 0 AS INT)`)
-- **Why not `try_cast` in gold.** Null means "missing" in this pipeline. With `try_cast`, an unexpected value would silently become a missing value and drop out of totals and rates. `CAST` stops the build instead. The build is logged as failed, and the published table stays as it was.
+- **Why not `try_cast` in gold.** Null means "missing" in this pipeline. With `try_cast`, an unexpected value would turn into a missing value without warning. It would drop out of totals and rates. `CAST` stops the build instead. `build_log` records a failed build, and the published table stays as it was.
 - **The one exception.** `dim_geography` reads the year and quarter out of the PSGC `source_version` text. That is parsing, so it uses `try_cast`.
 - **Requirement.** Run Spark with `spark.sql.ansi.enabled = true`. With ANSI mode off, `CAST` also returns NULL silently, and this protection is lost.
 
@@ -647,6 +661,38 @@ Run `gold_qc.py`. It checks the published objects and writes its results through
 
 Read the results in `public_health.quality.qc_results`. Any FAIL stops the job.
 
+### Settings recorded with every build
+
+Each table file declares its settings in step [0] and writes them to `build_log.parameters`. No query types a number that the logic depends on (rule 2a, D-62). Reviewed lists are views that gold counts into `build_inputs.input_rows`. Thresholds are named settings.
+
+| Setting | File | Value | Use |
+|---|---|---|---|
+| `strict_input_builds` | all tables | false | true: a silver input needs a succeeded build row (notebook-built silver tables have none) |
+| `block_on_silver_qc_fail` | all tables | true | A silver input whose latest QC has a FAIL stops the build |
+| `code_version`, `job_run_id` | all tables | null | Git commit and job run, when passed |
+| `planning_unit_rule` | 01 | `O-01` | Label of the planning-unit rule |
+| `pandemic_year_from`, `pandemic_year_to` | 02 | 2020, 2022 | `is_pandemic_period` (O-14) |
+| `suppression_min_records` | 06 | 3 | Gold suppresses occupancy groups under it (D-47) |
+| `suppression_min_hospitals` | 07 | 3 | Gold suppresses claims cells under it (D-47) |
+| `census_province_excl_huc_years` | 09 | `array(2024)` | Census years whose province rows exclude HUCs |
+| `share_level1_tolerance_pct` | 09 | 0.2 | Level-1 expenditure shares sum to 100 within it (same as silver) |
+| `ihme_includes_huc_confirmed` | 22 | true | D-42; broad units pass gate 3 |
+
+### When a build or check fails
+
+| What failed | Where to look | Do |
+|---|---|---|
+| A gate in a table file | `quality.build_log` (`status = 'failed'`, `error_message` names the gate); the kept `<table>__gates` and `__candidate` | Fix the cause, rerun the file, then every file after it that reads it |
+| "silver input whose latest QC has a FAIL" | `quality.v_open_issues` for that silver table | Fix silver and rerun its QC first |
+| "data_source_key not in dim_data_source" | The new `_source_key` | Add the source to `gold_03` (and the YAML) |
+| "period_basis outside the known conventions" | The new silver basis | Add it to the `gold_02` gate on purpose |
+| A `raise_error` in a seed or view file | The message names the row | Fix the list; rerun |
+| `gold_qc.py` FAIL | `quality.qc_results` (`layer = 'gold'`) | G05/G06: rerun the file and its dependants. G07: compare with silver. G09: rerun the view's file |
+| G12 WARN | `detail` lists the input versions | Expected once after an input or rule change; on unchanged inputs it is a bug |
+| A leftover `__inputs` / `__candidate` / `__gates` after success | The run stopped between [5] and [7] | Drop it |
+
+A failed build never touches the published table, so the dashboard keeps showing the last good build while you fix it.
+
 ### Trace a build and its inputs
 
 Each build writes one row to `quality.build_log`. The row records its build id, start and finish times, status, row count, Delta version and `parameters`.
@@ -672,29 +718,22 @@ Carry these qualifications into dashboard labels, comparisons and future changes
 | **Authorized beds** | These are licensed beds. They do not measure staffed beds. |
 | **Weighted occupancy** | The rate uses eligible records only: BOR 150 and below. It therefore understates load where many records exceed 150, mostly in government hospitals. Label it "eligible records". The bed basis and reporting period are not confirmed by HFSRB yet (O-12). |
 | **Unbuilt stretch items** | Immunization coverage and the full dengue capacity replay (BQ2) remain outside the current build. |
+| **Run mode (D-59)** | Manual runs; the schedule stays paused. R0 (trigger) and R1 (skip unchanged work) are recommendations, not built. |
+| **No gold setup file (D-60)** | The setup job's `schema_setup.sql` creates `public_health.gold`. A gold file stops if the schema is missing. |
+| **Input pinning (R4)** | Builds record the silver version they read but do not pin it with `VERSION AS OF`. |
 
 ---
 
 ## 10. Running gold without Databricks
 
-The team builds gold on Databricks. To recreate it elsewhere, provide the capabilities below and adapt the SQL and configuration where needed.
+The platform needs a short list of capabilities, not Databricks: Spark SQL 4.x with ANSI mode on, a versioned table format (Delta Lake), a scheduler that stops on the first failure, and the quality tables. The list, the open-source alternative for each, the library versions and the Spark SQL features to replace when porting are in one place: [reproducibility](../../docs/07-operations/reproducibility.md). This section keeps only what is specific to gold.
 
-| Capability gold needs | Used for | On Databricks | Open alternative |
-|---|---|---|---|
-| A Spark SQL engine (version 4.0 or later), ANSI mode on | Every `.sql` file and `gold_qc.py`. ANSI mode makes a failed `CAST` stop the build (section 8) | Databricks SQL / Databricks Runtime (ANSI on by default) | Apache Spark 4.x (`spark-sql` or PySpark) with `spark.sql.ansi.enabled = true` |
-| A table format with versions and history | `CREATE OR REPLACE TABLE`, `DESCRIBE HISTORY`, reading a table at a fixed version (G05, G06, G12), `build_log.target_table_version` | Delta Lake (default table format) | Open-source Delta Lake (`delta-spark`) on a local folder or object storage |
-| A catalog with three-part names (`catalog.schema.table`) | `public_health.gold.*`, `public_health.silver.*`, `public_health.quality.*` | Unity Catalog | Configure a Spark catalog named `public_health`, or replace the three-part names with two-part names such as `gold.dim_geography` in the SQL files. Set `--gold_schema`, `--silver_schema` and `--dq_schema` in `gold_qc.py` |
-| Running files in order, stopping on failure | The run order in section 1 | Databricks Jobs, deployed with Asset Bundles | Any scheduler or script (Airflow, cron, a Makefile) that runs the files in number order and stops on the first error |
-| Run parameters | `job_run_id`, `code_version`, schema names | Job and widget parameters, `{{job.run_id}}` | Command-line arguments (`gold_qc.py` accepts them) or edits to the variables at the top of each SQL file |
-| Lineage | Which inputs a build read | `quality.build_log` / `quality.build_inputs` (Unity Catalog lineage is not required) | The same two tables |
-| A dashboard tool | Reads the marts and default views | AI/BI dashboard and Genie | Any BI tool that can query SQL views |
-
-### If you use a different SQL engine
-
-To port the files to PostgreSQL, DuckDB, Snowflake or another engine, adapt these Spark SQL features:
-
-- **Functions:** `xxhash64`, `max_by`, `count_if`, `percentile`, `stack`, `named_struct`, `explode` / `LATERAL VIEW`, `array_contains`, `raise_error`.
-- **Operators and statements:** the null-safe `<=>`, plus `DECLARE OR REPLACE VARIABLE` / `SET VAR`.
+| Gold-specific item | What to do |
+|---|---|
+| Three-part names (`public_health.gold.*`) | Configure a catalog named `public_health`, or switch to two-part names in the SQL. Set `--gold_schema`, `--silver_schema` and `--dq_schema` in `gold_qc.py` |
+| Run order | Run the files in number order (section 1) and stop on the first error, then run `gold_qc.py` |
+| Settings and run parameters | Edit the variables in step [0] of each file, or pass `job_run_id` / `code_version`; `gold_qc.py` takes them as arguments |
+| Dashboard | Any BI tool that queries SQL views can read the marts and default views |
 
 ### Keep keys consistent across the rebuild
 
@@ -707,7 +746,7 @@ Builds record `target_table_version` as null. This reduces what QC can verify:
 - G05 compares row counts only.
 - G06 cannot compare input versions. It lists those inputs as "not checked".
 
-For versions, libraries and the rebuild steps for every layer, see `docs/platform-requirements.md`.
+For versions, libraries and the rebuild steps for every layer, see [reproducibility](../../docs/07-operations/reproducibility.md).
 
 ---
 
@@ -720,11 +759,13 @@ For versions, libraries and the rebuild steps for every layer, see `docs/platfor
 | 2026-10-13 | Ran all v1 dimensions and facts in `test_gold`, plus `context_health_expenditure`. The built **data model v1** had 6 dimensions and 9 facts. The mentor shared a conceptual model covering Date, Geography, Facilities, Disease metric, Population, Socio-economic, Healthcare workers capacity and Facilities capacity. Compared option v2 (three stars) with option v3 (based on the mentor's model). |
 | 2026-10-14 | Agreed on **data model v2**: the combined model with 5 dimensions and 4 facts. Built it in `test_gold2` with no reads from `test_gold`. Retired the labels "v4" (SQL) and "v3" (mentor proposal) for this model. Renamed `dim_period` → `dim_date` and `dim_source` → `dim_data_source`. Combined registry snapshot, published and occupancy data in `fact_facility_capacity`. Combined metric and deaths-by-age data in `fact_disease_metric`. Moved the profession list onto `fact_workforce_capacity`. Combined population, poverty and expenditure in `fact_area_indicator`. Ran all 10 model files. Every gate returned 0. |
 | 2026-10-14 (evening) | Added TB programme rows and PhilHealth claims to `fact_disease_metric`. Added `sex` to the grain, keeping the model at 4 facts. Added `ref_osm_healthsite_point` outside the model. Published occupancy at 3 geographic levels × 3 breakdowns because the first run suppressed most city cells. Fixed HDX `is_complete_year` with a contiguity and span test. Passed `source_role` through from silver as `cross_check` rather than `alternate`. |
-| 2026-10-14 (night) | Wrote and ran the seeds, crosswalk, default views and marts. Applied the reviewer's 5 points to the marts and documentation only: join `dim_facility` to geography only; define a selection contract per fact through default views; label the two denominators; ask where dengue peaks were "largest relative to current recorded capacity"; label access distance as distance to the nearest locality with a hospital recorded. Placed the kidney study under specialist treatment capacity. |
+| 2026-10-14 (night) | Wrote and ran the seeds, crosswalk, default views and marts. Applied the reviewer's 5 points to the marts and documentation only. (1) Join `dim_facility` to geography only. (2) Define a selection contract per fact through default views. (3) Label the two denominators. (4) Ask where dengue peaks were "largest relative to current recorded capacity". (5) Label access distance as distance to the nearest locality with a hospital recorded. Placed the kidney study under specialist treatment capacity. |
 | 2026-10-16 | Completed **full run 1**, from bronze to marts: 00:09–01:13 PHT (UTC+8). |
 | 2026-10-17 | Completed **full run 2**, end to end: 13:39–14:49 PHT. |
 | 2026-10-18 | Promoted gold v2 to **`public_health.gold`**. Renamed the files `gold_01`–`gold_24` and grouped them into `dimension/`, `fact/` and `mart/`. File numbers now give the run order. Added `gold_qc.py` with G01–G13, including the G12 idempotency check. Kept `test_gold2` until it is archived. Documented the type-cast rule (`CAST` in gold, `try_cast` in silver) and the ANSI mode requirement. |
 | 2026-10-19 | Applied D-42 in `mart_kidney_case_study`: provinces with HUCs can be compared at the broad unit. Renamed the exclusion reason `province_estimate_assumed_to_include_its_huc` to `province_estimate_includes_its_huc`. Added `ds_small_cohort` and `mdr_small_cohort` to `mart_tb_case_study`. Dropped the `model` column from `mart_evidence_readiness`. The team agreed the mart values (D-56) and the pandemic period (O-14). |
-| 2026-10-20 | Applied the week convention (D-44, D-46) in `dim_date`: the gate accepts `iso_week` and `iso_week_ending_date`, and weekly dates come from silver. HDX peaks read "week ending <date>". Rewrote the comments of every file in one format. Removed the `model` label from the build log. Moved hard-coded counts and thresholds into named settings (`gold_01`, `gold_08`, `gold_09`). Null areas stay null in `dim_facility` and `ref_osm_healthsite_point`. Removed `gold_00_setup.sql`: the setup job creates the schema. The weekly `date_key` values change once, so G12 differs once after this rebuild. |
+| 2026-10-20 | Applied the week convention (D-44, D-46) in `dim_date`. The gate accepts `iso_week` and `iso_week_ending_date`. Weekly dates come from silver. HDX peaks read "week ending <date>". Rewrote the comments of every file in one format. Removed the `model` label from the build log. Moved hard-coded counts and thresholds into named settings (`gold_01`, `gold_08`, `gold_09`). Null areas stay null in `dim_facility` and `ref_osm_healthsite_point`. Removed `gold_00_setup.sql`. The setup job creates the schema. The weekly `date_key` values change once, so G12 differs once after this rebuild. |
+| 2026-10-20 (later) | `gold_03`: the source list is now a view that gold counts into `build_inputs`. The upnoah and hdx_dengue names carry D-44 to D-46. Job YAML: `gold_00` task removed. Dimensions wait for `qc_silver_cross_domain`. Added the settings table and failure guide to this README. Wrote the detailed gold and quality pages in `docs/04-pipeline/`. |
+| 2026-10-20 (later) | Rewrote this README in short, active sentences. |
 
 For the table, column and question map, use the gold map workbook: `capstone_gold_v4_map.xlsx`. The planned filename is `capstone_gold_v2_map.xlsx`.

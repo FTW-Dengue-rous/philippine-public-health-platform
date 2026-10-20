@@ -1,5 +1,4 @@
 -- ========================================
--- gold_01_dim_geography.sql
 -- Builds public_health.gold.dim_geography
 --   One row is: one area in the current PSGC snapshot, plus 7 named areas with no PSGC code
 --   Primary key: area_key = xxhash64(area_code). The same area_code gives the same key on
@@ -46,6 +45,7 @@
 --                      this table.
 --   * Named areas: ph, foreign, hist:maguindanao (undivided Maguindanao, region BARMM) and
 --     ncr-district:1 to 4 (planning and broad unit NCR). They take the latest snapshot_date.
+--     The list sits before [1], which records its row count.
 --   * snapshot_date = quarter end of the silver source_version (Q2_2024 gives 2024-06-30).
 --     try_cast is deliberate here: a version the pattern cannot read gives null, and the gate
 --     'no snapshot date' then stops the build.
@@ -62,8 +62,11 @@
 --
 -- History
 --   2026-10-14  Written for the combined data model (from gold_11, v1).
---   2026-10-19  Moved to public_health.gold and renamed gold_01. Comments updated. No logic
---               change.
+--   2026-10-19  Moved to public_health.gold and renamed gold_01. Comments updated. Build log
+--               parameters: 'model' label removed (one final model), planning_unit_rule = 'O-01'.
+--               No change to the table.
+--   2026-10-20  The named-area list is defined before [1], and its row count is read from it
+--               (was typed as 7).
 -- ========================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -81,10 +84,25 @@ DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, i
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
 
 
+-- Named areas (no PSGC code), reviewed list. [1] counts its rows.
+-- up_code = parent and region; in_unit = true gives the parent as planning and broad unit.
+CREATE OR REPLACE TEMP VIEW dim_geography_named AS
+SELECT area_code, area_name, geographic_level, up_code AS parent_code, up_code AS region_code,
+       CASE WHEN in_unit THEN up_code END AS unit_code
+FROM VALUES
+  ('ph', 'Philippines', 'country', CAST(NULL AS STRING), false),
+  ('foreign', 'Foreign country', 'foreign', CAST(NULL AS STRING), false),
+  ('hist:maguindanao', 'Maguindanao (undivided)', 'historical_province', 'psgc:1900000000', false),
+  ('ncr-district:1', 'NCR, First District', 'ncr_district', 'psgc:1300000000', true),
+  ('ncr-district:2', 'NCR, Second District', 'ncr_district', 'psgc:1300000000', true),
+  ('ncr-district:3', 'NCR, Third District', 'ncr_district', 'psgc:1300000000', true),
+  ('ncr-district:4', 'NCR, Fourth District', 'ncr_district', 'psgc:1300000000', true)
+  AS t (area_code, area_name, geographic_level, up_code, in_unit);
+
+
 -- ========================================
 -- [1] inputs: one row per table or reviewed list read, with the version its latest succeeded
 --     build wrote and the status of its latest silver QC (null = no build row, no QC run).
---     The named-area row counts 7 areas: change the 7 if the list in [2] changes.
 -- ========================================
 CREATE OR REPLACE TABLE public_health.gold.dim_geography__inputs AS
 SELECT t.input_kind, t.input_table, t.source_file, t.input_rows,
@@ -100,7 +118,7 @@ FROM (
   FROM public_health.silver.admin_boundaries_silver
   UNION ALL
   SELECT 'reference' AS input_kind, CAST(NULL AS STRING) AS input_table, 'named areas' AS source_file,
-         CAST(7 AS BIGINT) AS input_rows
+         (SELECT count(*) FROM dim_geography_named) AS input_rows
 ) AS t
 LEFT JOIN public_health.quality.v_latest_build AS b ON b.target_table = t.input_table
 LEFT JOIN public_health.quality.v_table_health AS h
@@ -172,21 +190,6 @@ LEFT JOIN dim_geography_boundary AS b
   ON b.psgc_code = s.psgc_code
  AND b.boundary_level = CASE WHEN s.geographic_level IN ('city', 'municipality') THEN 'locality'
                              ELSE s.geographic_level END;
-
--- Named areas (no PSGC code), reviewed list. Change the count in [1] if you add or remove one.
--- up_code = parent and region; in_unit = true gives the parent as planning and broad unit.
-CREATE OR REPLACE TEMP VIEW dim_geography_named AS
-SELECT area_code, area_name, geographic_level, up_code AS parent_code, up_code AS region_code,
-       CASE WHEN in_unit THEN up_code END AS unit_code
-FROM VALUES
-  ('ph', 'Philippines', 'country', CAST(NULL AS STRING), false),
-  ('foreign', 'Foreign country', 'foreign', CAST(NULL AS STRING), false),
-  ('hist:maguindanao', 'Maguindanao (undivided)', 'historical_province', 'psgc:1900000000', false),
-  ('ncr-district:1', 'NCR, First District', 'ncr_district', 'psgc:1300000000', true),
-  ('ncr-district:2', 'NCR, Second District', 'ncr_district', 'psgc:1300000000', true),
-  ('ncr-district:3', 'NCR, Third District', 'ncr_district', 'psgc:1300000000', true),
-  ('ncr-district:4', 'NCR, Fourth District', 'ncr_district', 'psgc:1300000000', true)
-  AS t (area_code, area_name, geographic_level, up_code, in_unit);
 
 -- PSGC rows plus named areas, with parent, planning unit and broad unit codes (rules in the header)
 CREATE OR REPLACE TEMP VIEW dim_geography_all AS
@@ -300,7 +303,7 @@ SELECT gold_build_id                                   AS build_id,
        current_timestamp()                             AS finished_at,
        CASE WHEN g.failed_gates = 0 THEN 'succeeded' ELSE 'failed' END AS status,
        code_version                                    AS code_version,
-       to_json(named_struct('model', 'v2', 'approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds, 'planning_unit_rule', 'open decision 2 proposal')) AS parameters,
+       to_json(named_struct('approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds, 'planning_unit_rule', 'O-01')) AS parameters,
        job_run_id                                      AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT count_if(failures <> 0) AS failed_gates,
