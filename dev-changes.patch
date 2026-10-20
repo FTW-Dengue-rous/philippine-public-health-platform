@@ -1,0 +1,73 @@
+﻿diff --git a/docs/01-context/limitations-and-recommendations.md b/docs/01-context/limitations-and-recommendations.md
+index fe82262..0645d4a 100644
+--- a/docs/01-context/limitations-and-recommendations.md
++++ b/docs/01-context/limitations-and-recommendations.md
+@@ -2,7 +2,10 @@
+
+ This page lists what the platform assumes and what it cannot tell you. Carry these into every chart, comparison and conclusion.
+
+-Status date: 2026-10-20. Each row names where the limit is handled, so you can check it in the data.
++Owner: LUNASaan Documentation Team
++Last updated: 2026-10-20
++
++Each row names where the limit is handled, so you can check it in the data.
+
+ ---
+
+@@ -26,11 +29,11 @@ Status date: 2026-10-20. Each row names where the limit is handled, so you can c
+
+ | ID | Limitation | Effect | Treatment |
+ |---|---|---|---|
+-| LM-01 | Disease data is mostly yearly counts, not admissions | Bed sufficiency per disease cannot be answered | BQ2 stays a stretch goal; core dengue view compares peaks to capacity only |
++| LM-01 | Disease data is counts of cases and deaths, not admissions | Bed sufficiency per disease cannot be answered | BQ2 stays a stretch goal; core dengue view compares peaks to capacity only |
+ | LM-02 | Capacity is a 2026 registry snapshot; disease and population are 2024ΓÇô2025 | Years differ across the comparison | Labelled on every chart |
+ | LM-03 | "No hospital recorded" is not "no hospital" | An unlisted facility looks like a gap | Wording "recorded" everywhere |
+ | LM-04 | Distances are straight-line between area centres | Travel time and roads are not measured | Labelled "straight-line"; nearest *locality with* a recorded hospital |
+-| LM-05 | OpenStreetMap points are crowd-sourced and uneven | Not a facility count | Map layer and distance only (`ref_osm_healthsite_point`) |
++| LM-05 | OpenStreetMap points are crowd-sourced and uneven | Not a facility count; absence from OSM does not mean a facility does not exist | Map layer and distance only (`ref_osm_healthsite_point`) |
+ | LM-06 | Sources count provinces differently (with or without HUCs) | Some province figures are not comparable | `not_separable` / `comparison_eligible = false`, with a reason |
+ | LM-07 | Sulu has no 2024 census count in the source | No Sulu rates | Population null, no fallback to 2020 (D-41) |
+ | LM-08 | Weighted occupancy uses eligible records only (BOR Γëñ 150) | Understates load where many records exceed 150, mostly government hospitals | Labelled "eligible records" |
+@@ -39,12 +42,21 @@ Status date: 2026-10-20. Each row names where the limit is handled, so you can c
+ | LM-11 | PhilHealth claims series have breaks: COVID 2020ΓÇô2021, 2024 case-rate change, IHD with MI definition change in 2025 | Amounts and some counts are not comparable across breaks | Flags in silver; notes in marts and charts |
+ | LM-12 | Workforce nurse series changes definition in 2019; hospital series in 2013 | Trends across the break mislead | `is_break_year` flags |
+ | LM-13 | IHME values are modelled, not reported | Different meaning from registered counts | `value_type = modelled`; kept separate in marts |
+-| LM-14 | Restricted sources are published as aggregates only; cells under 3 suppressed | Small areas may show "suppressed" | `value_status = 'suppressed'` |
+-| LM-15 | Some area labels still await review (18 FHSIS TB SGA rows, 34 Davao city labels, 21 claims pairs, San Jose in Oriental Mindoro) | Those rows are held back | Quarantine or `REVIEW` flags with reasons |
++| LM-14 | Restricted sources are published as aggregates only; cells under 3 suppressed | Small areas may show "suppressed" | `value_status = 'suppressed'` ([data governance](../08-governance/data-governance.md)) |
++| LM-15 | Some area labels still await review (18 FHSIS TB SGA rows, 34 Davao city labels, 21 claims pairs, San Jose in Oriental Mindoro) | Those rows are held back | Quarantine or `REVIEW` flags with reasons, recorded in `quality.row_disposition` |
+ | LM-16 | Admin boundaries cover ADM1ΓÇôADM3 only; 8 SGA municipalities have no polygon | No map shape or density for them | `has_boundary = false` |
+ | LM-17 | Preventive TB treatment coverage is estimated from one FHSIS year (2025) | No trend | Single-year view in mart 21 |
++| LM-18 | Disease sources report in different period grains: DOH FOI dengue by month, UP NOAH and HDX by ISO week, the rest by year | Periods cannot be added or compared across grains; a 53rd ISO week stays its own week (AS-07) | Every silver row keeps its source's period and `period_basis`; read `diseases_source_coverage_silver` (periods expected, present and missing per source and year) before comparing |
++| LM-19 | The DOH FOI dengue release is a snapshot: it covers January 2021 to September 2025 (file as of 2025-09-30) | 2025 totals are not a full year; comparing them with full years understates 2025 | Partial coverage is recorded in `diseases_source_coverage_silver`; charts label 2025 as partial |
++| LM-20 | PSA poverty estimates are biennial (2021, 2023, 2025) and carry a published coefficient of variation | No yearly poverty series; estimates with a CV above the build setting (10%) are low precision | Never interpolate between reporting years; `incidence_precision` and `poor_population_precision` say `ok`, `use_with_caution` or `unknown` |
++| LM-21 | HFSRB licence numbers are not unique; some cover more than one facility | Grouping or deduplicating facilities by licence number is wrong | The id map keys a row without a usable NHFR code by `name:<category>|<normalised name>|<municipality PSGC code>`; join on `facility_key` |
++| LM-22 | NCR areas and highly urbanized cities have no province in the PSGC spine | Province rollups leave them out; a query that assumes every area has a province gets nulls for NCR | Region rollups include them; the HUC-to-province crosswalk is backlog item 19 |
++
++## 3. How far the results go
++
++The platform measures recorded availability: facilities listed, beds authorized, workers counted, cases reported. A recorded facility, an authorized bed or a counted worker does not prove a service was delivered to a patient. The platform measures no health outcomes and proves no causal effects or real-world impact; it is a data engineering capstone. And a missing value is never a zero: a population can be null (`population_silver`), a published count can be "no report" (`no_report_measures`), and a restricted cell can be suppressed (LM-14). Read the status before treating an empty cell as zero.
+
+-## 3. Engineering limitations
++## 4. Engineering limitations
+
+ These affect how the pipeline runs, not what the data means. The backlog tracks them: [known issues and backlog](../08-governance/known-issues-and-backlog.md).
+
+@@ -59,11 +71,13 @@ These affect how the pipeline runs, not what the data means. The backlog tracks
+ | EL-07 | The team runs on a personal Databricks workspace | The FTW org workspace could not reach the external volume |
+ | EL-08 | The job has no trigger or active schedule; runs are started by hand | Data arrives through people, so whoever lands it starts the job (D-59). Trigger and skip rules are recommendations R0, R1 |
+ | EL-09 | CI checks on `dev` fail and automated tests are thin | Fixed after submission; more pytest coverage is in the backlog |
++| EL-10 | HDX admin boundaries are landed by hand: the ingestion notebook in `src/01_ingestion` runs outside the job and writes the handoff the loader validates; no `ingestion_metadata` row is written (KI-06) | A boundaries update needs a person, and the gate cannot detect a stale source the usual way | Procedure in the [setup guide](../07-operations/setup-guide.md), section 3; the gate reconciles counts to the manifest (HB01 / HB02) |
+
+-## 4. History of updates
++## 5. History of updates
+
+ | Date | Change |
+ |---|---|
+ | 2026-10-19 | Page written from the decision log, layer overviews and gold README |
+ | 2026-10-19 | EL-01 rewritten for D-57 (full rebuild kept; cost recommendations); AS-11 updated for D-56 |
+-| 2026-10-20 | EL-08 (manual runs, D-59) and EL-09 (CI on `dev`) added |
+\ No newline at end of file
++| 2026-10-20 | EL-08 (manual runs, D-59) and EL-09 (CI on `dev`) added |
++| 2026-10-20 | Integrated the second limitations draft: owner and update-date header added; LM-01 reworded (counts, not admissions); LM-18 to LM-22 added (period grains, partial 2025 dengue, poverty precision, licence numbers, NCR and HUC provinces); LM-05, LM-14 and LM-15 sharpened; "How far the results go" section added; EL-10 added (manual boundaries ingestion) |
+\ No newline at end of file
