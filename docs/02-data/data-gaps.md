@@ -2,7 +2,6 @@
 
 This page lists the data the questions need but the team does not have, or has only in part. For each gap it says what it blocks, how the pipeline handles it now, and what would close it. The business questions and analytical question IDs (N1–N4, S1–S3, A1–A4, W1–W2, E1–E2, P1–P2) are defined in [problem and business context](../01-context/problem-and-business-context.md).
 
-Owner: LUNASaan Documentation Team
 Last updated: 2026-10-21
 
 Limits on how to *read* the data are in [limitations and recommendations](../01-context/limitations-and-recommendations.md), section 2. This page is about *missing* data.

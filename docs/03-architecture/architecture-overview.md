@@ -1,6 +1,4 @@
 # Architecture overview
-
-Owner: Jemma Santiago
 Last updated: 2026-10-20
 
 This page shows how the platform works. It covers the layers, where data lives, how the job runs and where checks happen. Read it before any layer page.

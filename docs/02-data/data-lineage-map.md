@@ -2,7 +2,6 @@
 
 This page shows how each source flows from landing to the dashboard: source → bronze → silver → gold → mart. Use it to answer "which outputs change if this source changes?" and "where did this number come from?".
 
-Owner: LUNASaan Documentation Team
 Last updated: 2026-10-21
 
 The table-level map below is the design. **The exact lineage of the latest run is recorded in `public_health.quality.build_log` and `build_inputs` (defined in the [lineage and quality contract](../04-pipeline/quality/lineage-and-quality-contract.md), v1.3).** Use the queries in [section 5](#5-trace-lineage-from-the-quality-tables) when you need certainty. These tables are not yet implemented in this workspace; see the build-status note at the start of [section 5](#5-trace-lineage-from-the-quality-tables).
