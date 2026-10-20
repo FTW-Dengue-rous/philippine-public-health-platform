@@ -1,67 +1,115 @@
-# CD setup — Databricks Asset Bundles + GitHub Actions
+# CI/CD setup
 
-## Flow
+How code moves from a branch to a running Databricks job: the checks on every pull request, how the job is deployed, and what is not automated yet.
 
-```
-feature/* ──PR──> dev ──push──> CI ✅ ──> CD: bundle deploy -t dev
-dev       ──PR──> main ─push──> CI ✅ ──> CD: bundle deploy -t prod  (runs as service principal)
-```
+Status date: 2026-10-20. Items marked **confirm** need a check against `.github/workflows/` and `databricks.yml` in the repository.
 
-CD only fires after the **CI** workflow succeeds on a push. If CI fails, nothing deploys.
+---
 
-## Files
+## 1. Flow
 
-| File | Purpose |
-|---|---|
-| `databricks.yml` | Bundle root: targets `dev` / `prod`, sync excludes |
-| `resources/ph_public_health_job.yml` | The pipeline job (ingestion → bronze → silver), serverless |
-| `.github/workflows/cd.yml` | Deploys the bundle after CI passes |
-
-## One-time setup
-
-### 1. Service principal (workspace admin)
-1. Workspace **Settings → Identity and access → Service principals → Add** → name it `ph-public-health-cicd`.
-2. Open it → **Secrets → Generate secret**. Copy the **Client ID** (= Application ID) and **Secret** (shown once).
-3. Give it **Workspace access** (and **Databricks SQL access** if you add SQL tasks later).
-
-### 2. Unity Catalog grants (run in a SQL editor as an admin/owner)
-Replace `<app-id>` with the SP's Application ID.
-
-```sql
-GRANT USE CATALOG, USE SCHEMA, CREATE SCHEMA, CREATE TABLE, MODIFY, SELECT
-  ON CATALOG public_health TO `<app-id>`;
-GRANT READ VOLUME, WRITE VOLUME ON VOLUME public_health.bronze.landing TO `<app-id>`;
--- Landing volume in config/sources*.yaml lives in the `workspace` catalog too:
-GRANT USE CATALOG ON CATALOG workspace TO `<app-id>`;
-GRANT USE SCHEMA, READ VOLUME, WRITE VOLUME ON SCHEMA workspace.default TO `<app-id>`;
+```mermaid
+flowchart LR
+    BR[feature/&lt;topic&gt;] -->|pull request| PR{CI checks<br/>lint · tests}
+    PR -->|pass + review| DEV[dev]
+    DEV -->|databricks bundle deploy -t dev| WS[Databricks workspace<br/>jobs + code]
+    WS -->|bundle run / schedule| JOB[ph-public-health-pipeline]
+    JOB --> QUAL[(quality tables)]
 ```
 
-### 3. GitHub Environments + secrets
-Repo **Settings → Environments** → create `dev` and `prod`. Add to **each**:
+## 2. Continuous integration (GitHub Actions)
 
-| Secret | Value |
-|---|---|
-| `DATABRICKS_HOST` | `https://<your-workspace-host>` |
-| `DATABRICKS_CLIENT_ID` | SP Application ID |
-| `DATABRICKS_CLIENT_SECRET` | SP secret |
+Runs on every pull request.
 
-On `prod`: set **Deployment branches → Selected: `main`**. Optional: **Required reviewers** = manual approval before prod deploys.
+| Check | Tool | Covers | Notes |
+|---|---|---|---|
+| SQL lint | `sqlfluff` | `src/**/*.sql` | Diseases silver `01`–`03` are skipped: over the sqlfluff size limit |
+| Python tests | `pytest` | Test folder (**confirm** path) | Coverage is thin. Local stub tests for `run_bronze.py` and `bronze_gate.py` (2026-10-19) are the starting point (backlog 21) |
+| Reviewer assignment | GitHub Action | Every pull request | Auto-assigns reviewers |
 
-### 4. Fill the TODOs
-- `databricks.yml` → `workspace.host` (both targets), `run_as.service_principal_name`, `permissions` (teammates).
-- `resources/ph_public_health_job.yml` → confirm `depends_on` order; pick one population bronze notebook and uncomment.
-- Add `.databricks/` to `.gitignore`.
+**Confirm:** workflow file names, the Python version used in CI, and whether YAML (`config/*.yaml`) is linted.
 
-### 5. Test locally before relying on CI
+### Run the checks locally
+
 ```bash
-databricks auth login --host https://<your-workspace-host>
+pip install sqlfluff pytest pyyaml
+sqlfluff lint src/ --dialect sparksql
+pytest
+```
+
+Use the repository's `.sqlfluff` config if it exists. It sets the dialect and the excluded files.
+
+## 3. Continuous deployment (Databricks Asset Bundles)
+
+| Item | Value |
+|---|---|
+| Bundle file | `databricks.yml` (on `dev` since 2026-10-11) |
+| Jobs | `resources/ph_public_health_job.yml` (pipeline), `ph_public_health_setup_job.yml` (setup) |
+| Target | `dev` |
+| Workspace | Personal Databricks workspace (the FTW org workspace could not reach the external volume) |
+| Variables | `warehouse_id` for SQL tasks |
+| Synced | `src/`, `config/`, `resources/`. **Not synced:** `src/01_ingestion` |
+| Schedule | Defined and paused: Monday 06:00 Asia/Manila. Runs stay manual (D-59) |
+
+### Deploy and run
+
+```bash
+databricks auth login --host <workspace-url>
 databricks bundle validate -t dev
 databricks bundle deploy -t dev
-databricks bundle run -t dev ph_public_health_pipeline
+databricks bundle run ph_public_health_pipeline -t dev
 ```
 
-### 6. Merge `cd.yml` to `main` first
-GitHub only fires `workflow_run` triggers from workflow files on the **default branch**. Until `cd.yml` is on `main`, pushes to `dev` won't deploy. Manual run is available anytime: **Actions → CD → Run workflow**.
+**Confirm:** whether deploy runs from GitHub Actions on merge to `dev` or by hand. If it runs from Actions, the workflow needs `DATABRICKS_HOST` and a token or service principal as repository secrets. Never commit them.
 
-## Known gap: dev and prod share tables
-Both targets deploy separate *jobs*, but the code writes to the same hardcoded tables (`public_health.*` in `config/sources*.yaml`). Running the dev job overwrites prod data. Fix later by passing a `catalog` job parameter per target (e.g. `public_health_dev` vs `public_health`) and reading it in the loaders.
+### Compute environments
+
+| Environment | Used by | Dependencies (pinned) |
+|---|---|---|
+| `default` | Every Python task except the OSM step | `pyyaml==6.0.2`, `openpyxl==3.1.5` |
+| `geo` | `facilities_silver_04a_osm_locate.py` only | `numpy<2`, `pyyaml==6.0.2`, `openpyxl==3.1.5`, `shapely<2.1` |
+| SQL warehouse | Every `.sql` task | — |
+
+`shapely` 2.1 needs numpy 2, which broke pandas imports on the base image. Keep the pins until the base image moves to numpy 2.
+
+## 4. What the job guarantees after deploy
+
+| Guarantee | How |
+|---|---|
+| One run at a time | `max_concurrent_runs: 1` |
+| Downstream stops on failure | Each task waits for its inputs and their QC |
+| Runs are traceable | `{{job.run_id}}` passed to `run_bronze.py`, the gold QC and several silver QC tasks; stored in `run_log` |
+| Reruns are safe | Incremental bronze, write-audit-publish builds, preload gate |
+
+## 5. Release checklist
+
+Before merging a change that touches the pipeline:
+
+1. CI passes (lint, tests).
+2. Docs updated in the same pull request (layer README, overview, decision log if a decision changed).
+3. For bronze: `run_bronze.py --plan true` shows only the expected loads.
+4. For silver or gold: the build ran once on Databricks; gates returned 0; QC has no FAIL.
+5. After deploy: one full job run; record date, duration and result in the layer README history and in `docs/06-evidence/`.
+6. For idempotency evidence: run the job three times on the same inputs; every gold G12 row should PASS on runs 2 and 3.
+
+## 6. Gaps and next steps
+
+| Gap | Next step | Backlog |
+|---|---|---|
+| CI checks failing on `dev` | Fix after submission | — |
+| Diseases silver `01`–`03` not linted | Split `01` into smaller files | Silver recommendation 10 |
+| Few automated tests | pytest for the bronze loader, `run_bronze.py`, `bronze_gate.py` | 21 |
+| No check that repo and Volume reference CSVs match | CI step comparing checksums | 16 |
+| Deploy of the 2026-10-19 job not confirmed | Deploy and run; record evidence | 10 |
+| No dashboard refresh task | Add `dashboard_refresh` after `qc_gold` if needed | 10 |
+| `check_registry` not seeded | Seed, then switch QC to `strict_registry=True`; a CI check could fail on unknown codes | 7 |
+
+## 7. History of updates
+
+| Date | Change |
+|---|---|
+| 2026-09 | GitHub repository and Actions plan: PR checks, auto-assign reviewers, pytest |
+| 2026-10-11 | `databricks.yml` added on `dev` |
+| 2026-10-15 | Two pinned serverless environments (`default`, `geo`) |
+| 2026-10-19 | Job updated: preload gate tasks, geography inside `run_bronze.py`, gold paths. Page written |
+| 2026-10-20 | Runs stay manual (D-59); three evidence runs; failing checks on `dev` listed as a gap |
