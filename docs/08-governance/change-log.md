@@ -22,6 +22,7 @@ Status date: 2026-10-20. Add a row for every full run and every change that alte
 
 | Date | Layer | Change | Decision |
 |---|---|---|---|
+| 2026-10-21 | CI | Failing CI checks on `dev` fixed; they pass. Tests stay thin (KI-02) | — |
 | 2026-10-20 | docs | Architecture: AD-17 manual acquisition added (D-63). The diagram shows the manual upload. New serving section covers dashboard pages, `embed_credentials: false` and refresh. `prod` target noted as unused | D-63 |
 | 2026-10-20 | job | Job YAML: `gold_00_setup` task removed. Gold dimensions wait for `qc_silver_cross_domain`. Dated notes cover the bronze and silver changes and the environments (no new library). Optional `dashboard_refresh` added, commented out. Setup and dashboard YAML comments updated. Dashboard datasets now point to `public_health.gold` instead of `test_gold2` | D-59, D-60 |
 | 2026-10-20 | gold | Every gold file revised. One comment format. `'model'` removed from build logs. Gold counts reviewed lists. Thresholds are settings in `build_log.parameters`. Null keys stay null (`nvl2`) in `dim_facility` and `ref_osm_healthsite_point`. `dim_date` accepts `iso_week` and `iso_week_ending_date`, with a weekly-date gate. HDX peaks read "week ending <date>". No gold setup file | D-44, D-46, D-60, D-61, D-62 |
@@ -53,3 +54,4 @@ Status date: 2026-10-20. Add a row for every full run and every change that alte
 |---|---|
 | 2026-10-20 | Page written. Evidence runs 1–3 still to record |
 | 2026-10-20 | Gold revision, job YAML and gold/quality docs rows added |
+| 2026-10-21 | CI fix row added |

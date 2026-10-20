@@ -2,7 +2,7 @@
 
 How code moves from a branch to a running Databricks job: the checks on every pull request, how the job is deployed, and what is not automated yet.
 
-Status date: 2026-10-20. Items marked **confirm** need a check against `.github/workflows/` and `databricks.yml` in the repository.
+Status date: 2026-10-21. Items marked **confirm** need a check against `.github/workflows/` and `databricks.yml` in the repository.
 
 ---
 
@@ -19,7 +19,7 @@ flowchart LR
 
 ## 2. Continuous integration (GitHub Actions)
 
-Runs on every pull request.
+Runs on every pull request. The checks pass on `dev` since 2026-10-21.
 
 | Check | Tool | Covers | Notes |
 |---|---|---|---|
@@ -96,7 +96,6 @@ Before merging a change that touches the pipeline:
 
 | Gap | Next step | Backlog |
 |---|---|---|
-| CI checks failing on `dev` | Fix after submission | — |
 | Diseases silver `01`–`03` not linted | Split `01` into smaller files | Silver recommendation 10 |
 | Few automated tests | pytest for the bronze loader, `run_bronze.py`, `bronze_gate.py` | 21 |
 | No check that repo and Volume reference CSVs match | CI step comparing checksums | 16 |
@@ -113,3 +112,4 @@ Before merging a change that touches the pipeline:
 | 2026-10-15 | Two pinned serverless environments (`default`, `geo`) |
 | 2026-10-19 | Job updated: preload gate tasks, geography inside `run_bronze.py`, gold paths. Page written |
 | 2026-10-20 | Runs stay manual (D-59); three evidence runs; failing checks on `dev` listed as a gap |
+| 2026-10-21 | CI checks on `dev` fixed; they pass. Gap row removed |

@@ -9,7 +9,7 @@
 
 Owner: LUNASaan Documentation Team
 
-Last updated: 2026-10-19
+Last updated: 2026-10-21
 
 A data platform on Databricks that brings Philippine public health data — facilities, diseases, workforce, socioeconomic indicators, and geography — into a unified, quality-checked warehouse. It shows where health-service availability falls short of population need and disease burden, across the country's planning areas.
 
@@ -24,11 +24,12 @@ Built by team **LUNASaan** (Learning Team 5) as an FTW Data Engineering Capstone
 pip install -r requirements-dev.txt
 pre-commit install
 
-# 2. Deploy the pipeline to Databricks (dev target)
+# 2. Validate and deploy the pipeline to Databricks (dev target)
+databricks bundle validate -t dev
 databricks bundle deploy -t dev
 
-# 3. Run the pipeline job in the Databricks UI or CLI
-databricks jobs run-now --job-name ph-public-health-pipeline
+# 3. Run the pipeline job from the bundle (or start it in the Databricks UI)
+databricks bundle run -t dev ph_public_health_pipeline
 ```
 
 See [Setup guide](docs/07-operations/setup-guide.md) for prerequisites, permissions, and full configuration.
@@ -87,13 +88,13 @@ Landing volume (CSV / Excel / GeoJSON)
     │
     ▼
 Bronze  ── public_health.bronze    (raw, all-string, config-driven loaders)
-    │         + bronze QC (stops on ERROR)
+    │         + bronze QC and preload gate (stops on FAIL)
     ▼
 Silver  ── public_health.silver   (cleaned, typed, matched, lineage-tracked)
     │         + silver QC + cross-domain QC
     ▼
 Gold    ── public_health.gold (analytical marts and dimensions for the dashboard)
-    │
+    │         + gold QC (G00–G13)
     ▼
 Dashboard (Lakeview) + Unity Catalog serving
 ```
@@ -112,7 +113,7 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 | Workforce (FHSIS, PSA, PSMO) | Yes | Yes | Yes | Yes |
 | Socioeconomic (poverty, expenditure) | Yes | Yes | Yes | Yes |
 
-Yes = implemented and verified on Databricks. The full pipeline (bronze, silver, gold) was verified end to end on 2026-10-18 in the current workspace; see the [run record](docs/06-evidence/2026-10-18-new-workspace-run.md). Recorded QC outcomes are in [quality results](docs/04-pipeline/quality/quality-results.md); post-run verification steps and expected row counts are in the [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
+Yes = implemented and verified on Databricks. The full pipeline (bronze, silver, gold) was verified end to end on 2026-10-18 in the current workspace; see the [run record](docs/06-evidence/2026-10-18-new-workspace-run.md). Recorded QC outcomes are in [quality results and evidence](docs/04-pipeline/quality/quality-results-and-evidence.md); post-run verification steps and expected row counts are in the [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
 
 The Lakeview dashboard has eight pages and reads gold tables in `public_health.gold`. It refreshes when opened. Open it from the Databricks UI; see the [dashboard guide](docs/05-dashboard/dashboard-guide.md) for pages, filters, and data freshness checks.
 
@@ -128,33 +129,33 @@ Headline figures from the current gold build. "Recorded" means listed in the sou
 | Registry beds per 10,000 residents (national) | 8.0 |
 | Beds per 10,000 residents: provinces under 10% poverty vs 20-30% poverty | 10.3 vs 6.2 |
 
-The locality counts were verified against `public_health.gold.mart_locality_service_presence` on 2026-10-19; the other figures are the team's presented dashboard values (see the [dashboard guide](docs/05-dashboard/dashboard-guide.md)). Limits that apply to every chart are in [assumptions and limitations](docs/01-context/assumptions-and-limitations.md).
+The locality counts were verified against `public_health.gold.mart_locality_service_presence` on 2026-10-19; the other figures are the team's presented dashboard values (see the [dashboard guide](docs/05-dashboard/dashboard-guide.md)). Limits that apply to every chart, and the team's recommendations, are in [limitations and recommendations](docs/01-context/limitations-and-recommendations.md). The assumptions behind the figures are in [assumptions](docs/01-context/assumptions.md).
 
 ## How quality is enforced
 
-* **Gated layers** — bronze and silver QC stop the job on a FAIL-level check; silver builds validate keys, duplicates and lineage before publishing.
+* **Gated layers** — bronze and silver QC stop the job on a FAIL-level check; a preload gate stops a domain's silver when one of its bronze sources is not cleared; silver builds validate keys, duplicates and lineage before publishing.
 * **Traceable** — every silver row carries lineage columns; every build records its inputs in `quality.build_log` and `quality.build_inputs`; rows that are dropped, quarantined or merged are recorded with a reason in `quality.row_disposition`.
 * **Idempotent** — bronze loads only new or changed files; silver and gold use write-audit-publish. Reruns are safe and a failed build leaves the published table untouched.
 * **Honest about gaps** — nulls stay null. Every excluded area or row carries a reason.
-* **Gold QC** — checks published gold tables (G00–G13: row counts, primary keys, grain uniqueness, foreign keys, published-table integrity, freshness against inputs, control totals, value consistency, default views, selection contract, measure ranges, idempotency fingerprint, census plausibility). Any FAIL raises and stops the dashboard refresh. See the [quality framework](docs/04-pipeline/quality/quality-control-framework.md) for the check catalog.
+* **Gold QC** — checks published gold tables (G00–G13: row counts, primary keys, grain uniqueness, foreign keys, published-table integrity, freshness against inputs, control totals, value consistency, default views, selection contract, measure ranges, idempotency fingerprint, census plausibility). Any FAIL fails the last task of the job. See the [quality framework](docs/04-pipeline/quality/quality-control-framework.md) and the [check catalog](docs/04-pipeline/quality/quality-check-catalog.md).
 
 ## Key limitations
 
 * **Restricted data**: Bed occupancy and some FOI-released data carry sharing restrictions. See [Data governance](docs/08-governance/data-governance.md).
-* **Reference year matters**: Sources span different years (2018–2025). Never compare partial years with full years without adjustment. See [Assumptions and limitations](docs/01-context/assumptions-and-limitations.md).
+* **Reference year matters**: Sources span different years (2018–2025). Never compare partial years with full years without adjustment. See [Limitations and recommendations](docs/01-context/limitations-and-recommendations.md).
 * **Geographic comparability**: PSGC codes change over time. The platform uses PSA PSGC Q2 2024 as the reference geography. Area names that do not match are logged as exceptions. See [Data gaps](docs/02-data/data-gaps.md).
-* **Recorded ≠ absent**: A facility not listed in a registry does not prove it does not exist. See [Assumptions and limitations](docs/01-context/assumptions-and-limitations.md).
+* **Recorded ≠ absent**: A facility not listed in a registry does not prove it does not exist. See [Limitations and recommendations](docs/01-context/limitations-and-recommendations.md).
 * **OSM coverage is community-maintained**: `facilities_osm_point_silver` exists (16,030 rows, built 2026-10-18), but absence from OSM does not prove a facility does not exist. See [Known issues](docs/08-governance/known-issues-and-backlog.md).
 
 ## Documentation
 
-Full documentation lives in [`docs/`](#workspace/Users/crisstin92@gmail.com/philippine-public-health-platform/docs/README.md). Key entry points:
+Full documentation lives in [`docs/`](docs/README.md). Key entry points:
 
 * **New to the project?** -> [Business context](docs/01-context/problem-and-business-context.md) -> [Data sources](docs/02-data/data-sources.md) -> [Architecture](docs/03-architecture/architecture-overview.md)
 * **Want to run the pipeline?** -> [Setup guide](docs/07-operations/setup-guide.md) -> [Runbook](docs/07-operations/runbook.md)
-* **Maintaining the platform?** -> [Architecture](docs/03-architecture/architecture-overview.md) -> [CI/CD and testing](docs/07-operations/ci-cd-and-testing.md) -> [Troubleshooting](docs/07-operations/troubleshooting.md)
+* **Maintaining the platform?** -> [Architecture](docs/03-architecture/architecture-overview.md) -> [CI/CD setup](docs/03-architecture/ci-cd-setup.md) -> [Troubleshooting](docs/07-operations/troubleshooting.md)
 * **Using the dashboard?** -> [Dashboard guide](docs/05-dashboard/dashboard-guide.md) -> [Metric definitions](docs/04-pipeline/gold/metric-definitions.md)
-* **Lineage and quality contract** -> [lineage-qc-contract_v1.3.md](docs/lineage-qc-contract_v1.3.md)
+* **Lineage and quality contract** -> [Lineage and quality contract](docs/04-pipeline/quality/lineage-and-quality-contract.md)
 * **Handover** -> [Handover checklist](handover-checklist.md)
 * **Verified execution** -> [Evidence: 2026-10-18 full pipeline run](docs/06-evidence/2026-10-18-new-workspace-run.md)
 
@@ -166,8 +167,8 @@ src/
   01_ingestion/      PSGC and admin boundary ingestion notebooks
   02_bronze/         Config-driven bronze loaders (one per domain)
   03_silver/         Silver build scripts (SQL) per domain
-  04_gold/           Gold mart build scripts (SQL)
-  05_quality/        Bronze, silver, gold QC scripts
+  04_gold/           Gold build scripts (SQL): dimension/, fact/, mart/
+  05_quality/        Bronze, silver, gold QC scripts and the preload gate
 config/             Source YAML configs (one per domain) + reference CSVs
 resources/           Databricks job definitions (DABs)
 builders/            Reference CSV generators (run by hand)

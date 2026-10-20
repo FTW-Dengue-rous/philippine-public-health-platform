@@ -2,7 +2,7 @@
 
 What is open after the capstone: known issues that affect results or operations today, the engineering limitations of the pipeline, the backlog ordered by priority, and the recommendations that wait for a trigger. Item numbers are the ones used in the team's to-do list and in the other pages (for example "to-do 13").
 
-Status date: 2026-10-20. Decisions: [decision log](decision-log.md). Assumptions: [assumptions](../01-context/assumptions.md). Limits on reading the data and the team's recommendations: [limitations and recommendations](../01-context/limitations-and-recommendations.md).
+Status date: 2026-10-21. Decisions: [decision log](decision-log.md). Assumptions: [assumptions](../01-context/assumptions.md). Limits on reading the data and the team's recommendations: [limitations and recommendations](../01-context/limitations-and-recommendations.md).
 
 ---
 
@@ -13,7 +13,7 @@ Status date: 2026-10-20. Decisions: [decision log](decision-log.md). Assumptions
 | ID | Issue | Effect | Treatment | Item |
 |---|---|---|---|---|
 | KI-01 | Rows held for review: 18 FHSIS TB special-area rows, 21 PhilHealth claims location pairs marked REVIEW, 34 Davao city labels, San Jose (Oriental Mindoro); four workforce row overrides still `proposed` (Taguig, San Juan 2022; Surigao del Norte, Alegria 2025) | Those rows are quarantined or kept out of analysis | Deliberate hold: each is counted, has a reason and is under 1% of its source (S29). Deferred to after submission (D-58) | 13 |
-| KI-02 | CI checks fail on `dev`; automated tests are thin | A pull request can't rely on CI yet | Fix after submission; add pytest for the bronze loader, `run_bronze.py`, `bronze_gate.py` | 21 |
+| KI-02 | Automated tests are thin. (The failing CI checks on `dev` were fixed on 2026-10-21) | CI passes, but it covers little of the pipeline code | Add pytest for the bronze loader, `run_bronze.py`, `bronze_gate.py` | 21 |
 | KI-03 | `check_registry` not fully seeded (GB, HB, B16, S59, G codes); `strict_registry=False` except population QC | A script could use an unregistered code | Seed, then switch every script to `strict_registry=True` (O-17) | 7 |
 | KI-04 | Files without `qc.expected_rows` | B03 is only WARN for them; a wrong file with a plausible count passes | Fill the expected counts | 7b |
 | KI-05 | `sharing: restricted` is declared, not enforced by grants | Anyone with workspace access can read restricted silver rows | Restricted rows never leave silver except as suppressed aggregates; apply Unity Catalog grants | 23 |
@@ -40,7 +40,7 @@ These limits affect how the pipeline runs, not what the data means.
 | EL-06 | The loader does not detect parsing-setting changes in the YAML | Reload with `--force_keys`. Detection is item 17 |
 | EL-07 | The team runs on a personal Databricks workspace | The FTW org workspace could not reach the external volume |
 | EL-08 | The job has no trigger or active schedule. A person starts each run | Data arrives through people, so whoever lands it starts the job (D-59). Trigger and skip rules are R0 and R1 |
-| EL-09 | CI checks on `dev` fail and automated tests are thin | Fix after submission (KI-02, item 21) |
+| EL-09 | Automated tests are thin. CI on `dev` passes since 2026-10-21 | More pytest coverage (KI-02, item 21) |
 
 ## 2. Backlog
 
@@ -63,7 +63,6 @@ These limits affect how the pipeline runs, not what the data means.
 | 10 | Confirm the bundle deploy; optional `dashboard_refresh` task after `qc_gold` | job | 0.5 day |
 | 12 | Decide on eFOI 2026-5476 (KI-12). Decide together with 36 | bronze, silver | 1–2 days |
 | 36 | Decide on the OHSRS regional release (KI-13). Profile every tab first. Parse issues seen so far: 3-row header (metric / year / ownership), text `Started 2025` in a numeric cell (NIR 2016), NOTE footer row | bronze, silver | 1 day |
-| — | Fix the failing CI checks on `dev` | CI | — |
 
 ### Tier 3: structural improvements
 
@@ -124,6 +123,7 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | 2026-10-19 | Bronze closed: QC re-queue, preload gate, geography in `run_bronze.py`, overrides validated, timezone-aware UTC (D-50 to D-55) |
 | 2026-10-19 | Silver: D-44 / D-46 week convention; population QC fixes and S59; rule 2a in every silver build and QC file; full rebuild kept (D-57); proposal values agreed (D-56) |
 | 2026-10-20 | Silver closed: workforce override for Zamboanga Sibugay (D-58); cross-domain QC 68 checks, 0 FAIL, 10 WARN. Runs stay manual (D-59) |
+| 2026-10-21 | CI checks on `dev` fixed; they pass |
 
 ## 5. History of updates
 
@@ -134,3 +134,4 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | 2026-10-20 | Moved to `08-governance/known-issues-and-backlog.md` with a known-issues table; R0 / R1 per D-59; CI on `dev` added |
 | 2026-10-20 | Late FOI releases: KI-13 and item 36 added for the OHSRS regional release; KI-12 / item 12 (eFOI 2026-5476) linked to it; stretch 32 notes both as inputs |
 | 2026-10-20 | Engineering limitations EL-01 to EL-09 moved here from "Assumptions and limitations" as section 1.2. Links point to the new assumptions page and the limitations and recommendations page |
+| 2026-10-21 | CI on `dev` fixed: KI-02 and EL-09 now cover thin tests only; the Tier 2 CI row moved to section 4 |

@@ -2,8 +2,6 @@
 
 This page lists every source dataset the pipeline loads, who publishes it, what it covers and how it may be shared. Each source feeds specific analytical questions in the BQ1 framework. See [business context](../01-context/problem-and-business-context.md) for the question-to-source traceability.
 
-Owner: LUNASaan Documentation Team
-
 Last updated: 2026-10-21
 
 **The YAML files are the source of truth.** Each source is one entry in `config/sources_<domain>.yaml`. The entry name is its `source_key`. When this page and a YAML file disagree, the YAML wins. Fix this page in the same pull request. The bronze loader reads the config, loads the file(s) with all data columns as STRING, and adds lineage columns; see [bronze pipeline](../04-pipeline/bronze/README.md) for loader details.
