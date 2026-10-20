@@ -1,5 +1,8 @@
 # Project conventions
 
+Owner: Jemma Santiago
+Last updated: 2026-10-20
+
 The naming, layout and coding rules every file in this repository follows. Follow them for new work; fix old work when you touch it.
 
 Status date: 2026-10-20.
@@ -86,6 +89,23 @@ Never edit a landed file. A newer release is a new file in the same folder.
 | Status | `<thing>_status` | `value_status` |
 | Reason | `exclusion_reason`, `mapping_outcome` | — |
 | Units in the name | `_pct`, `_php`, `_km`, `_sqkm` | `bor_weighted_pct` |
+| Source key | Folder name, nested joined by `_`. Never changed once in use | `doh_hfsrb_hospitals` |
+| Per-source lineage | `_<side>_<name>` in combined rows | `_nhfr_source_row_num` |
+
+### Bronze data rules
+
+- Every data column is STRING. Typing happens in silver (AD-03).
+- Original column names from the file are kept. Only characters Delta does not allow (space, `,`, `;`, `{}`, `()`, `=`, tab, newline) become `_`.
+- Renaming to standard names happens in silver via `column_map` in the source YAML.
+- Bronze lineage columns added by the loader: `_rescued_data`, `_source_key`, `_source_file`, `_source_sheet`, `_source_row_num`, `_as_of_date`, `_ingested_at`.
+- `_as_of_date` is the date the file was downloaded or released, not load time.
+
+### Silver grain and lineage
+
+- One row per business grain (for example one facility, one area × year × ownership × source).
+- Silver lineage columns per the [lineage and quality contract](../04-pipeline/quality/lineage-and-quality-contract.md): `_silver_build_id`, `_source_key`, `_source_file`, `_source_sheet`, `_source_row_num`, `_as_of_date`, `_metric_source_columns`.
+- Load-time facts (load batch id, checksum, build time) are stored once per build in `build_inputs` and `build_log`, not on every row (AD-08).
+- `row_disposition` stores only rows that were not loaded (dropped, duplicate, quarantined, merged).
 
 ## 3. Code style
 
@@ -99,6 +119,9 @@ Never edit a landed file. A newer release is a new file in the same folder.
 | Silver casts with `try_cast` and keeps a status; gold uses `CAST` with ANSI mode on | A bad value is visible in silver and stops gold |
 | Timestamps in UTC, timezone-aware (D-54) | Correct on any driver timezone |
 | Every build: write candidate → gates → publish → `build_log` + `build_inputs` | A failed build leaves the published table untouched |
+| Each silver build script declares its inputs, captures them, validates, writes, and records the build | A reviewer can trace what went in and what came out |
+| `run_bronze.py` is the single entry point for bronze (loader then QC per domain) | One command per domain; the job calls it |
+| `dq_utils.py` provides `DQRun` for writing quality check results | One result format for every domain and layer |
 
 ### Numbers in code (review rule, 2026-10-19)
 
@@ -137,12 +160,16 @@ Never edit a landed file. A newer release is a new file in the same folder.
 
 | Item | Convention |
 |---|---|
-| Integration branch | `dev` (Asset Bundle target `dev`) |
+| Integration branch | `dev` (Asset Bundle target `dev`). Merge to `main` at milestones |
 | Work branches | `feature/<topic>` (for example `feature/quality-tables-setup`) |
 | Pull requests | Into `dev`; at least one reviewer; CI must pass |
 | Commit messages | Imperative, say what changed: "Add preload gate per domain" |
 | Docs | Update the page in the same pull request as the code |
-| Never commit | Restricted landing files, FOI request or release documents, tokens |
+| PR titles | `type: description` (feat, fix, docs, test, ci, chore, refactor) |
+| Pre-commit hooks | ruff lint + format, end-of-file newline, trailing whitespace, check-yaml, check-toml, check-added-large-files, detect-private-key, sqlfluff, nbstripout, gitleaks |
+| Never commit | Restricted landing files, FOI request or release documents, tokens, full datasets, notebook outputs |
+
+See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the full workflow.
 
 Confirm the `main` branch rule and the review count with the team, then update this table.
 
@@ -150,10 +177,10 @@ Confirm the `main` branch rule and the review count with the team, then update t
 
 | ID | Use | Where |
 |---|---|---|
-| `D-NN` | A decision made | Decision log |
-| `O-NN` | An open decision | Decision log |
-| `F-NN` | A finding in the data (silver) | Domain silver pages |
-| Incident N | A pipeline incident | Runbook |
+| `D-NN` | A decision made | [Decision log](../08-governance/decision-log.md) |
+| `O-NN` | An open decision | [Decision log](../08-governance/decision-log.md) |
+| `F-NN` | A finding in the data (silver) | [Domain silver pages](../04-pipeline/silver/README.md) |
+| Incident N | A pipeline incident | [Runbook](../07-operations/runbook.md) |
 
 Never rewrite an old decision. Add a new one that replaces it.
 
@@ -169,9 +196,21 @@ Never rewrite an old decision. Add a new one that replaces it.
 - Describe the concept first, the Databricks implementation second.
 - End every page with a dated history table.
 
+## See also
+
+- [Architecture overview](architecture-overview.md) — layers, job flow, quality gates
+- [Architecture decisions](architecture-decisions.md) — why each choice was made
+- [Decision log](../08-governance/decision-log.md) — every dated decision and open question
+- [Known issues and backlog](../08-governance/known-issues-and-backlog.md) — what is open after the capstone
+- [Runbook](../07-operations/runbook.md) — how to run and troubleshoot the pipeline
+- [Bronze layer](../04-pipeline/bronze/README.md) · [Silver layer](../04-pipeline/silver/README.md) · [Gold layer](../04-pipeline/gold/README.md) — layer-specific details
+- [CONTRIBUTING.md](../../CONTRIBUTING.md) — full pull-request workflow
+
 ## 9. History of updates
 
 | Date | Change |
 |---|---|
 | 2026-10-19 | Page written, with the rule for numbers in code (rule 2a) |
 | 2026-10-20 | Silver QC codes GS / AS and build checks SG / AB separated; no gold setup file; version a page inside the page |
+| 2026-10-20 | Owner and last-updated metadata added. Source key, per-source lineage, bronze data rules, silver grain rules, build script pattern, Python entry points, PR titles, pre-commit hooks added. CONTRIBUTING.md linked |
+| 2026-10-20 | Decision log, runbook, silver pages, and layer READMEs linked in section 7 and a See also section |
