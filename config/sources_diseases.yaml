@@ -142,7 +142,7 @@ sources:
     original_file: Dengue_Environmental Vars_Dataset.xlsx
     path: diseases/upnoah/upnoah_dengue_region_weekly_2016_2025.xlsx
     format: xlsx
-    sheet: Regional Data                  
+    sheet: Regional Data
     header_mode: single
     skip_rows: 0
     bronze_table: "public_health.bronze.diseases_upnoah_dengue_regional_bronze"

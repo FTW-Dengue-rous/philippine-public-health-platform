@@ -72,21 +72,29 @@ FIXED_SOURCES = {
 
 # A source whose ingestion_metadata.source_name is not its source_key. The PSGC loader logs
 # the YAML psgc.source_name; metadata_names() reads it from config/sources_geography.yaml.
-METADATA_NAME_KEYS = {"psgc": ("sources_geography.yaml", "psgc", "source_name"),
-                      "psgc_population": ("sources_population.yaml", "psgc_population", "source_name")}
+METADATA_NAME_KEYS = {
+    "psgc": ("sources_geography.yaml", "psgc", "source_name"),
+    "psgc_population": ("sources_population.yaml", "psgc_population", "source_name"),
+}
 
 
 # -----------------------------------------------------------------------------
 # State per source
 # -----------------------------------------------------------------------------
 
+
 def state_label(key, domain, pairs):
     """Output key: the source_key, or 'source_key (domain)' when the key is in several domains."""
     return key if sum(1 for k, _ in pairs if k == key) == 1 else f"{key} ({domain})"
 
 
-def source_states(spark, key_domains, quality_schema=QUALITY_SCHEMA, metadata_table=METADATA_TABLE,
-                  metadata_names=None):
+def source_states(
+    spark,
+    key_domains,
+    quality_schema=QUALITY_SCHEMA,
+    metadata_table=METADATA_TABLE,
+    metadata_names=None,
+):
     """Return {label: {state, source_key, domain, validation_id, last_qc_at, failed_checks,
     n_warn, crashed_at, last_load_at}}.
 
@@ -96,17 +104,23 @@ def source_states(spark, key_domains, quality_schema=QUALITY_SCHEMA, metadata_ta
     one domain's result never clears the other. label = source_key, or 'source_key (domain)'
     for a key listed under several domains.
     metadata_names: {source_key: ingestion_metadata.source_name} where the two differ."""
-    pairs = sorted(set(key_domains.items() if isinstance(key_domains, dict) else map(tuple, key_domains)))
+    pairs = sorted(
+        set(key_domains.items() if isinstance(key_domains, dict) else map(tuple, key_domains))
+    )
     if not pairs:
         return {}
     q = quality_schema
     names = metadata_names or {}
-    (spark.createDataFrame([(k, d, names.get(k, k)) for k, d in pairs],
-                           "source_key string, domain string, metadata_name string")
-     .createOrReplaceTempView("_gate_keys"))
+    (
+        spark.createDataFrame(
+            [(k, d, names.get(k, k)) for k, d in pairs],
+            "source_key string, domain string, metadata_name string",
+        ).createOrReplaceTempView("_gate_keys")
+    )
 
     has_run_log = spark.catalog.tableExists(f"{q}.run_log")
-    crash_sql = f"""
+    crash_sql = (
+        f"""
       crash AS (
         SELECT k.source_key, k.domain,
                max(g.started_at)                        AS crashed_at,
@@ -116,15 +130,21 @@ def source_states(spark, key_domains, quality_schema=QUALITY_SCHEMA, metadata_ta
           ON g.layer = 'bronze' AND g.status = 'ERROR' AND g.domain = k.domain
          AND (upper(trim(coalesce(g.source_keys, 'ALL'))) = 'ALL'
               OR array_contains(transform(split(g.source_keys, ','), x -> trim(x)), k.source_key))
-        GROUP BY k.source_key, k.domain)""" if has_run_log else """
+        GROUP BY k.source_key, k.domain)"""
+        if has_run_log
+        else """
       crash AS (SELECT CAST(NULL AS STRING) AS source_key, CAST(NULL AS STRING) AS domain,
                        CAST(NULL AS TIMESTAMP) AS crashed_at,
                        CAST(NULL AS STRING) AS crash_validation_id WHERE false)"""
+    )
     # A result counts for (source_key, domain) only when its QC run was of that domain. Results
     # with no run_log row (none expected: DQRun writes both) are ignored, so the source is
     # NOT_CHECKED and gets its QC again, which is the safe side.
-    domain_join = (f"JOIN {q}.run_log g ON g.validation_id = r.validation_id AND g.domain = k.domain"
-                   if has_run_log else "")
+    domain_join = (
+        f"JOIN {q}.run_log g ON g.validation_id = r.validation_id AND g.domain = k.domain"
+        if has_run_log
+        else ""
+    )
 
     rows = spark.sql(f"""
       WITH r AS (
@@ -155,11 +175,14 @@ def source_states(spark, key_domains, quality_schema=QUALITY_SCHEMA, metadata_ta
 
     loads = {}
     if metadata_table and spark.catalog.tableExists(metadata_table):
-        loads = {r["source_key"]: r["last_load_at"] for r in spark.sql(f"""
+        loads = {
+            r["source_key"]: r["last_load_at"]
+            for r in spark.sql(f"""
             SELECT k.source_key, max(m.retrieved_at) AS last_load_at
             FROM {metadata_table} m JOIN _gate_keys k ON m.source_name = k.metadata_name
             WHERE lower(m.status) = 'processed'
-            GROUP BY k.source_key""").collect()}
+            GROUP BY k.source_key""").collect()
+        }
 
     out = {}
     for r in rows:
@@ -168,7 +191,9 @@ def source_states(spark, key_domains, quality_schema=QUALITY_SCHEMA, metadata_ta
             state = "CRASHED" if crashed is not None else "NOT_CHECKED"
         elif r["n_fail"]:
             state = "FAIL"
-        elif crashed is not None and (r["crash_validation_id"] == r["validation_id"] or crashed >= last_qc):
+        elif crashed is not None and (
+            r["crash_validation_id"] == r["validation_id"] or crashed >= last_qc
+        ):
             state = "CRASHED"
         elif loaded is not None and loaded > last_qc:
             state = "STALE"
@@ -177,10 +202,15 @@ def source_states(spark, key_domains, quality_schema=QUALITY_SCHEMA, metadata_ta
         else:
             state = "PASS"
         out[state_label(r["source_key"], r["domain"], pairs)] = {
-            "state": state, "source_key": r["source_key"], "domain": r["domain"],
+            "state": state,
+            "source_key": r["source_key"],
+            "domain": r["domain"],
             "validation_id": r["validation_id"],
-            "last_qc_at": last_qc, "failed_checks": r["failed_checks"] or None,
-            "n_warn": r["n_warn"] or 0, "crashed_at": crashed, "last_load_at": loaded,
+            "last_qc_at": last_qc,
+            "failed_checks": r["failed_checks"] or None,
+            "n_warn": r["n_warn"] or 0,
+            "crashed_at": crashed,
+            "last_load_at": loaded,
         }
     spark.catalog.dropTempView("_gate_keys")
     return out
@@ -219,18 +249,26 @@ def print_states(states, title):
 # Which sources a domain's silver build depends on
 # -----------------------------------------------------------------------------
 
+
 def yaml_sources(root):
     """{domain: {source_key: qc_domain}} for the enabled file sources of every sources_<domain>.yaml.
     Same rule as the bronze QC scripts: entry domain, a path and a bronze_table, enabled."""
     found = {}
-    for path in sorted(glob.glob(os.path.join(root, "config", "**", "sources_*.yaml"), recursive=True)):
+    for path in sorted(
+        glob.glob(os.path.join(root, "config", "**", "sources_*.yaml"), recursive=True)
+    ):
         if "/.ipynb_checkpoints/" in path:
             continue
         cfg = yaml.safe_load(open(path, encoding="utf-8")) or {}
         defaults = cfg.get("defaults") or {}
         for key, entry in (cfg.get("sources") or {}).items():
             e = {**defaults, **(entry or {})}
-            if not (e.get("domain") and e.get("path") and e.get("bronze_table") and e.get("enabled", True)):
+            if not (
+                e.get("domain")
+                and e.get("path")
+                and e.get("bronze_table")
+                and e.get("enabled", True)
+            ):
                 continue
             k = e.get("source_key_override", key)
             found.setdefault(e["domain"], {})[k] = e["domain"]
@@ -255,7 +293,10 @@ def metadata_names(root):
 def consumed_sources(spark, domain, quality_schema=QUALITY_SCHEMA):
     """Bronze sources read by the latest successful silver build of each table in the domain."""
     q = quality_schema
-    if not (spark.catalog.tableExists(f"{q}.build_log") and spark.catalog.tableExists(f"{q}.build_inputs")):
+    if not (
+        spark.catalog.tableExists(f"{q}.build_log")
+        and spark.catalog.tableExists(f"{q}.build_inputs")
+    ):
         return set()
     spark.createDataFrame([(domain,)], "domain string").createOrReplaceTempView("_gate_domain")
     rows = spark.sql(f"""
@@ -281,7 +322,9 @@ def find_repo_root(explicit=None):
         here = os.getcwd()
     folder = here
     for _ in range(6):
-        if os.path.isdir(os.path.join(folder, "src")) and os.path.isdir(os.path.join(folder, "config")):
+        if os.path.isdir(os.path.join(folder, "src")) and os.path.isdir(
+            os.path.join(folder, "config")
+        ):
             return folder
         parent = os.path.dirname(folder)
         if parent == folder:
@@ -294,12 +337,20 @@ def find_repo_root(explicit=None):
 # Preload gate
 # -----------------------------------------------------------------------------
 
+
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description="Preload gate: stop a silver build on uncleared bronze sources")
-    p.add_argument("--domains", default="",
-                   help="comma list of silver domains, e.g. diseases,facilities, or all. "
-                        "Default: all, unless --source_keys is given")
-    p.add_argument("--source_keys", default="", help="check exactly these sources (added to --domains)")
+    p = argparse.ArgumentParser(
+        description="Preload gate: stop a silver build on uncleared bronze sources"
+    )
+    p.add_argument(
+        "--domains",
+        default="",
+        help="comma list of silver domains, e.g. diseases,facilities, or all. "
+        "Default: all, unless --source_keys is given",
+    )
+    p.add_argument(
+        "--source_keys", default="", help="check exactly these sources (added to --domains)"
+    )
     p.add_argument("--exclude_keys", default="", help="sources the silver build does not read")
     p.add_argument("--allow_unchecked", default="false", choices=["true", "false"])
     p.add_argument("--repo_root", default=None)
@@ -317,9 +368,13 @@ def main(argv=None):
     from pyspark.sql import SparkSession
 
     a = parse_args(argv)
-    domains, explicit, excluded = csv_list(a.domains), csv_list(a.source_keys), set(csv_list(a.exclude_keys))
+    domains, explicit, excluded = (
+        csv_list(a.domains),
+        csv_list(a.source_keys),
+        set(csv_list(a.exclude_keys)),
+    )
     if not domains and not explicit:
-        domains = ["all"]                                # no arguments (e.g. a notebook run): check everything
+        domains = ["all"]  # no arguments (e.g. a notebook run): check everything
     spark = SparkSession.builder.getOrCreate()
 
     root = find_repo_root(a.repo_root)
@@ -327,6 +382,7 @@ def main(argv=None):
     if [d.lower() for d in domains] == ["all"]:
         domains = sorted(by_domain)
         print(f"Checking every domain: {', '.join(domains)}")
+
     def owners(k):
         """QC domains of a key across every YAML (a key can be in more than one)."""
         return sorted({qd for keys in by_domain.values() for kk, qd in keys.items() if kk == k})
@@ -336,28 +392,44 @@ def main(argv=None):
         from_yaml = by_domain.get(d, {})
         from_builds = consumed_sources(spark, d, a.quality_schema)
         if not from_yaml and not from_builds:
-            raise SystemExit(f"STOPPED: domain '{d}' has no YAML file sources and no recorded silver build inputs")
+            raise SystemExit(
+                f"STOPPED: domain '{d}' has no YAML file sources and no recorded silver build inputs"
+            )
         for k, qd in from_yaml.items():
             pairs.add((k, qd))
-        for k in from_builds - set(from_yaml):        # read by silver, not an enabled YAML source here
+        for k in from_builds - set(from_yaml):  # read by silver, not an enabled YAML source here
             pairs.update((k, qd) for qd in (owners(k) or [d]))
         for k in set(from_yaml) | from_builds:
-            origin[k] = "yaml+build" if k in from_yaml and k in from_builds else "yaml" if k in from_yaml else "build"
+            origin[k] = (
+                "yaml+build"
+                if k in from_yaml and k in from_builds
+                else "yaml"
+                if k in from_yaml
+                else "build"
+            )
     for k in explicit:
         pairs.update((k, qd) for qd in (owners(k) or [domains[0] if domains else k]))
         origin[k] = "argument"
     pairs = {(k, qd) for k, qd in pairs if k not in excluded}
 
-    states = source_states(spark, sorted(pairs), a.quality_schema, a.metadata_table, metadata_names(root))
-    print_states(states, f"Preload gate: {len(states)} bronze source(s) for {', '.join(domains + explicit)}")
+    states = source_states(
+        spark, sorted(pairs), a.quality_schema, a.metadata_table, metadata_names(root)
+    )
+    print_states(
+        states, f"Preload gate: {len(states)} bronze source(s) for {', '.join(domains + explicit)}"
+    )
     for k in sorted(origin):
         if origin[k] == "build" and any(s["source_key"] == k for s in states.values()):
-            print(f"  note: {k} is read by the latest silver build but is not an enabled YAML source")
+            print(
+                f"  note: {k} is read by the latest silver build but is not an enabled YAML source"
+            )
     stop = blocking(states, a.allow_unchecked == "true")
     if stop:
-        raise RuntimeError("Preload gate FAILED. Bronze sources not cleared: "
-                           + "; ".join(f"{k} ({reason(s)})" for k, s in sorted(stop.items()))
-                           + ". Fix the source or YAML, run run_bronze.py (it re-runs their QC), then rerun.")
+        raise RuntimeError(
+            "Preload gate FAILED. Bronze sources not cleared: "
+            + "; ".join(f"{k} ({reason(s)})" for k, s in sorted(stop.items()))
+            + ". Fix the source or YAML, run run_bronze.py (it re-runs their QC), then rerun."
+        )
     print("Preload gate passed.")
 
 

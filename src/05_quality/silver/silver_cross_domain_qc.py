@@ -198,8 +198,12 @@ def latest_geography():
 
 def census_years():
     """Census years held by population_silver (with at least one population value)."""
-    return sorted(r[0] for r in spark.sql(
-        f"SELECT DISTINCT population_year FROM {POP} WHERE population IS NOT NULL").collect())
+    return sorted(
+        r[0]
+        for r in spark.sql(
+            f"SELECT DISTINCT population_year FROM {POP} WHERE population IS NOT NULL"
+        ).collect()
+    )
 
 
 def years_in(table, where="true", col="year"):
@@ -370,7 +374,11 @@ def check_ratios(dq):
                 f"SELECT concat('region ', r, ': ', per_1000) FROM xd_beds WHERE {out} ORDER BY r"
             ),
         )
-    hw_years = sorted(set(census) & years_in(HC, f"_source_key = '{FHSIS_KEY}'")) if exists(HC) and census else []
+    hw_years = (
+        sorted(set(census) & years_in(HC, f"_source_key = '{FHSIS_KEY}'"))
+        if exists(HC) and census
+        else []
+    )
     if hw_years:
         hw_year = hw_years[-1]  # latest year held by both the census and FHSIS
         lo, hi = HW_BAND_PER_10000
@@ -414,8 +422,14 @@ def check_population_sources(dq):
         return
     common = sorted(set(census_years()) & years_in(DEN))
     if not common:
-        rec(dq, "S99", DEN, status="WARN", source_key=FHSIS_KEY,
-            detail="no year held by both population_silver and the FHSIS denominator: nothing compared")
+        rec(
+            dq,
+            "S99",
+            DEN,
+            status="WARN",
+            source_key=FHSIS_KEY,
+            detail="no year held by both population_silver and the FHSIS denominator: nothing compared",
+        )
         return
     years = ", ".join(str(y) for y in common)
     # Regions, cities and municipalities only: province coverage differs between the two sources

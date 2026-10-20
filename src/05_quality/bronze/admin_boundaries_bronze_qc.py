@@ -59,7 +59,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from pyspark.sql import SparkSession
@@ -537,8 +537,10 @@ def main(argv=None):
         sys.path.insert(0, str(helper.resolve().parent))
     else:
         if helper is not None:
-            print(f"note: --dq_utils_path {args.dq_utils_path} has no dq_utils.py; "
-                  "searching this repo's quality folder instead")
+            print(
+                f"note: --dq_utils_path {args.dq_utils_path} has no dq_utils.py; "
+                "searching this repo's quality folder instead"
+            )
         _add_dq_utils_to_path()
     from dq_utils import DQRun
 
@@ -602,7 +604,7 @@ def main(argv=None):
             str(dq.validation_id) if getattr(dq, "validation_id", None) is not None else None
         ),
         "qc_version": LOADER_VERSION,
-        "executed_at": datetime.now(timezone.utc).isoformat(),
+        "executed_at": datetime.now(UTC).isoformat(),
     }
     temporary = summary_path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(summary, indent=2), encoding="utf-8")
