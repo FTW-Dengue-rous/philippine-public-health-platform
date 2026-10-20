@@ -1,4 +1,5 @@
 # =============================================================================
+# diseases_silver_qc.py
 #
 # Runs QC on the published diseases Silver tables.
 #
@@ -128,6 +129,9 @@
 #       UP NOAH  period_basis iso_week, period_key yyyy-Www
 #     Both: 7 days, week 1 to 52 / 53 of the ISO year, week and year = ISO week and year of
 #     period_end. The old values week_number_unconfirmed and source_date_unconfirmed now fail S08.
+#   - 2026-10-21: S08 and S43 read the HDX date with try_cast, not to_date. Spark does not
+#     short-circuit AND / OR, so under ANSI mode to_date() also ran on UP NOAH keys ('2016-W01')
+#     and raised CAST_INVALID_INPUT. A malformed HDX key still fails S08 (null-safe compare).
 # =============================================================================
 
 import argparse
@@ -738,7 +742,7 @@ def check_metric(dq, profile):
                AND NOT period_key RLIKE '^[0-9]{{4}}-W[0-9]{{2}}$')
            OR (period_grain = 'week'  AND period_basis = 'iso_week_ending_date'
                AND (NOT period_key RLIKE '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$'
-                    OR period_end <> to_date(period_key)))
+                    OR NOT (period_end <=> try_cast(period_key AS DATE))))
            -- D-44 / D-46: a weekly row is one ISO week (7 days) with the ISO week and year of its end
            OR (period_grain = 'week'
                AND (period_basis NOT IN ('iso_week', 'iso_week_ending_date')
@@ -919,7 +923,7 @@ def check_metric(dq, profile):
         "S43",
         f"""
         SELECT count(DISTINCT area_key) FROM (
-          SELECT area_key, datediff(to_date(period_key), lag(to_date(period_key)) OVER (PARTITION BY area_key ORDER BY period_key)) AS gap
+          SELECT area_key, datediff(try_cast(period_key AS DATE), lag(try_cast(period_key AS DATE)) OVER (PARTITION BY area_key ORDER BY period_key)) AS gap
           FROM (SELECT DISTINCT area_key, period_key FROM {METRIC} WHERE _source_key = 'hdx_dengue'))
         WHERE gap <> 7""",
         f"SELECT count(DISTINCT area_key) FROM {METRIC} WHERE _source_key = 'hdx_dengue'",
