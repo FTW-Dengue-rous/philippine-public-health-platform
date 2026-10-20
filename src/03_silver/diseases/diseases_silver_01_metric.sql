@@ -41,6 +41,8 @@
 --   UP NOAH is_approximated is false: FLAG_DEKADAL_APPROX is a rainfall flag (D-46).
 --   Gate [6] checks every weekly row is a consistent ISO week. Gold dim_date must accept the two
 --   new period_basis values (it listed week_number_unconfirmed and source_date_unconfirmed).
+--   2026-10-21: the HDX date comparison in that gate uses try_cast (CAST_INVALID_INPUT on
+--   '2016-W01' under ANSI mode: Spark does not short-circuit AND / OR). Same result on valid keys.
 -- =============================================================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -833,7 +835,9 @@ SELECT 'weekly row not a consistent ISO week (D-44, D-46)', count(*)
          OR (period_basis = 'iso_week' AND weekday(period_start) <> 0)
          OR weekofyear(period_end) <> week
          OR extract(YEAROFWEEK FROM period_end) <> year
-         OR (period_basis = 'iso_week_ending_date' AND period_end <> to_date(period_key)))
+         -- try_cast: Spark does not short-circuit AND / OR, so with ANSI mode on, to_date() would
+         -- also run on UP NOAH keys ('2016-W01') and fail. A malformed HDX key still counts (<=>).
+         OR (period_basis = 'iso_week_ending_date' AND NOT (period_end <=> try_cast(period_key AS DATE))))
 UNION ALL
 SELECT 'negative value', count(*) FROM public_health.silver.diseases_metric_silver__candidate WHERE value < 0
 UNION ALL
