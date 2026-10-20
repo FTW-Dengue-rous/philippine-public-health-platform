@@ -74,7 +74,7 @@ Set the YAML entries of the sources below to `enabled: false`. Expect these outp
 
 ## 6. Requests to file next
 
-The [limitations and recommendations](../01-context/limitations-and-recommendations.md) page, section 3.1, lists the data the team asks stakeholders to make available (RD-01 to RD-11), with the grain and the agency for each. The first requests to file:
+The [limitations and recommendations](../01-context/limitations-and-recommendations.md) page, section 3.1, lists the data the team would ask for, with the grain and the agency for each. The first requests to file:
 
 | Priority | Request | Agency | Why |
 |---|---|---|---|
