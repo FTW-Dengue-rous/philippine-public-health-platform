@@ -1,4 +1,5 @@
 -- ========================================
+-- gold_19_mart_area_priority.sql
 -- 1. Builds the seed table public_health.gold.priority_weight_params
 --      One row is: the weight of one gap type in one weight set
 --      Key: (weight_set, indicator)
@@ -50,10 +51,20 @@
 -- Burden indicators come from gold 17, with its gaps. IHME indicators have no rate for a
 -- province with a HUC, or for the HUC itself (D-42), so those units are never ranked on them.
 --
--- The thresholds, the "two of three" rule and the three weight sets (equal, supply_heavy,
--- equity_heavy) are starting values, not published standards (open decisions O-03 and O-13).
+-- Why these values (D-56, agreed by the team 2026-10-19). Each is a judgement, not a published
+-- standard; evidence queries are in gold_o13_evidence.sql.
+--   * Fifths: BQ1 asks where gaps are largest, a relative question; quintiles are the usual
+--     grouping in equity analysis. Label them "lowest 20% of planning units", never
+--     "inadequate": the data has no national planning norm.
+--   * "Two of three": a workforce gap needs most of the three core professions (doctors,
+--     nurses, midwives) in the lowest fifth, so one profession's reporting gap cannot raise it
+--     alone. The WHO density threshold (44.5 per 10,000, SDG 3.c.1) is not applied: our counts
+--     are public sector only.
+--   * Weight sets: equal is the default, because no gap type has a basis to count more.
+--     supply_heavy and equity_heavy are sensitivity tests. A claim rests on the units that stay
+--     at the top under all three.
 -- Show the flags and the gap type first. Show a score only next to them. Default reading:
--- weight_set = equal and eligibility_config = complete_only. The other sets are sensitivity tests.
+-- weight_set = equal and eligibility_config = complete_only.
 -- Put the IHME attribution line on any chart of an IHME burden indicator.
 --
 -- Extra columns (not in the v3 column list): area_code, area_name, unit_level,
@@ -67,6 +78,7 @@
 --   2026-10-18  Moved to public_health.gold and renamed gold_19. Comments corrected (score under
 --               rescale_missing, workforce null rule, is_high_burden vs quintile, check queries).
 --               No logic change.
+--   2026-10-20  Reasons for the values recorded from D-56 (closes O-13). No logic change.
 -- ========================================
 
 CREATE OR REPLACE TABLE public_health.gold.priority_weight_params AS
@@ -244,12 +256,12 @@ SELECT planning_unit_key,
        CASE WHEN is_ranked
             THEN rank() OVER (PARTITION BY burden_indicator_key, weight_set, eligibility_config, is_ranked
                               ORDER BY score DESC, burden_rate_per_100k DESC) END AS rank,
-       area_code,
-       area_name,
-       unit_level,
-       burden_rate_per_100k,
-       burden_quintile,
-       is_high_burden
+       area_code,                                   -- extra
+       area_name,                                   -- extra
+       unit_level,                                  -- extra
+       burden_rate_per_100k,                        -- extra
+       burden_quintile,                             -- extra
+       is_high_burden                               -- extra
 FROM ranked;
 
 

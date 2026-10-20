@@ -44,6 +44,7 @@ docs/
 ├── 04-pipeline/                           each layer, per domain
 │   ├── bronze/
 │   │   ├── README.md                        bronze overview
+│   │   ├── bronze-quality-checks.md         every bronze check: loader checks, QC, the gate
 │   │   ├── diseases.md · facilities.md · workforce.md · socioeconomic.md
 │   │   ├── geography.md                     PSGC API landing and HDX boundaries
 │   │   └── population.md                    census population inside the PSGC payload
@@ -51,6 +52,7 @@ docs/
 │   │   ├── README.md                        silver overview
 │   │   ├── diseases.md · facilities.md · workforce.md · socioeconomic.md
 │   │   ├── geography.md · population.md
+│   │   ├── reference-maps.md                builders and the reviewed reference CSVs
 │   │   ├── silver-quality-checks.md         every silver check: gates, domain and cross-domain QC
 │   │   ├── reconciliation.md                how every bronze row is accounted for in silver
 │   │   └── rebuild-strategy.md              why silver rebuilds in full; cost recommendations
@@ -73,7 +75,7 @@ docs/
 ├── 06-evidence/                           screenshots and query outputs, by run
 │   ├── README.md                            what each folder proves and how it was captured
 │   ├── architecture/ · bronze/ · silver/ · gold/
-│   ├── idempotency/                         run-01/, run-02/, run-comparison.md
+│   ├── idempotency/                         run-01/ … run-03/, run-comparison.md
 │   └── reconciliation/                      results for the method in 04-pipeline/silver/reconciliation.md
 ├── 07-operations/
 │   ├── setup-guide.md · runbook.md · troubleshooting.md

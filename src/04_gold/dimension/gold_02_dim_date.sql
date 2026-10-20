@@ -1,29 +1,65 @@
 -- ========================================
 -- Builds public_health.gold.dim_date
---   One row is: one reporting period under one period convention (year, month, week or snapshot date)
---   Primary key: date_key (BIGINT, xxhash64 of the natural key or grain, stable across rebuilds)
+--   One row is: one reporting period under one period convention (year, month, week or
+--   snapshot date)
+--   Primary key: date_key = xxhash64(period_basis, period_label). The same period gives the
+--                same key on every rebuild.
 --   Natural key: (period_basis, period_label)
-
+-- Previous file name: gold_v2_12_dim_date.sql
+--
 -- Reads
---   public_health.silver.diseases_metric_silver
---   public_health.silver.diseases_deaths_age_silver
---   public_health.silver.population_silver
---   public_health.silver.workforce_headcount_silver
---   public_health.silver.workforce_area_denominator_silver
---   public_health.silver.facilities_metric_silver
---   public_health.silver.facilities_bed_occupancy_silver
---   public_health.silver.facilities_registry_silver
---   public_health.silver.socioeconomic_poverty_silver
---   public_health.silver.socioeconomic_health_expenditure_share_silver
---   public_health.silver.socioeconomic_health_expenditure_per_capita_silver
-
+--   public_health.silver.diseases_metric_silver          every period, with its dates (weeks too)
+--   public_health.silver.diseases_deaths_age_silver      years
+--   public_health.silver.population_silver               census years
+--   public_health.silver.workforce_headcount_silver      years
+--   public_health.silver.workforce_area_denominator_silver years
+--   public_health.silver.facilities_metric_silver        years
+--   public_health.silver.facilities_bed_occupancy_silver years
+--   public_health.silver.facilities_registry_silver      one snapshot date
+--   public_health.silver.socioeconomic_poverty_silver    years
+--   public_health.silver.socioeconomic_health_expenditure_share_silver      years
+--   public_health.silver.socioeconomic_health_expenditure_per_capita_silver years
+--
+-- Period conventions (period_basis)
+--   calendar_year         1 January to 31 December. period_label = 'yyyy'.
+--   calendar_month        one calendar month (DOH FOI dengue).
+--   iso_week              UP NOAH: one ISO week, Monday to Sunday. period_label = 'yyyy-Www'.
+--                         Not approximated (D-46).
+--   iso_week_ending_date  HDX dengue: the date closes its week, which runs from the date minus
+--                         6 days to the date (D-44). period_label = the date ('yyyy-MM-dd').
+--                         Show it as "week ending <date>" (gold 23 does).
+--   snapshot              the facility registry as of one date.
+--   For both weekly bases, year and week are the ISO year and ISO week, so a few edge weeks
+--   belong to the year before (HDX week ending 2021-01-03 is ISO 2020 week 53).
+--
 -- Rules
---   * Periods come from the silver facts: every period of diseases_metric_silver, every year
---     of the yearly silver tables, and one snapshot date for the facility registry.
+--   * Periods come from the silver tables: every period of diseases_metric_silver (with the
+--     start and end dates silver writes), every year of the yearly silver tables, and one
+--     snapshot date for the facility registry.
+--   * period_label is the silver period_key unchanged. The facts build date_key from the same
+--     two values, so never reformat the label here.
 --   * The registry snapshot is its latest as-of date (the later of the NHFR and HFSRB dates).
---   * period_basis source_date_unconfirmed: HDX weekly dengue rows whose date meaning (week
---     start or end) is not confirmed. Start and end dates stay null for weekly dengue until
---     the week convention is confirmed.
+--   * is_pandemic_period = year between pandemic_year_from and pandemic_year_to (settings in
+--     [0], recorded in build_log.parameters). The team agreed 2020-2022 on 2026-10-19 (O-14).
+--     The COVID flag on PhilHealth claims in silver (2020-2021) is a separate setting.
+--
+-- Build steps (write-audit-publish)
+--   [0] build id and settings
+--   [1] __inputs     every input, with the build that wrote it and its latest silver QC
+--   [2] __candidate  the candidate rows
+--   [3] __gates      every gate must have failures = 0
+--   [4] stop if a gate failed: the failed build is logged, the published table is not touched
+--   [5] write the table from the candidate (full rebuild)
+--   [6] record the build in quality.build_log and quality.build_inputs
+--   [7] drop the staging tables, then show the summary
+--
+-- History
+--   2026-10-14  Written for the combined data model (from gold_12, v1).
+--   2026-10-20  Moved to public_health.gold and renamed gold_02. Weekly conventions of D-44 and
+--               D-46: the gate accepts iso_week and iso_week_ending_date (the two *_unconfirmed
+--               values are gone); weekly dates come from silver; new gate for weekly dates.
+--               'model' removed from the build log parameters. The weekly date_key values
+--               change with the new period_basis, so G12 differs once after this rebuild.
 -- ========================================
 
 -- [0] build id and settings: one value each for the whole build
@@ -34,16 +70,18 @@ DECLARE OR REPLACE VARIABLE gold_target_version BIGINT DEFAULT NULL;
 -- false: a silver table written by a notebook is allowed. Gold inputs always need one.
 DECLARE OR REPLACE VARIABLE strict_input_builds BOOLEAN DEFAULT false;
 -- true : a silver input whose latest QC (quality.v_table_health) has a FAIL stops the build.
+--        No QC run does not stop it; it makes the approval provisional (step [4]).
 DECLARE OR REPLACE VARIABLE block_on_silver_qc_fail BOOLEAN DEFAULT true;
 DECLARE OR REPLACE VARIABLE code_version STRING DEFAULT NULL;   -- Git commit, if you pass one
 DECLARE OR REPLACE VARIABLE job_run_id STRING DEFAULT NULL;     -- {{job.run_id}} from a job
-DECLARE OR REPLACE VARIABLE pandemic_year_from INT DEFAULT 2020;   -- open decision 5
+-- Pandemic period (O-14, agreed 2026-10-19). Recorded in build_log.parameters.
+DECLARE OR REPLACE VARIABLE pandemic_year_from INT DEFAULT 2020;
 DECLARE OR REPLACE VARIABLE pandemic_year_to INT DEFAULT 2022;
 
 
 -- ========================================
--- [1] inputs: one row per table or reviewed list read, with the version its latest succeeded
---     build wrote and the status of its latest silver QC (null = no build row, no QC run).
+-- [1] inputs: one row per table read, with the version its latest succeeded build wrote and
+--     the status of its latest silver QC (null = no build row, no QC run).
 -- ========================================
 CREATE OR REPLACE TABLE public_health.gold.dim_date__inputs AS
 SELECT t.input_kind, t.input_table, t.source_file, t.input_rows,
@@ -102,6 +140,7 @@ LEFT JOIN public_health.quality.v_table_health AS h
 -- ========================================
 -- [2] candidate rows
 -- ========================================
+-- every year that a yearly silver table holds
 CREATE OR REPLACE TEMP VIEW dim_date_years AS
 SELECT CAST(population_year AS INT) AS y FROM public_health.silver.population_silver
 UNION SELECT CAST(year AS INT) FROM public_health.silver.workforce_headcount_silver
@@ -113,6 +152,8 @@ UNION SELECT CAST(year AS INT) FROM public_health.silver.diseases_deaths_age_sil
 UNION SELECT CAST(year AS INT) FROM public_health.silver.socioeconomic_health_expenditure_share_silver
 UNION SELECT CAST(year AS INT) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver;
 
+-- disease periods as silver writes them (weekly start and end dates included), calendar years,
+-- and the registry snapshot
 CREATE OR REPLACE TEMP VIEW dim_date_all AS
 SELECT DISTINCT period_basis, period_grain, period_key AS period_label, CAST(year AS INT) AS year,
        CAST(month AS INT) AS month, CAST(week AS INT) AS week, period_start, period_end
@@ -143,7 +184,9 @@ FROM dim_date_all;
 
 
 -- ========================================
--- [3] gates: every row must have failures = 0
+-- [3] gates: every row must have failures = 0.
+--     "natural key not unique" also catches silver writing two different date sets for one
+--     period. The weekly gate repeats the silver ISO rule for the dates gold publishes.
 -- ========================================
 CREATE OR REPLACE TABLE public_health.gold.dim_date__gates AS
 SELECT 'candidate has no rows' AS gate, CAST(count(*) = 0 AS INT) AS failures
@@ -172,8 +215,16 @@ UNION ALL
 SELECT 'period_grain outside year, month, week, snapshot', count(*) FROM public_health.gold.dim_date__candidate WHERE period_grain NOT IN ('year', 'month', 'week', 'snapshot') OR period_grain IS NULL
 UNION ALL
 SELECT 'period_basis outside the known conventions', count(*) FROM public_health.gold.dim_date__candidate
-WHERE period_basis NOT IN ('calendar_year', 'calendar_month', 'week_number_unconfirmed',
-                           'source_date_unconfirmed', 'snapshot')
+WHERE period_basis NOT IN ('calendar_year', 'calendar_month', 'iso_week', 'iso_week_ending_date', 'snapshot')
+   OR period_basis IS NULL
+UNION ALL
+SELECT 'weekly period without dates, not 7 days, or not its ISO week and year (D-44, D-46)', count(*)
+FROM public_health.gold.dim_date__candidate
+WHERE period_grain = 'week'
+  AND (period_start_date IS NULL OR period_end_date IS NULL
+       OR period_end_date <> date_add(period_start_date, 6)
+       OR weekofyear(period_end_date) <> week
+       OR extract(YEAROFWEEK FROM period_end_date) <> year)
 UNION ALL
 SELECT 'year missing, month outside 1 to 12 or week outside 1 to 53', count(*) FROM public_health.gold.dim_date__candidate WHERE year IS NULL OR month NOT BETWEEN 1 AND 12 OR week NOT BETWEEN 1 AND 53
 UNION ALL
@@ -185,6 +236,7 @@ SELECT 'no registry snapshot period', CAST(count_if(period_basis = 'snapshot') =
 -- ========================================
 -- [4] stop if a gate failed. The failed build is logged first and the staging tables are kept:
 --     SELECT * FROM public_health.gold.dim_date__gates WHERE failures <> 0
+--     approval: provisional while a silver input has no QC run or has WARN findings to review.
 -- ========================================
 CREATE OR REPLACE TEMP VIEW dim_date_build_log AS
 SELECT gold_build_id                                   AS build_id,
@@ -195,7 +247,7 @@ SELECT gold_build_id                                   AS build_id,
        current_timestamp()                             AS finished_at,
        CASE WHEN g.failed_gates = 0 THEN 'succeeded' ELSE 'failed' END AS status,
        code_version                                    AS code_version,
-       to_json(named_struct('model', 'v2', 'approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds, 'pandemic_year_from', pandemic_year_from, 'pandemic_year_to', pandemic_year_to)) AS parameters,
+       to_json(named_struct('approval', q.approval, 'silver_qc', q.silver_qc, 'strict_input_builds', strict_input_builds, 'pandemic_year_from', pandemic_year_from, 'pandemic_year_to', pandemic_year_to)) AS parameters,
        job_run_id                                      AS run_id,
        CASE WHEN g.failed_gates > 0 THEN substr(concat('gates failed: ', g.failed_names), 1, 500) END AS error_message
 FROM (SELECT count_if(failures <> 0) AS failed_gates,
@@ -230,7 +282,9 @@ SELECT * FROM public_health.gold.dim_date__candidate;
 
 
 -- ========================================
--- [6] record the build. If your runtime rejects this SET VAR, delete it (version = null).
+-- [6] record the build, with the table version just written. If your runtime rejects this
+--     SET VAR, delete it: the version stays null, and freshness checks (G06,
+--     mart_evidence_readiness) cannot compare this table.
 -- ========================================
 SET VAR gold_target_version = (SELECT max(version) FROM (DESCRIBE HISTORY public_health.gold.dim_date));
 
@@ -253,12 +307,14 @@ FROM public_health.gold.dim_date__inputs;
 
 
 -- ========================================
--- [7] summary, then remove the staging tables
+-- [7] remove the staging tables, then show the summary
 -- ========================================
 DROP TABLE IF EXISTS public_health.gold.dim_date__candidate;
 DROP TABLE IF EXISTS public_health.gold.dim_date__gates;
 DROP TABLE IF EXISTS public_health.gold.dim_date__inputs;
 
+-- Summary by convention. Expect without_dates = 0 for every basis (weekly dates now come from
+-- silver), and the bases calendar_year, calendar_month, iso_week, iso_week_ending_date, snapshot.
 SELECT period_basis, period_grain, count(*) AS periods, min(year) AS first_year, max(year) AS last_year,
        count_if(period_start_date IS NULL) AS without_dates, min(period_label) AS first_label
 FROM public_health.gold.dim_date

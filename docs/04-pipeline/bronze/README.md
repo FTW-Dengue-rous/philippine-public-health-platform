@@ -23,6 +23,7 @@ Status date: 2026-10-19 (bronze closed: code, QC and docs done).
 | [facilities.md](facilities.md) | Facility registries, PSA facility tables, bed occupancy, OSM health sites |
 | [workforce.md](workforce.md) | FHSIS health workers, PSA government practitioners, PSMO oncologists |
 | [socioeconomic.md](socioeconomic.md) | Poverty, health expenditure, child mortality |
+| [bronze-quality-checks.md](bronze-quality-checks.md) | Every bronze check: loader checks, QC codes, the gate, what to do on a failure |
 
 ## How a load works
 
@@ -95,6 +96,8 @@ Bronze QC checks that each load is **complete and faithful to its source**. Busi
 | `geography_bronze_qc.py` | GB00–GB13 | Landing batch complete, row and code counts, codes unique, stored JSON = landed JSON, lineage, load log |
 | `admin_boundaries_bronze_qc.py` | HB00–HB14 | Counts per admin level, fingerprints, p-codes and names, geometry types, parent references |
 | `psgc_population_bronze_qc.py` | B01–B16 subset | The population JSON parses; values readable as numbers |
+
+Every check in detail: [bronze quality checks](bronze-quality-checks.md).
 
 YAML overrides (`qc.skip_checks`, `qc.severity`) are validated, B00 can't be skipped, and every override is written into `qc_results`, so a switched-off check stays visible.
 

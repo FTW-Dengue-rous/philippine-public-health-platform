@@ -1,13 +1,13 @@
 # Gold layer (`src/04_gold`)
 
-The gold layer prepares the cleaned silver data for analysis. It builds **data model v2**: 5 dimensions and 4 facts. It also builds the seeds, reference tables, views and marts that the LUNASaan? dashboard reads.
+The gold layer prepares the cleaned silver data for analysis. It builds the gold data model: 5 dimensions and 4 facts. It also builds the seeds, reference tables, views and marts that the LUNASaan? dashboard reads.
 
 Use this guide to rebuild the layer, understand what each row represents, and choose the right data for a query.
 
 | Setting | What you need to know |
 |---|---|
 | Catalog / schema | `public_health.gold` |
-| Model | Data model v2: the combined model agreed on 2026-10-14. Every build records `parameters.model = 'v2'` in `quality.build_log`. |
+| Model | The combined model agreed on 2026-10-14. It was called "data model v2" while it was tested in `test_gold2`. It is the final model. |
 | Inputs | Silver tables and reviewed seeds. Gold never reads bronze. |
 | Table build pattern | Write a candidate, check it, then publish it. The build stops if any gate fails. After publishing, it records the build in `quality.build_log` and `quality.build_inputs`. |
 | Checks after the build | Run `gold_qc.py` against the published tables. It runs G01–G13. If the script itself crashes, it records G00. See [section 8](#8-quality). |
@@ -20,18 +20,16 @@ If you are rebuilding gold, start with section 1. If you are querying it, read t
 
 ## 1. Folder layout and run order
 
-Run the quality setup and the required silver builds first. Then run the gold files in this order:
+The setup job creates the `public_health.gold` schema, with the other schemas and the quality tables. Gold has no setup file of its own: a gold file stops if the schema is missing. Run the setup and the required silver builds first. Then run the gold files in this order:
 
-1. Run `gold_00_setup.sql` in the root folder.
-2. Run the files in `dimension/`.
-3. Run the files in `fact/`.
-4. Run the files in `mart/`.
+1. Run the files in `dimension/`.
+2. Run the files in `fact/`.
+3. Run the files in `mart/`.
 
 Within each folder, run the files in alphabetical order. The number in each file name gives its run order. Use the dependency table below when checking what a file needs.
 
 ```
 04_gold/
-├── gold_00_setup.sql
 ├── dimension/
 │   ├── gold_01_dim_geography.sql
 │   ├── gold_02_dim_date.sql
@@ -63,7 +61,6 @@ Within each folder, run the files in alphabetical order. The number in each file
 
 | File | Builds | Object | Previous file name | Must run after |
 |---|---|---|---|---|
-| 00 | schema `public_health.gold` | — | gold_v2_00 | quality setup |
 | 01 | `dim_geography` | table | gold_v2_11 | silver geography, admin boundaries |
 | 02 | `dim_date` | table | gold_v2_12 | silver |
 | 03 | `dim_data_source` | table | gold_v2_13 | — |
@@ -134,12 +131,12 @@ The dimensions describe the areas, periods, sources, facilities and diseases use
 
 **How the build works**
 
-- **Snapshot:** use the latest `geography_silver` snapshot, identified by the latest `content_checksum`. This snapshot supplies the codes, names, levels and hierarchy.
+- **Snapshot:** use one `geography_silver` snapshot: the `content_checksum` of the row processed last. This snapshot supplies the codes, names, levels and hierarchy.
 - **Levels:** keep region, province, city, municipality, submunicipality (Manila) and the Special Geographic Area. Exclude barangays.
 - **Region:** take the first 2 digits of the PSGC code.
 - **Province:** take the first 5 digits only when that code identifies a province row. Leave the province unset for a highly urbanized city (HUC).
-- **Planning units:** treat each province without its HUCs, each HUC, and NCR as separate units. This rule remains a proposal (open decision 2).
-- **`broad_unit_key`:** leave it null for HUCs outside NCR. This table has no HUC-to-province crosswalk.
+- **Planning units:** treat each province without its HUCs, each HUC, and NCR as separate units. The rule was built as proposed (O-01).
+- **`broad_unit_key`:** leave it null for HUCs outside NCR. The province of such a HUC comes from `huc_province_crosswalk` (file 11), which runs after this table.
 - **Boundaries:** read `area_sqkm`, `center_lat`, `center_lon` and `has_boundary` from the HDX boundaries. Join on the matched `psgc_code` and level. Use the latest source version for each level.
 - **Named areas:** add Philippines, foreign country, undivided Maguindanao and the 4 NCR districts. These 7 areas have no PSGC code.
 - **`snapshot_date`:** use the quarter end of the PSGC version. For example, Q2_2024 becomes 2024-06-30.
@@ -158,8 +155,9 @@ The dimensions describe the areas, periods, sources, facilities and diseases use
 
 - Include every period in `diseases_metric_silver`. Add every year in the yearly silver tables and one snapshot date for the facility registry.
 - **Registry snapshot:** use the later of the NHFR and HFSRB as-of dates.
-- **HDX weekly dengue:** set `period_basis = source_date_unconfirmed`. Leave the start and end dates null until the team confirms the week convention (D4).
-- **`is_pandemic_period`:** use the two variables at the top of the file to set the pandemic period (open decision 5).
+- **Weekly dengue (D-44, D-46):** HDX weeks have `period_basis = iso_week_ending_date`: the date closes its week, which runs from the date minus 6 days to the date. UP NOAH weeks have `period_basis = iso_week` (Monday to Sunday). Both take the ISO week and ISO year, so a few edge weeks belong to the year before (HDX week ending 2021-01-03 is in 2020). Start and end dates come from silver.
+- **`period_label`:** keep the silver `period_key` unchanged. It is part of the key, so a mart adds display words such as "week ending <date>" instead of reformatting it.
+- **`is_pandemic_period`:** set by two variables at the top of the file: 2020–2022, agreed 2026-10-19 (O-14). PhilHealth claims carry their own COVID flag (2020–2021) in silver.
 
 **Main columns:** `period_basis`, `period_label`, `period_grain`, `year`, `period_start_date`, `period_end_date`, `is_pandemic_period`.
 
@@ -174,7 +172,7 @@ The dimensions describe the areas, periods, sources, facilities and diseases use
 **How to maintain and use it**
 
 - **`value_type`:** classify each source as `registered`, `reported`, `modelled`, `census` or `survey_estimate`. The marts use this field to keep modelled and reported values separate.
-- **`sharing`:** use `open` for data you may export. Use `restricted` for aggregates only, with small cells suppressed. The restricted rule applies to FOI releases such as PhilHealth claims and DOH hospital beds.
+- **`sharing`:** use `open` for data you may export. Use `restricted` for aggregates only, with cells under 3 suppressed. "Restricted" is our own request commitment (D-47): academic use and aggregates only. The release letters set no terms. The restricted rule applies to FOI releases such as PhilHealth claims and DOH hospital beds.
 - **`source_domain` and `used_in`:** use these fields to see what each source covers and which gold tables read it.
 
 ### `dim_facility` (04)
@@ -319,7 +317,7 @@ Store one indicator per row in a long table. The datasets cover different years:
 
 | `indicator_name` | `indicator_category` | From | Notes |
 |---|---|---|---|
-| `population` | `census` | `population_silver` (latest snapshot, areas in `dim_geography`) | Map `VALID` and `VALID_WITH_NOTE` to ok. Set province coverage to `province_excl_huc` in 2024 and `province_coverage_unconfirmed` for 2015 and 2020 |
+| `population` | `census` | `population_silver` (latest snapshot, areas in `dim_geography`) | Map `VALID` and `VALID_WITH_NOTE` to ok. Set province coverage to `province_excl_huc` in the years of the setting `census_province_excl_huc_years` (2024) and `province_coverage_unconfirmed` for 2015 and 2020 |
 | `population` | `reported` | `workforce_area_denominator_silver` | Use the population printed in the FHSIS tables. Set `label_under_review` and leave the value null when an area has a proposed or rejected label override |
 | `poverty_incidence_pct`, `poor_population` | `all` | `socioeconomic_poverty_silver` | Create two rows per area and year. Keep `comparison_eligible` and `exclusion_reason` on both rows |
 | `health_expenditure_share_pct` | financing agent | expenditure share silver | National (area `ph`). Only `category_level = 1` adds up to 100 |
@@ -364,7 +362,7 @@ Use this view to place the 17 HUCs outside NCR in their provinces. It matches a 
 
 ### `area_coverage_map` (view) (11)
 
-Use this view to map published geographic coverage to planning units. Sources may include or exclude HUCs in their province totals. This map handles those differences for FHSIS, poverty, IHME and HDX rows.
+Use this view to map published geographic coverage to planning units. Sources may include or exclude HUCs in their province totals. This map handles those differences for FHSIS, poverty, IHME and HDX rows. IHME province estimates include their HUCs (D-42). HDX province rows exclude the cities the source lists apart (D-43).
 
 | Mapping outcome | What it means |
 |---|---|
@@ -509,7 +507,7 @@ The view reshapes marts 16 and 17 into one long list. It calculates no new measu
 
 Use these objects for **P1 and P2**. They identify areas that combine high disease burden with hospital, primary care, workforce and socioeconomic gaps. They also show how rankings change when you change weights or eligibility rules.
 
-The fifths, the "two of three" rule and the 3 weight sets remain **proposals**.
+The team agreed the fifths, the "two of three" rule and the 3 weight sets, with a reason for each (D-56). Read `weight_set = equal` with `eligibility_config = complete_only` by default. The other weight sets are sensitivity tests.
 
 | Property | Details |
 |---|---|
@@ -549,7 +547,7 @@ Use this view for **K1, specialist treatment capacity**. It identifies provinces
 
 | Property | Details |
 |---|---|
-| **Grain / key** | One row per province (or NCR) as IHME publishes it. Key (`kidney_unit_key`, `unit_basis`); `unit_basis` = `planning` or `broad` (province plus its HUCs, D5) |
+| **Grain / key** | One row per province (or NCR) as IHME publishes it. Key (`kidney_unit_key`, `unit_basis`); `unit_basis` = `planning` or `broad` (province plus its HUCs, D-42). Broad units can be comparable since 2026-10-18 |
 | **Reads** | `mart_locality_service_presence`, `huc_province_crosswalk`, `dim_disease`, `dim_geography`, `dim_date`, `dim_data_source`, `fact_disease_metric`, `fact_facility_capacity` |
 
 ### `mart_dengue_peak_capacity` (23)
@@ -557,6 +555,8 @@ Use this view for **K1, specialist treatment capacity**. It identifies provinces
 Use this view to ask: **where were historical dengue peaks largest relative to current recorded hospital capacity?** It also supports **N3**: when and where dengue peaks occur, how concentrated they are, and which areas repeatedly show high burden.
 
 Keep weekly peaks (HDX and UP NOAH) and monthly peaks (DOH FOI) in separate rankings.
+
+Use UP NOAH or DOH FOI for the timing of regional peaks. From 2018, HDX peak weeks run 1–2 weeks behind the DOH counts (D-45). HDX peaks read "week ending <date>".
 
 This view does not estimate which areas would exceed capacity. That requires the full dengue capacity replay in stretch-2.
 
@@ -567,7 +567,7 @@ This view does not estimate which areas would exceed capacity. That requires the
 
 ### `mart_evidence_readiness` (24)
 
-Use this view for the **pipeline status page**. It shows whether each silver and gold table has been built, checked and built from the latest inputs. It includes `schema_name` and `model`.
+Use this view for the **pipeline status page**. It shows whether each silver and gold table has been built, checked and built from the latest inputs. It includes `schema_name`, which separates `public_health.gold` from the old test schemas.
 
 | Property | Details |
 |---|---|
@@ -584,7 +584,7 @@ Use this view for the **pipeline status page**. It shows whether each silver and
 | **Quintiles** | Rank only units with a value. Quintile 1 is lowest; 5 is highest. Give equal values the same quintile. |
 | **IHME attribution** | Show the IHME attribution line with modelled IHME values. |
 | **OSM attribution** | Show "© OpenStreetMap contributors". |
-| **Restricted FOI data** | Publish aggregates only. |
+| **Restricted FOI data** | Publish aggregates only and suppress cells under 3 (D-47). |
 
 ---
 
@@ -661,14 +661,16 @@ Carry these qualifications into dashboard labels, comparisons and future changes
 
 | Decision or limit | Current treatment |
 |---|---|
-| **D2: planning units** | Treat each province without its HUCs, each HUC, and NCR as separate units. The pipeline applies this rule as a proposal. |
+| **O-01: planning units** | Built as proposed: each province without its HUCs, each HUC, and NCR. Open only on the Sulu population (D-41). |
 | **D3: source selection** | The `source_priority` rows remain a proposal for team review. |
-| **D4: HDX week convention** | Every HDX peak falls on a Sunday, the DOH morbidity week start. The convention remains unconfirmed. Until the team confirms it, use week numbers or the source's dated labels. Do not present them as confirmed week dates. |
-| **D5: HUC coverage in IHME and HDX** | The sources do not confirm whether province totals include their HUCs. Mark affected rows as `not_separable` in `area_coverage_map`. Set kidney `broad` units to `comparison_eligible = false`. |
+| **D-44 / D-46: week convention** | Closed. Each HDX date closes its week (ISO week and ISO year of the date). UP NOAH weeks are ISO weeks, not approximated. Applied in silver (2026-10-19) and `dim_date` (2026-10-20). |
+| **D-45: HDX lag** | From 2018, HDX counts run 1–2 weeks behind and below the DOH FOI counts. Use UP NOAH or DOH FOI for regional peak timing. |
+| **D-42 / D-43: HUC coverage in IHME and HDX** | Closed. IHME province estimates include their HUCs: a province with a HUC is `not_separable` for planning units, and the kidney study compares it at the broad unit. HDX province rows exclude the cities the source lists apart. The silver basis names still end in `_unconfirmed`; renaming them is a silver reference change. |
 | **Sulu population** | The source has no 2024 census count for Sulu. Keep its planning-unit population and rates null. Do not fall back to the 2020 count. See runbook incident 6. |
-| **Proposal values** | Poverty bands (10/20/30%), gap fifths, the "two of three" workforce rule, the 3 weight sets and 80% dialysis station completeness are starting values for team review. |
+| **Mart values (D-56)** | Poverty bands (10/20/30%, display only), gap fifths, the "two of three" workforce rule, the 3 weight sets and 80% dialysis station completeness. Agreed with a reason per value; evidence queries in `gold_o13_evidence.sql`. Label fifths "lowest 20% of planning units", never "inadequate". |
+| **Pandemic period (O-14)** | 2020–2022 in `dim_date`, agreed 2026-10-19. |
 | **Authorized beds** | These are licensed beds. They do not measure staffed beds. |
-| **Weighted occupancy** | The rate uses eligible records only: BOR 150 and below. It therefore understates load where many records exceed 150, mostly in government hospitals. Label it "eligible records". |
+| **Weighted occupancy** | The rate uses eligible records only: BOR 150 and below. It therefore understates load where many records exceed 150, mostly in government hospitals. Label it "eligible records". The bed basis and reporting period are not confirmed by HFSRB yet (O-12). |
 | **Unbuilt stretch items** | Immunization coverage and the full dengue capacity replay (BQ2) remain outside the current build. |
 
 ---
@@ -713,14 +715,16 @@ For versions, libraries and the rebuild steps for every layer, see `docs/platfor
 
 | Date | Change |
 |---|---|
-| 2026-10-11 | Created the first gold SQL from Gold Layer Proposal v1 in `public_health.test_gold`. Set up write-audit-publish builds and lineage through `build_log` / `build_inputs`. |
-| 2026-10-12 | Aligned the SQL columns with Proposal v1.1 and marked proposed extra columns. Applied the silver QC changes. Reviewers flagged too many fact tables, a data dictionary that was hard for non-technical readers to use, and the missing conceptual model. They also requested sample datasets. |
+| 2026-10-11 | Created the first gold SQL from Gold Layer Proposal v3 in `public_health.test_gold`. Set up write-audit-publish builds and lineage through `build_log` / `build_inputs`. |
+| 2026-10-12 | Aligned the SQL columns with Proposal v3.1 and marked proposed extra columns. Applied the silver QC changes. Reviewers flagged too many fact tables, a data dictionary that was hard for non-technical readers to use, and the missing conceptual model. They also requested sample datasets. |
 | 2026-10-13 | Ran all v1 dimensions and facts in `test_gold`, plus `context_health_expenditure`. The built **data model v1** had 6 dimensions and 9 facts. The mentor shared a conceptual model covering Date, Geography, Facilities, Disease metric, Population, Socio-economic, Healthcare workers capacity and Facilities capacity. Compared option v2 (three stars) with option v3 (based on the mentor's model). |
 | 2026-10-14 | Agreed on **data model v2**: the combined model with 5 dimensions and 4 facts. Built it in `test_gold2` with no reads from `test_gold`. Retired the labels "v4" (SQL) and "v3" (mentor proposal) for this model. Renamed `dim_period` → `dim_date` and `dim_source` → `dim_data_source`. Combined registry snapshot, published and occupancy data in `fact_facility_capacity`. Combined metric and deaths-by-age data in `fact_disease_metric`. Moved the profession list onto `fact_workforce_capacity`. Combined population, poverty and expenditure in `fact_area_indicator`. Ran all 10 model files. Every gate returned 0. |
 | 2026-10-14 (evening) | Added TB programme rows and PhilHealth claims to `fact_disease_metric`. Added `sex` to the grain, keeping the model at 4 facts. Added `ref_osm_healthsite_point` outside the model. Published occupancy at 3 geographic levels × 3 breakdowns because the first run suppressed most city cells. Fixed HDX `is_complete_year` with a contiguity and span test. Passed `source_role` through from silver as `cross_check` rather than `alternate`. |
 | 2026-10-14 (night) | Wrote and ran the seeds, crosswalk, default views and marts. Applied the reviewer's 5 points to the marts and documentation only: join `dim_facility` to geography only; define a selection contract per fact through default views; label the two denominators; ask where dengue peaks were "largest relative to current recorded capacity"; label access distance as distance to the nearest locality with a hospital recorded. Placed the kidney study under specialist treatment capacity. |
 | 2026-10-16 | Completed **full run 1**, from bronze to marts: 00:09–01:13 PHT (UTC+8). |
 | 2026-10-17 | Completed **full run 2**, end to end: 13:39–14:49 PHT. |
-| 2026-10-18 | Promoted gold v2 to **`public_health.gold`**. Renamed the files `gold_00`–`gold_24` and grouped them into `dimension/`, `fact/` and `mart/`. File numbers now give the run order. Added `gold_qc.py` with G01–G13, including the G12 idempotency check. Kept `test_gold2` until it is archived. Documented the type-cast rule (`CAST` in gold, `try_cast` in silver) and the ANSI mode requirement. |
+| 2026-10-18 | Promoted gold v2 to **`public_health.gold`**. Renamed the files `gold_01`–`gold_24` and grouped them into `dimension/`, `fact/` and `mart/`. File numbers now give the run order. Added `gold_qc.py` with G01–G13, including the G12 idempotency check. Kept `test_gold2` until it is archived. Documented the type-cast rule (`CAST` in gold, `try_cast` in silver) and the ANSI mode requirement. |
+| 2026-10-19 | Applied D-42 in `mart_kidney_case_study`: provinces with HUCs can be compared at the broad unit. Renamed the exclusion reason `province_estimate_assumed_to_include_its_huc` to `province_estimate_includes_its_huc`. Added `ds_small_cohort` and `mdr_small_cohort` to `mart_tb_case_study`. Dropped the `model` column from `mart_evidence_readiness`. The team agreed the mart values (D-56) and the pandemic period (O-14). |
+| 2026-10-20 | Applied the week convention (D-44, D-46) in `dim_date`: the gate accepts `iso_week` and `iso_week_ending_date`, and weekly dates come from silver. HDX peaks read "week ending <date>". Rewrote the comments of every file in one format. Removed the `model` label from the build log. Moved hard-coded counts and thresholds into named settings (`gold_01`, `gold_08`, `gold_09`). Null areas stay null in `dim_facility` and `ref_osm_healthsite_point`. Removed `gold_00_setup.sql`: the setup job creates the schema. The weekly `date_key` values change once, so G12 differs once after this rebuild. |
 
 For the table, column and question map, use the gold map workbook: `capstone_gold_v4_map.xlsx`. The planned filename is `capstone_gold_v2_map.xlsx`.
