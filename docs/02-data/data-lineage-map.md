@@ -2,7 +2,10 @@
 
 This page shows how each source flows from landing to the dashboard: source → bronze → silver → gold → mart. Use it to answer "which outputs change if this source changes?" and "where did this number come from?".
 
-Status date: 2026-10-19. The table-level map below is the design. **The exact lineage of the latest run lives in `public_health.quality.build_inputs`.** Use the queries in section 5 when you need certainty.
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
+The table-level map below is the design. **The exact lineage of the latest run is recorded in `public_health.quality.build_log` and `build_inputs` (defined in the [lineage and quality contract](../04-pipeline/quality/lineage-and-quality-contract.md), v1.3).** Use the queries in [section 5](#5-trace-lineage-from-the-quality-tables) when you need certainty. These tables are not yet implemented in this workspace; see the build-status note at the start of [section 5](#5-trace-lineage-from-the-quality-tables).
 
 ---
 
@@ -42,13 +45,14 @@ Rules that hold everywhere:
 - Every domain maps its areas to `geography_silver` through reference maps. No build matches by name.
 - Gold dimensions join to facts by surrogate keys. `dim_facility` joins to `dim_geography` only.
 
+
 ## 2. Source → bronze → silver
 
 | Domain | Source(s) | Bronze table | Silver table |
 |---|---|---|---|
 | Geography | `psgc` | PSGC bronze table (`psgc.bronze_table` in YAML) | `geography_silver` |
 | Population | `psgc_population` (payload in PSGC rows) | same PSGC table | `population_silver` |
-| Geography | `hdx_phl_admin` | `admin_boundaries_bronze` | `admin_boundaries_silver` |
+| Geography | `hdx_phl_admin` | `admin_boundaries_bronze` (not yet built) | `admin_boundaries_silver` (not yet built) |
 | Diseases | `doh_foi_dengue`, `upnoah`, `hdx_dengue`, PSA deaths entries, `doh_fhsis` (TB, morbidity), `ihme_gbd` | `diseases_*_bronze` (one per source) | `diseases_metric_silver` |
 | Diseases | `psa_deaths_region_annual` (age groups) | `diseases_psa_deaths_region_annual_bronze` | `diseases_deaths_age_silver` |
 | Diseases | `davao_hospital_pneumonia` | `diseases_davao_hospital_pneumonia_bronze` | `diseases_hospital_encounters_silver` |
@@ -60,7 +64,7 @@ Rules that hold everywhere:
 | Facilities | `doh_nhfr`, `doh_hfsrb_*` | `facilities_nhfr_bronze`, `facilities_hfsrb_*_bronze` | `facilities_id_map_silver`, `facilities_registry_silver` |
 | Facilities | PSA hospital/bed/BHS tables, `doh_fhsis_demographic` (BGY & BHS) | `facilities_psa_*_bronze`, `facilities_fhsis_primary_care_bronze` | `facilities_metric_silver` |
 | Facilities | `doh_foi_hospital_beds` | `facilities_bed_occupancy_bronze` | `facilities_bed_occupancy_silver` |
-| Facilities | `hdx_healthsites` (+ `admin_boundaries_silver`) | `facilities_hdx_healthsites_bronze` | `facilities_area_boundary`, `facilities_osm_point_silver` |
+| Facilities | `hdx_healthsites` (+ `admin_boundaries_silver`) | `facilities_hdx_healthsites_bronze` | `facilities_area_boundary` (not yet built), `facilities_osm_point_silver` (not yet built) |
 | Workforce | `doh_fhsis_demographic`, `psa_gov_practitioners` | `workforce_fhsis_health_workers_bronze`, `workforce_psa_gov_practitioners_bronze` | `workforce_headcount_silver` |
 | Workforce | `doh_fhsis_demographic` | same | `workforce_area_denominator_silver` |
 | Workforce | `psmo_oncologists` | `workforce_psmo_oncologists_bronze` | `workforce_specialist_silver` |
@@ -105,6 +109,8 @@ The exact source list of `diseases_metric_silver` is in `build_inputs` (query 5.
 | `mart_evidence_readiness` | `quality.v_latest_build`, `build_inputs`, `v_table_health` | About the data |
 
 ## 5. Trace lineage from the quality tables
+
+The `build_log`, `build_inputs`, and `v_latest_build` tables and views are defined in the [lineage and quality contract](../04-pipeline/quality/lineage-and-quality-contract.md) (v1.3) but are not yet implemented in this workspace. The queries below will work once the gold pass creates them. Until then, trace lineage manually from the silver row's `_source_key`, `_source_file`, and `_source_row_num` columns back to bronze.
 
 ### 5.1 What did the latest build of a table read?
 
@@ -162,3 +168,4 @@ The full eight-step walk is in the [lineage and quality contract](../04-pipeline
 | Date | Change |
 |---|---|
 | 2026-10-19 | Page written from the silver overview, gold README and job definition |
+| 2026-10-21 | History brought up to date: the workspace build-status caveats in the intro and section 5 (lineage tables not yet implemented here; gold not built in this workspace) were added 2026-10-20 but not recorded; intro pointer corrected to the section-5 note, where the note actually lives — no note was added at the end of section 1 |

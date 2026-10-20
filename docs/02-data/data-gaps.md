@@ -1,8 +1,11 @@
 # Data gaps
 
-This page lists the data the questions need but the team does not have, or has only in part. For each gap it says what it blocks, how the pipeline handles it now, and what would close it.
+This page lists the data the questions need but the team does not have, or has only in part. For each gap it says what it blocks, how the pipeline handles it now, and what would close it. The business questions and analytical question IDs (N1–N4, S1–S3, A1–A4, W1–W2, E1–E2, P1–P2) are defined in [problem and business context](../01-context/problem-and-business-context.md).
 
-Status date: 2026-10-20. Limits on how to *read* the data are in [limitations and recommendations](../01-context/limitations-and-recommendations.md), section 2. This page is about *missing* data.
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
+Limits on how to *read* the data are in [limitations and recommendations](../01-context/limitations-and-recommendations.md), section 2. This page is about *missing* data.
 
 ---
 
@@ -10,13 +13,15 @@ Status date: 2026-10-20. Limits on how to *read* the data are in [limitations an
 
 | ID | Missing data | Blocks | Current handling | What would close it |
 |---|---|---|---|---|
-| G-01 | Hospital admissions and bed use **per disease** | Bed sufficiency per disease; BQ2 full replay | BQ2 is stretch 2. Core dengue view compares peaks to capacity, not admissions | DOH admissions by disease and province; OHSRS hospital utilization (partly in eFOI 2026-5476) |
+| G-01 | Hospital admissions and bed use **per disease** | Bed sufficiency per disease; BQ2 full replay (previous scope) | BQ2 is previous scope (stretch 2). Core dengue view compares peaks to capacity, not admissions | DOH admissions by disease and province; OHSRS hospital utilization (partly in eFOI 2026-5476) |
 | G-02 | Daily or weekly hospital census | Surge modelling | Not modelled | DOH daily census (asked in R-02, not received) |
 | G-03 | Staffed beds | True capacity | Authorized beds used, labelled as licensed beds | HFSRB / OHSRS implementing beds |
 | G-04 | Patient residence for hospital care | Travel for care; patient-residence vs hospital distance | Claims show the place of care only | PhilHealth claims by patient address (not in R-03) |
 | G-05 | Immunization coverage | Prevention view for vaccine-preventable disease (stretch 1) | Not ingested | FHSIS immunization tables 2018–2025 (identified 2026-10-07) |
 | G-06 | Travel time or road network | Real access distance | Straight-line distance | Road network routing (OSM) |
 | G-07 | Monthly or weekly data for TB, pneumonia, heart disease | Seasonality and peaks outside dengue | Yearly views only | FHSIS monthly reports or FOI |
+| G-08 | 2024 regional all-cause death total not confirmed | N1 (cause-of-death shares by area) | PSA deaths file used as delivered; regional totals not independently confirmed | Confirm the 2024 PSA deaths file has complete regional totals |
+| G-09 | Validated facility coordinates for distance analysis | CON1 (distance to care) | Registry (NHFR + HFSRB) has no coordinates. OSM healthsite coordinates exist in bronze but `facilities_osm_point_silver` is not built, so no geocoded facility source is available. Distances use area centroids, not facility locations | Build OSM healthsite silver from the HDX GeoJSON; validate coordinates against the registry |
 
 ## 2. Gaps in coverage
 
@@ -34,6 +39,9 @@ Status date: 2026-10-20. Limits on how to *read* the data are in [limitations an
 | G-19 | Bed occupancy: 2018–2025 only; 2016–2017 sit in eFOI 2026-5476, not ingested | Pre-2018 baseline | Series starts 2018 |
 | G-20 | Poverty: 2021, 2023, 2025 only; some provinces not comparable with planning units | Poverty trend; equity in some provinces | `comparison_eligible = false` with reason |
 | G-21 | IHME and HDX province coverage of HUCs had to be inferred | Province comparisons | Closed by evidence (D-42, D-43); not confirmed by the publishers |
+| G-22 | S2 bed-occupancy reporting cohort is small for 2020–2024 (123–184 facilities) and much larger in 2025 (1,162) | S2 trend across years | 2020–2024 rows excluded as `private_only_year`; only 2025 rows are baseline-eligible (1,003). Do not compare the 2025 cohort with earlier years |
+| G-23 | BHS counts by municipality are available from FHSIS, not from PSA BHS | S3 (health stations at local level) | FHSIS municipality tab used for S3 |
+| G-24 | PSA hospitals and beds national annual series ends at 2015 | S1 long-term national trend | PSA region annual (2020–2024) used for trends instead |
 
 ## 3. Gaps in metadata
 
@@ -55,6 +63,8 @@ Status date: 2026-10-20. Limits on how to *read* the data are in [limitations an
 | Other PhilHealth claims datasets | Team chose the R-03 claims file only |
 | COVID datasets | Could overestimate facility need; stretch only |
 | Candidates found 2026-10-07 (FHSIS hypertension, NCD programme tables, PSA SDG tables, WHO vaccine-preventable disease cases) | Not decided; outside v3 questions |
+| Patient-level clinical data | Out of scope: all sources are aggregated or facility-level. The one restricted release with daily counts (Davao hospital pneumonia) stays in silver and is not redistributed ([scope](../01-context/scope.md)) |
+| HDX healthsites (`facilities_hdx_healthsites_bronze`, 16,032 rows) | Bronze loaded; `facilities_osm_point_silver` deferred — the silver transformation that extracts coordinates is not built in this workspace |
 
 ## 5. Priority to close
 
@@ -72,4 +82,5 @@ The data granularity the team asks publishers for is in [limitations and recomme
 | Date | Change |
 |---|---|
 | 2026-10-19 | Page written from the silver and gold limits, decision log and FOI notes |
+| 2026-10-21 | Integration pass: added G-08 (2024 regional deaths), G-09 (facility coordinates), G-22 (S2 cohort), G-23 (BHS municipality), G-24 (PSA national series to 2015); labelled BQ2 as previous scope in G-01; added patient-level clinical data and OSM silver deferral to section 4; added Owner/Last updated metadata and link to question framework. Corrected: `facilities_osm_point_silver` is not built (a supplied draft claimed it was built 2026-10-18) |
 | 2026-10-20 | Links point to the limitations and recommendations page (the old "Assumptions and limitations" page was split) |

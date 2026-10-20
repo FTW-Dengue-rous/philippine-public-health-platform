@@ -1,8 +1,23 @@
 # Architecture overview
 
+Owner: Jemma Santiago
+Last updated: 2026-10-20
+
 This page shows how the platform works. It covers the layers, where data lives, how the job runs and where checks happen. Read it before any layer page.
 
 Status date: 2026-10-20. Platform facts (versions, libraries, what to change outside Databricks) live in [reproducibility](../07-operations/reproducibility.md).
+
+## At a glance
+
+| Component | Technology |
+|---|---|
+| Compute | Serverless Spark (Python tasks) + serverless SQL warehouse |
+| Storage | Delta Lake on Unity Catalog (`public_health` catalog) |
+| Orchestration | Databricks Jobs via Declarative Automation Bundles (`databricks.yml`) |
+| CI/CD | GitHub Actions (lint, test, SQL lint, secret scan, bundle deploy) |
+| Version control | Git (GitHub, `dev` → `main` branching) |
+| Dashboard | Databricks AI/BI (Lakeview) with Genie |
+| Landing volume | Unity Catalog volume (`/Volumes/workspace/default/ftw-b12-de/groups/g5_landing`) |
 
 ---
 
@@ -43,7 +58,7 @@ flowchart TB
         SIL[silver per domain<br/>00_reference → builds → QC]
         XQC[qc_silver_cross_domain]
         GLD[gold_01 → 24<br/>dimension → fact → mart]
-        GQC[qc_gold<br/>G01–G13]
+        GQC[qc_gold<br/>G00–G13]
     end
 
     QUAL[(public_health.quality)]
@@ -120,7 +135,7 @@ Detail: `src/04_gold/README.md` and [gold docs](../04-pipeline/gold/README.md).
 
 ## 6. Orchestration
 
-One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public_health_job.yml` and deployed with Asset Bundles. A second job, `ph-public-health-setup` (`resources/ph_public_health_setup_job.yml`), creates the schemas, the quality tables and the load log. The pipeline runs it as its first task.
+One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public_health_job.yml` and deployed with Asset Bundles. A second job, `ph-public-health-setup` (`resources/ph_public_health_setup_job.yml`), creates the schemas, the quality tables and the load log. It runs `src/00_setup/schema_setup.sql` and `src/00_setup/quality_setup.sql`. The pipeline runs it as its first task.
 
 | Stage | Tasks | Waits for |
 |---|---|---|
@@ -130,14 +145,14 @@ One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public
 | 3. Silver | Geography first; then facilities, diseases, workforce, socioeconomic: `00_reference` → builds → domain QC | the domain gate and geography silver QC |
 | 4. Cross-domain QC | `qc_silver_cross_domain` | every silver QC task |
 | 5. Gold | `gold_01` → dimensions → facts → marts (task key = file name, files in `src/04_gold/{dimension,fact,mart}`); the setup job creates the `gold` schema | cross-domain QC |
-| 6. Gold QC | `qc_gold` (G01–G13) | `gold_24` |
+| 6. Gold QC | `qc_gold` (G00–G13) | `gold_24` |
 
 **Dependency rule:** a task waits for the tables it reads *and* for the QC of those tables. A FAIL stops everything downstream.
 
 | Job setting | Value |
 |---|---|
 | Concurrency | `max_concurrent_runs: 1` (PSGC and HDX loaders allow one writer) |
-| Compute | Serverless. Python tasks on environment `default` (pyyaml, openpyxl); `geo` adds shapely for the OSM point-in-polygon step. SQL tasks on a SQL warehouse |
+| Compute | Serverless. Python tasks on environment `default` (pyyaml, openpyxl); `geo` adds shapely<2.1 and numpy<2 for the OSM point-in-polygon step (shapely 2.1 requires numpy 2, which breaks pandas in other tasks). SQL tasks on a SQL warehouse |
 | Schedule | Defined, paused (Monday 06:00 Asia/Manila). Runs stay manual (D-59) |
 | Not in the job | You run these by hand: `src/01_ingestion` (PSGC and HDX API landing), the manual uploads for the other four domains (AD-17), and `builders/` (reference CSV generators) |
 
@@ -178,7 +193,7 @@ Plus two job-level gates:
 - **Preload gate** (`bronze_gate.py`): stops a domain's silver when a bronze source is FAIL, CRASHED, STALE or NOT_CHECKED (D-51).
 - **Silver-QC gate in gold**: every gold build refuses a silver input whose latest QC has a FAIL.
 
-Detail: [quality docs](../04-pipeline/quality/README.md).
+Detail: [quality control framework](../04-pipeline/quality/quality-control-framework.md).
 
 ## 9. Lineage
 
@@ -209,10 +224,35 @@ A dashboard number traces back to a source cell. See [data lineage map](../02-da
 | Workspace | Personal Databricks workspace (the FTW org workspace could not reach the external volume) |
 | Catalog | `public_health` |
 | Schemas | `bronze`, `silver`, `gold`, `quality`; `test_gold`, `test_gold2` (testing, to archive once the dashboard reads `gold`) |
-| Landing | Unity Catalog Volume under the team folder (`g5_landing`) |
+| Landing | Unity Catalog Volume (`/Volumes/workspace/default/ftw-b12-de/groups/g5_landing`) |
 | Deploy target | `dev` (Asset Bundles). `databricks.yml` also defines a `prod` target whose service principal is not set yet; it is not used for the capstone |
 
-## 12. History of updates
+## 12. CI/CD
+
+CI runs on every push and PR to `dev` and `main`:
+
+| Check | Tool |
+|---|---|
+| Python lint and format | ruff (via pre-commit) |
+| Unit tests | pytest with coverage |
+| SQL lint | sqlfluff |
+| Secret scan | gitleaks |
+| Repo hygiene | Large files over 5 MB, notebook outputs |
+
+CD deploys the bundle after CI passes: `dev` branch → dev target, `main` → prod target. The prod target requires a manual approval gate (GitHub Environment reviewer). See [CI/CD and testing](../07-operations/ci-cd-and-testing.md).
+
+## See also
+
+- [Architecture decisions](architecture-decisions.md) — why each choice was made
+- [Project conventions](project-conventions.md) — naming, coding and Git rules
+- [Decision log](../08-governance/decision-log.md) — every dated decision and open question
+- [Data sources](../02-data/data-sources.md) — source inventory and coverage
+- [Known issues and backlog](../08-governance/known-issues-and-backlog.md) — what is open after the capstone
+- [Runbook](../07-operations/runbook.md) — how to run and troubleshoot the pipeline
+- [Bronze layer](../04-pipeline/bronze/README.md) · [Silver layer](../04-pipeline/silver/README.md) · [Gold layer](../04-pipeline/gold/README.md) — layer-specific details
+- [Quality control framework](../04-pipeline/quality/quality-control-framework.md) — check rules, severities and gates
+
+## 13. History of updates
 
 | Date | Change |
 |---|---|
@@ -225,3 +265,5 @@ A dashboard number traces back to a source cell. See [data lineage map](../02-da
 | 2026-10-19 | Preload gate, QC re-queue, geography inside `run_bronze.py`. Page written |
 | 2026-10-20 | Reliability row updated. Silver uses a full rebuild (D-57). Gold starts at `gold_01`. Runs stay manual (D-59) |
 | 2026-10-20 | Diagram shows the manual download and upload (AD-17, D-63). Setup job named. Serving section added. `prod` target noted as unused. Rewritten in short, active sentences |
+| 2026-10-20 | Owner and last-updated metadata added. Tech stack table and CI/CD section added. Gold QC check range corrected to G00–G13. Serverless environment detail and setup SQL file references added. Landing volume path made explicit |
+| 2026-10-20 | Broken quality README link fixed to quality-control-framework.md. See also section added |
