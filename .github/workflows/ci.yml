@@ -78,7 +78,7 @@ jobs:
       - run: pip install sqlfluff==4.3.0
       - name: Lint .sql files (skips if none)
         run: |
-          files=$(git ls-files '*.sql')
+          files=$(git ls-files '*.sql' ':!:archive/**')
           if [ -z "$files" ]; then echo "No SQL files yet — skipping."; exit 0; fi
           sqlfluff lint $files
 

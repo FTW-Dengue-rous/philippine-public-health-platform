@@ -43,7 +43,7 @@
 CREATE OR REPLACE TEMP VIEW facilities_area_exceptions_file AS
 SELECT *
 FROM read_files('/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/reference/facilities/facilities_area_exceptions.csv',
-       format => 'csv', header => true, multiLine => true, escape => '"',
+       format => 'csv', header => true, multiline => true, escape => '"',
        schema => 'source_group STRING, match_type STRING, match_value STRING, parent_label_norm STRING, year_from STRING, year_to STRING, area_label_source STRING, psgc_code STRING, area_key STRING, named_key_level STRING, reason STRING, review_note STRING, rule STRING, evidence STRING, evidence_n STRING, evidence_share STRING, review_status STRING, proposed_psgc_code STRING, proposed_area_name STRING, geography_check STRING, records STRING, geography_checksum STRING');
 
 CREATE OR REPLACE TABLE public_health.silver.facilities_area_exceptions AS
@@ -94,18 +94,18 @@ SELECT 'area exceptions: unresolvable row with a code', count(*)
   WHERE match_type = 'unresolvable' AND coalesce(psgc_code, area_key) IS NOT NULL
 UNION ALL
 SELECT 'area exceptions: psgc_code not in geography silver', count(*)
-  FROM public_health.silver.facilities_area_exceptions e
+  FROM public_health.silver.facilities_area_exceptions AS e
   WHERE e.match_type <> 'code_prefix' AND e.psgc_code IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM public_health.silver.geography_silver g WHERE g.psgc_code = e.psgc_code)
+    AND NOT EXISTS (SELECT 1 FROM public_health.silver.geography_silver AS g WHERE g.psgc_code = e.psgc_code)
 UNION ALL
 SELECT 'area exceptions: generated from another geography snapshot, or columns shifted (regenerate the file)', count(*)
-  FROM public_health.silver.facilities_area_exceptions e
+  FROM public_health.silver.facilities_area_exceptions AS e
   WHERE e.geography_checksum IS NULL
      OR e.geography_checksum <> (SELECT geography_checksum FROM facilities_geography_snapshot)
 UNION ALL
 SELECT 'area exceptions: proposed_area_name differs from geography silver (regenerate the file)', count(*)
-  FROM public_health.silver.facilities_area_exceptions e
-  JOIN public_health.silver.geography_silver g ON g.psgc_code = e.proposed_psgc_code
+  FROM public_health.silver.facilities_area_exceptions AS e
+  INNER JOIN public_health.silver.geography_silver AS g ON g.psgc_code = e.proposed_psgc_code
   WHERE e.generated_match_type <> 'code_prefix'
     AND g.content_checksum = (SELECT geography_checksum FROM facilities_geography_snapshot)
     -- Same n-tilde repair as build_facilities_area_exceptions.py (Geo.__init__): geography_silver

@@ -54,7 +54,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description="PSGC population Bronze to Silver")
     parser.add_argument("--bronze_table", default=None, help=f"Default {DEFAULT_BRONZE_TABLE}")
     parser.add_argument("--silver_table", default=None, help=f"Default {DEFAULT_SILVER_TABLE}")
-    parser.add_argument("--geography_table", default=None, help=f"Default {DEFAULT_GEOGRAPHY_TABLE}")
+    parser.add_argument(
+        "--geography_table", default=None, help=f"Default {DEFAULT_GEOGRAPHY_TABLE}"
+    )
     args, _ = parser.parse_known_args()  # notebook kernels pass their own arguments
     return args
 
@@ -65,6 +67,7 @@ def _dbutils():
         return handle
     try:
         from databricks.sdk.runtime import dbutils as handle
+
         return handle
     except Exception:
         return None
@@ -177,7 +180,8 @@ FROM psgc_population_observations
 # 3. Profile the population observations (inspection only)
 # -----------------------------------------------------------------------------
 print("\nPopulation observations per source version")
-show(spark.sql("""
+show(
+    spark.sql("""
 SELECT
     source_version,
     COUNT(*) AS total_observations,
@@ -189,7 +193,8 @@ SELECT
 FROM psgc_population_parsed
 GROUP BY source_version
 ORDER BY source_version
-"""))
+""")
+)
 
 
 # -----------------------------------------------------------------------------
@@ -228,7 +233,8 @@ if duplicate_key_count > 0:
 #    Missing numeric values are expected when the parse status is MISSING or INVALID.
 # -----------------------------------------------------------------------------
 print("\nPopulation value checks")
-show(spark.sql("""
+show(
+    spark.sql("""
 SELECT
     COUNT(*) AS total_observations,
     COUNT_IF(population_parse_status = 'VALID') AS valid_population,
@@ -239,7 +245,8 @@ SELECT
     MIN(population) AS min_population,
     MAX(population) AS max_population
 FROM psgc_population_parsed
-"""))
+""")
+)
 
 
 # -----------------------------------------------------------------------------
@@ -256,7 +263,9 @@ statuses = [
 print(f"\nParse statuses: {statuses}")
 unexpected = [s for s in statuses if s not in APPROVED_PARSE_STATUS]
 if unexpected:
-    raise RuntimeError(f"Unexpected parse status(es) {unexpected}. {SILVER_TABLE} was not replaced.")
+    raise RuntimeError(
+        f"Unexpected parse status(es) {unexpected}. {SILVER_TABLE} was not replaced."
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -314,14 +323,23 @@ if silver_count != parsed_count:
 # 9. Check the final Silver schema
 # -----------------------------------------------------------------------------
 EXPECTED_COLUMNS = [
-    "psgc_code", "population_year", "population", "population_raw", "population_note",
-    "population_parse_status", "source_version", "content_checksum", "batch_id",
+    "psgc_code",
+    "population_year",
+    "population",
+    "population_raw",
+    "population_note",
+    "population_parse_status",
+    "source_version",
+    "content_checksum",
+    "batch_id",
     "silver_processed_at",
 ]
 actual_columns = spark.table(SILVER_TABLE).columns
 print(f"\nSilver columns: {actual_columns}")
 if actual_columns != EXPECTED_COLUMNS:
-    raise RuntimeError(f"Silver schema differs. Expected {EXPECTED_COLUMNS}, found {actual_columns}.")
+    raise RuntimeError(
+        f"Silver schema differs. Expected {EXPECTED_COLUMNS}, found {actual_columns}."
+    )
 spark.table(SILVER_TABLE).printSchema()
 
 
@@ -329,7 +347,8 @@ spark.table(SILVER_TABLE).printSchema()
 # 10. Sample the final Silver data
 # -----------------------------------------------------------------------------
 print("Sample rows")
-show(spark.sql(f"""
+show(
+    spark.sql(f"""
 SELECT
     psgc_code,
     population_year,
@@ -344,7 +363,8 @@ ORDER BY
     psgc_code,
     population_year
 LIMIT 20
-"""))
+""")
+)
 
 
 # -----------------------------------------------------------------------------
@@ -369,7 +389,9 @@ JOIN (SELECT substr(psgc_code, 1, 5) AS prov, population_year, sum(population) A
 WHERE NOT (pr.population <=> l.lgu_sum)
 ORDER BY pr.psgc_code, pr.population_year
 """)
-print(f"Province totals that differ from the sum of their cities/municipalities: {reconciliation.count()}")
+print(
+    f"Province totals that differ from the sum of their cities/municipalities: {reconciliation.count()}"
+)
 show(reconciliation, n=50)
 
 print("PSGC population Bronze -> Silver completed.")

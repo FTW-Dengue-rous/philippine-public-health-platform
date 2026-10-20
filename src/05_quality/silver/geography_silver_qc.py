@@ -75,8 +75,11 @@ def _add_dq_utils_to_path():
             candidates = [folder]
             for base in (folder, os.path.join(folder, "src")):
                 try:
-                    candidates += [os.path.join(base, d) for d in sorted(os.listdir(base))
-                                   if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))]
+                    candidates += [
+                        os.path.join(base, d)
+                        for d in sorted(os.listdir(base))
+                        if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))
+                    ]
                 except OSError:
                     pass
             for c in candidates:
@@ -91,7 +94,8 @@ def _add_dq_utils_to_path():
             folder = parent
     raise ModuleNotFoundError(
         "dq_utils.py not found. It must be a Python FILE named dq_utils.py (not a notebook) in "
-        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched)))
+        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 _add_dq_utils_to_path()
@@ -106,9 +110,13 @@ spark = SparkSession.builder.getOrCreate()
 # -----------------------------------------------------------------------------
 def parse_args():
     p = argparse.ArgumentParser(description="PSGC geography Silver QC")
-    p.add_argument("--config_path", default=None, help="Default: config/sources_geography.yaml above this file")
+    p.add_argument(
+        "--config_path", default=None, help="Default: config/sources_geography.yaml above this file"
+    )
     p.add_argument("--source_version", default=None, help="Default: YAML psgc.version")
-    p.add_argument("--batch_id", default=None, help="Default: the single batch Silver holds for the version")
+    p.add_argument(
+        "--batch_id", default=None, help="Default: the single batch Silver holds for the version"
+    )
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--fail_on_error", default=None, help="true (default): raise if any check FAILs")
     p.add_argument("--dq_schema", default=None, help=f"Default {DQ_SCHEMA}")
@@ -122,6 +130,7 @@ def _dbutils():
         return handle
     try:
         from databricks.sdk.runtime import dbutils as handle
+
         return handle
     except Exception:
         return None
@@ -158,7 +167,8 @@ def find_config(explicit, name="sources_geography.yaml"):
                 return candidate.resolve()
     raise FileNotFoundError(
         f"{name} not found. Pass --config_path (or the job parameter config_path). Looked in:\n  "
-        + "\n  ".join(dict.fromkeys(searched)))
+        + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 ARGS = parse_args()
@@ -182,7 +192,9 @@ NULL_LEVEL_CODES = sorted(str(v) for v in silver_qc_cfg.get("null_level_codes") 
 if not ACCEPTED_LEVELS:
     raise ValueError(f"psgc.silver_qc.accepted_geographic_levels is missing in {CONFIG_PATH}")
 if "null_level_codes" not in silver_qc_cfg:
-    raise ValueError(f"psgc.silver_qc.null_level_codes is missing in {CONFIG_PATH} (use [] for none)")
+    raise ValueError(
+        f"psgc.silver_qc.null_level_codes is missing in {CONFIG_PATH} (use [] for none)"
+    )
 
 print(f"Config         : {CONFIG_PATH}")
 print(f"Silver table   : {SILVER_TABLE}")
@@ -389,7 +401,8 @@ with DQRun(
     # that adds or drops one is listed here so the YAML (and anything that filters by level)
     # can be reviewed.
     observed_null_codes = sorted(
-        r[0] for r in spark.sql("""
+        r[0]
+        for r in spark.sql("""
             SELECT DISTINCT psgc_code FROM beginner_geography_silver
             WHERE geographic_level IS NULL AND psgc_code IS NOT NULL
         """).collect()
@@ -410,8 +423,10 @@ with DQRun(
         observed=",".join(observed_null_codes) or "none",
         expected=",".join(NULL_LEVEL_CODES) or "none",
         column_name="geographic_level",
-        detail=(f"new: {','.join(unexpected) or 'none'}; gone: {','.join(absent) or 'none'}. "
-                "Update psgc.silver_qc.null_level_codes in sources_geography.yaml after review."),
+        detail=(
+            f"new: {','.join(unexpected) or 'none'}; gone: {','.join(absent) or 'none'}. "
+            "Update psgc.silver_qc.null_level_codes in sources_geography.yaml after review."
+        ),
     )
 
 print(f"Geography Silver QC completed. Results: {DQ_SCHEMA_NAME}.qc_results")

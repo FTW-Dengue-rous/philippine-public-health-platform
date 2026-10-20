@@ -4,7 +4,7 @@ This page covers the limits of the study and of the data, and what the team reco
 
 Status date: 2026-10-20.
 
-**Read this first.** The figures here come from the test build of 2026-10-14 ([findings report](../04-pipeline/gold/findings-report.md)). The final rebuild on `public_health.gold` will refresh them. Check every figure in section 3.4 against the rebuild before you quote it.
+**Read this first.** The figures here come from the test build of 2026-10-14 ([findings report](../04-pipeline/gold/findings-report.md)). The final rebuild on `public_health.gold` will refresh them. Check every figure in section 3.3 against the rebuild before you quote it.
 
 | Looking for | Go to |
 |---|---|
@@ -59,36 +59,29 @@ These limits come from the sources. They say what the data cannot tell you. Carr
 
 ## 3. Recommendations
 
-Five groups. Section 3.1 comes first because data availability limits the study most. Each recommendation names who acts and the limit or finding behind it.
+Four groups. Section 3.1 comes first because data availability limits the study most. Each recommendation names who acts and the limit or finding behind it.
 
-### 3.1 For stakeholders: make the data available
+### 3.1 For data publishers
 
-> **Key message.** The main limit of this study is not the pipeline. It is the data. The platform already joins, checks and compares data from DOH, PSA, PhilHealth and others on one geography. A new dataset costs one YAML entry and one silver build, not new code. But many datasets do not exist in public form, or reach the public only as yearly, regional or national totals. More data at a finer grain would answer more of BQ1 and would make BQ2 possible.
+The main limit of this study is data availability, not the pipeline. The platform already joins and checks data from DOH, PSA, PhilHealth and others on one geography. A new dataset costs one YAML entry and one silver build. But many datasets reach the public only as yearly, regional or national totals. Finer granularity would answer more of BQ1 and would make BQ2 possible.
 
-What the team lacked most:
+The changes below would also remove most of the manual matching and inference the team had to do.
 
-- **Disease data below region level and below a year.** Only dengue has it, and the province series ends in 2021 (SL-10).
-- **Bed capacity and hospital use.** Authorized beds only. No staffed beds, beds by type, admissions or length of stay by disease (G-01, G-03).
-- **Facility services.** The registry says a facility exists and its level. It does not say which services it offers or whether it is operating (SL-06).
-- **Workforce detail.** Public-sector totals per area only. No private workers, no counts per facility or specialty (SL-06).
-- **Where patients live.** Claims show only where care happened (LM-10).
-- **Shared codes.** Most sources carry area names, not PSGC codes, and no shared facility ID (RP-01, RP-03).
+| ID | Recommendation | Who | Why |
+|---|---|---|---|
+| RP-01 | Publish the PSGC code on every area row | DOH (FHSIS, NHFR, FOI releases), PhilHealth, PSA | Area names do not join. Matching them took most of the silver work, and some labels still wait for review (LM-15, KI-01) |
+| RP-02 | State whether a province row includes its highly urbanized cities | PSA (poverty), IHME, DOH and HDX (dengue) | The team had to infer it from the numbers (D-42, D-43). Only 67 planning units got a comparable poverty value |
+| RP-03 | Give facilities one shared ID across lists | DOH (NHFR, HFSRB), PhilHealth | No shared ID exists. Facilities match through licence numbers and addresses |
+| RP-04 | Publish staffed beds beside authorized beds | DOH (HFSRB, OHSRS) | Licensed beds overstate usable capacity (G-03) |
+| RP-05 | Confirm the bed basis and reporting period of the bed occupancy rate, and flag records above 150% at source | DOH (HFSRB) | Occupancy definitions stay provisional (LM-08, LM-09, O-12) |
+| RP-06 | Publish admissions and length of stay by disease and province | DOH (OHSRS) | Without them, nobody can answer BQ2 or bed sufficiency per disease (G-01) |
+| RP-07 | Add the patient's province or municipality to claims aggregates | PhilHealth | Claims show only where care happened, not where patients live (LM-10, G-04) |
+| RP-08 | Release FHSIS tables as CSV with the same columns every year | DOH (Epidemiology Bureau) | The workbook layout changes every year. Each change needs new parsing rules |
+| RP-09 | State the week convention on weekly data | DOH, HDX | The team had to test which week each date closes (D-44) |
+| RP-10 | Update regional groupings when regions change, and note it | DOH (FHSIS) | FHSIS 2024 regions VI and VII still include the Negros Island Region provinces (F-S7) |
+| RP-11 | Publish weekly or monthly case counts by province and city or municipality for notifiable diseases, not only dengue | DOH (Epidemiology Bureau, PIDSR) | Most disease data reaches the public as yearly or regional totals. Local peaks stay hidden (SL-10, G-07) |
 
-| ID | Area | Stakeholder | What we ask them to make available | What it unlocks | Related |
-|---|---|---|---|---|---|
-| RD-01 | Disease | DOH Epidemiology Bureau (PIDSR) | Weekly or monthly case counts for notifiable diseases by province and city or municipality, with PSGC codes and a stated week convention | Local outbreak timing and more diseases on the need side of BQ1 | RP-09, RP-11, RS-08 |
-| RD-05 | Disease and population | PSA | Deaths by cause by month and by province and city or municipality of residence. City and municipal poverty estimates in every round, with highly urbanized cities apart. Yearly population estimates by city or municipality | Local mortality, equity at the same level as the service data, and rates for every year | RP-02 |
-| RD-02 | Bed capacity and hospital use | DOH (HFSRB, OHSRS) | Admissions and length of stay by disease. Monthly occupancy by named hospital on a confirmed bed basis | Bed-day demand and the full dengue capacity question (BQ2) | RP-05, RP-06, RS-01 |
-| RD-08 | Bed capacity | DOH (HFSRB, OHSRS) | Beds per hospital by type: ward, ICU, isolation, plus dialysis stations. Staffed beds beside authorized beds, every year. A daily or weekly bed census during outbreaks | True and surge capacity, and specialist capacity. The kidney study had to skip units where station counts were incomplete | RP-04, G-02, G-03 |
-| RD-09 | Facilities | DOH (NHFR, HFSRB) | For every facility: the services it offers (for example emergency, delivery, laboratory, dialysis, TB treatment), its operating status and PhilHealth accreditation, under one shared ID with a PSGC code. A dated registry each year, not only the latest list | Access to a specific service, not only to "a hospital". Change over time | RP-01, RP-03, SL-03, SL-06 |
-| RD-10 | Facilities (primary care) | DOH (FHSIS), LGUs | Barangay health stations and rural health units as a facility list with location and status, not only counts per area | Primary care access at locality level, the core of the prevention view | RA-01 |
-| RD-03 | Facilities and programmes | DOH (FHSIS) | FHSIS tables as CSV with stable columns and PSGC codes. More years of TB programme data. Immunization by month | Trends and the prevention view | RP-08, RP-10, RS-02 |
-| RD-11 | Workforce | DOH (Health Human Resource Development Bureau, FHSIS), PRC | Health workers by city or municipality and by facility, by profession and specialty, public and private, every year. Filled and vacant positions | Workforce gaps per facility and specialty, not only public totals per area | SL-06, G-16, G-17 |
-| RD-04 | Hospital use | PhilHealth | Claims aggregates by the patient's city or municipality, monthly, with PSGC and facility codes | Travel for care and local demand | RP-03, RP-07 |
-| RD-06 | Facilities (verification) | LGUs and DOH regional offices | Confirmation of the facility lists for localities with no hospital or primary care recorded | Tells registry gaps apart from real gaps | RU-01, RS-03 |
-| RD-07 | Coordination | IATWG-HFD (the client working group) | One data-sharing agreement and reporting standard across member agencies: PSGC codes, one facility ID, stated coverage, aggregate release with small-cell suppression | Regular refreshes without a new FOI request each time | SL-11 |
-
-**Data granularity we ask for.** The analysis would be stronger if the data below were available at a finer time grain and a lower area level. Each row shows what the team had and what would help.
+**Finer granularity would be better.** The analysis would be stronger if the data below were available at a finer time grain and a lower area level. Each row shows what the team had and what would help.
 
 | Data | Available to the team | Better if available as | What it would allow | Who holds it |
 |---|---|---|---|---|
@@ -109,25 +102,7 @@ What the team lacked most:
 | Population | Census 2015, 2020, 2024 | Yearly estimates by city or municipality | Rates for every year, not only census years | PSA |
 | Immunization | FHSIS tables 2018–2025, identified but not ingested | Monthly by city or municipality | A prevention view for vaccine-preventable disease (stretch 1) | DOH (FHSIS) |
 
-### 3.2 For data publishers: how to publish
-
-These changes would remove most of the manual matching and inference the team had to do.
-
-| ID | Recommendation | Who | Why |
-|---|---|---|---|
-| RP-01 | Publish the PSGC code on every area row | DOH (FHSIS, NHFR, FOI releases), PhilHealth, PSA | Area names do not join. Matching them took most of the silver work, and some labels still wait for review (LM-15, KI-01) |
-| RP-02 | State whether a province row includes its highly urbanized cities | PSA (poverty), IHME, DOH and HDX (dengue) | The team had to infer it from the numbers (D-42, D-43). Only 67 planning units got a comparable poverty value |
-| RP-03 | Give facilities one shared ID across lists | DOH (NHFR, HFSRB), PhilHealth | No shared ID exists. Facilities match through licence numbers and addresses |
-| RP-04 | Publish staffed beds beside authorized beds | DOH (HFSRB, OHSRS) | Licensed beds overstate usable capacity (G-03) |
-| RP-05 | Confirm the bed basis and reporting period of the bed occupancy rate, and flag records above 150% at source | DOH (HFSRB) | Occupancy definitions stay provisional (LM-08, LM-09, O-12) |
-| RP-06 | Publish admissions and length of stay by disease and province | DOH (OHSRS) | Without them, nobody can answer BQ2 or bed sufficiency per disease (G-01) |
-| RP-07 | Add the patient's province or municipality to claims aggregates | PhilHealth | Claims show only where care happened, not where patients live (LM-10, G-04) |
-| RP-08 | Release FHSIS tables as CSV with the same columns every year | DOH (Epidemiology Bureau) | The workbook layout changes every year. Each change needs new parsing rules |
-| RP-09 | State the week convention on weekly data | DOH, HDX | The team had to test which week each date closes (D-44) |
-| RP-10 | Update regional groupings when regions change, and note it | DOH (FHSIS) | FHSIS 2024 regions VI and VII still include the Negros Island Region provinces (F-S7) |
-| RP-11 | Publish weekly or monthly case counts by province and city or municipality for notifiable diseases, not only dengue | DOH (Epidemiology Bureau, PIDSR) | Most disease data reaches the public as yearly or regional totals. Local peaks stay hidden (SL-10, G-07) |
-
-### 3.3 For users of the results
+### 3.2 For users of the results
 
 These rules apply to planners, analysts and dashboard readers.
 
@@ -141,7 +116,7 @@ These rules apply to planners, analysts and dashboard readers.
 | RU-06 | Show "suppressed" and "not comparable" cells with their reason. Never fill them with zero | Null means "not available" |
 | RU-07 | Refresh the figures after each new release and state the as-of date | The study is one point in time (SL-03) |
 
-### 3.4 Policy actions
+### 3.3 Policy actions
 
 These actions follow from the test-build findings. They point to where to look first. They do not say what to build: each needs a field check and costing first (SL-09). Confirm every figure against the final rebuild.
 
@@ -153,8 +128,9 @@ These actions follow from the test-build findings. They point to where to look f
 | RA-04 | Review dialysis access in Camiguin, Davao Occidental and Dinagat Islands | These provinces combine high modelled CKD mortality with no dialysis facility recorded. Check against the accredited dialysis list first |
 | RA-05 | Prepare dengue surge plans before the season in the areas with the largest peaks relative to beds | Antique, Zamboanga City, Guimaras, Iloilo and Cebu lead. These figures predate the week fix (D-44), so confirm them after the rebuild |
 | RA-06 | Strengthen referral and transport links for areas far from a Level 3 hospital | The median straight-line distance to a locality with a Level 3 hospital recorded is 45 km |
+| RA-07 | Adopt a shared reporting standard across agencies: PSGC codes, one facility ID, stated coverage, and aggregate release with small-cell suppression | The client working group can push its member agencies to apply RP-01 to RP-03. Regular refreshes would then need no new FOI request each time (SL-11) |
 
-### 3.5 Further study
+### 3.4 Further study
 
 | ID | Study | What it adds | Needs |
 |---|---|---|---|
@@ -177,5 +153,4 @@ These actions follow from the test-build findings. They point to where to look f
 | 2026-10-20 | RS-08 widened to more diseases at weekly or monthly grain and local level. RP-11 added. SL-10 reworded |
 | 2026-10-20 | Data granularity table added to section 2.1: what the team had and what would help, per data type |
 | 2026-10-20 | Data limitations LM-01 to LM-17 moved here from "Assumptions and limitations" as section 2. Recommendations renumbered to section 3. The assumptions now have their own page |
-| 2026-10-20 | New section 3.1 for stakeholders: data availability as the key message, asks per stakeholder (RD-01 to RD-07) and the granularity table. Publishers became 3.2. RA-07 folded into RD-07 |
-| 2026-10-20 | Section 3.1 widened beyond disease: bed capacity (RD-08), facility services and status (RD-09), primary care facility lists (RD-10) and workforce detail (RD-11). Table grouped by area. Granularity table gained beds by type, facility services, primary care facilities and specialists |
+| 2026-10-20 | Section 3.1 opens with the key message on data availability. The granularity table, "Finer granularity would be better", gained beds by type, facility services, primary care facilities and specialists |

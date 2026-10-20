@@ -142,14 +142,38 @@ LEFT JOIN public_health.quality.v_table_health AS h
 -- every year that a yearly silver table holds
 CREATE OR REPLACE TEMP VIEW dim_date_years AS
 SELECT CAST(population_year AS INT) AS y FROM public_health.silver.population_silver
-UNION SELECT CAST(year AS INT) FROM public_health.silver.workforce_headcount_silver
-UNION SELECT CAST(year AS INT) FROM public_health.silver.workforce_area_denominator_silver
-UNION SELECT CAST(year AS INT) FROM public_health.silver.facilities_metric_silver
-UNION SELECT CAST(year AS INT) FROM public_health.silver.facilities_bed_occupancy_silver
-UNION SELECT CAST(year AS INT) FROM public_health.silver.socioeconomic_poverty_silver
-UNION SELECT CAST(year AS INT) FROM public_health.silver.diseases_deaths_age_silver
-UNION SELECT CAST(year AS INT) FROM public_health.silver.socioeconomic_health_expenditure_share_silver
-UNION SELECT CAST(year AS INT) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver;
+
+UNION
+
+SELECT CAST(year AS INT) FROM public_health.silver.workforce_headcount_silver
+
+UNION
+
+SELECT CAST(year AS INT) FROM public_health.silver.workforce_area_denominator_silver
+
+UNION
+
+SELECT CAST(year AS INT) FROM public_health.silver.facilities_metric_silver
+
+UNION
+
+SELECT CAST(year AS INT) FROM public_health.silver.facilities_bed_occupancy_silver
+
+UNION
+
+SELECT CAST(year AS INT) FROM public_health.silver.socioeconomic_poverty_silver
+
+UNION
+
+SELECT CAST(year AS INT) FROM public_health.silver.diseases_deaths_age_silver
+
+UNION
+
+SELECT CAST(year AS INT) FROM public_health.silver.socioeconomic_health_expenditure_share_silver
+
+UNION
+
+SELECT CAST(year AS INT) FROM public_health.silver.socioeconomic_health_expenditure_per_capita_silver;
 
 -- disease periods as silver writes them (weekly start and end dates included), calendar years,
 -- and the registry snapshot
@@ -162,7 +186,8 @@ SELECT 'calendar_year', 'year', CAST(y AS STRING), y, CAST(NULL AS INT), CAST(NU
        make_date(y, 1, 1), make_date(y, 12, 31)
 FROM dim_date_years WHERE y IS NOT NULL
 UNION
-SELECT 'snapshot', 'snapshot', date_format(d, 'yyyy-MM-dd'), year(d), month(d), CAST(NULL AS INT), d, d
+SELECT 'snapshot', 'snapshot', date_format(d, 'yyyy-MM-dd'), year(d), month(d), CAST(NULL AS INT),
+       d AS period_start, d AS period_end
 FROM (SELECT max(greatest(_nhfr_as_of_date, _hfsrb_as_of_date)) AS d
       FROM public_health.silver.facilities_registry_silver) AS r
 WHERE d IS NOT NULL;
@@ -223,7 +248,7 @@ WHERE period_grain = 'week'
   AND (period_start_date IS NULL OR period_end_date IS NULL
        OR period_end_date <> date_add(period_start_date, 6)
        OR weekofyear(period_end_date) <> week
-       OR extract(YEAROFWEEK FROM period_end_date) <> year)
+       OR extract(yearofweek FROM period_end_date) <> year)
 UNION ALL
 SELECT 'year missing, month outside 1 to 12 or week outside 1 to 53', count(*) FROM public_health.gold.dim_date__candidate WHERE year IS NULL OR month NOT BETWEEN 1 AND 12 OR week NOT BETWEEN 1 AND 53
 UNION ALL

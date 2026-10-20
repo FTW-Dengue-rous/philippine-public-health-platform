@@ -27,9 +27,9 @@ GEOJSON = f"{FOLDER}/raw_geojson/hdx_healthsites_facility_asof_20261014.geojson"
 OLD_CSV = f"{FOLDER}/hdx_healthsites_facility_asof_20260929.csv"
 OUT_CSV = f"{FOLDER}/hdx_healthsites_facility_asof_20261014.csv"
 
-PH_BOX = (116.0, 127.5, 4.0, 21.5)      # lon min, lon max, lat min, lat max
-NODE_TOLERANCE_DEG = 0.00001            # about 1 metre: node moved since the old file
-DECIMALS = 7                            # OSM precision
+PH_BOX = (116.0, 127.5, 4.0, 21.5)  # lon min, lon max, lat min, lat max
+NODE_TOLERANCE_DEG = 0.00001  # about 1 metre: node moved since the old file
+DECIMALS = 7  # OSM precision
 
 
 def ring_centroid(ring):
@@ -46,9 +46,13 @@ def ring_centroid(ring):
         a += cross
         cx += (x1 + x2) * cross
         cy += (y1 + y2) * cross
-    if abs(a) < 1e-20:                  # a line or a single spot: plain average of the corners
+    if abs(a) < 1e-20:  # a line or a single spot: plain average of the corners
         corners = ring[:-1] or ring
-        return sum(p[0] for p in corners) / len(corners), sum(p[1] for p in corners) / len(corners), 0.0
+        return (
+            sum(p[0] for p in corners) / len(corners),
+            sum(p[1] for p in corners) / len(corners),
+            0.0,
+        )
     return x0 + cx / (3 * a), y0 + cy / (3 * a), abs(a) / 2
 
 
@@ -125,7 +129,9 @@ def main():
     missing = [c for c in header if c not in props and c not in ("X", "Y")]
     extra = sorted(props - set(header))
     if missing:
-        raise SystemExit(f"STOPPED. Columns of the old CSV that the GeoJSON does not have: {missing}")
+        raise SystemExit(
+            f"STOPPED. Columns of the old CSV that the GeoJSON does not have: {missing}"
+        )
 
     rows, problems, kinds = [], [], Counter()
     for f in features:
@@ -139,14 +145,20 @@ def main():
         geom = f.get("geometry") or {}
         kinds[geom.get("type")] += 1
         if lon is not None and geom.get("type") in ("Polygon", "MultiPolygon"):
-            rings = [geom["coordinates"][0]] if geom["type"] == "Polygon" else [p[0] for p in geom["coordinates"]]
+            rings = (
+                [geom["coordinates"][0]]
+                if geom["type"] == "Polygon"
+                else [p[0] for p in geom["coordinates"]]
+            )
             if not any(inside(lon, lat, [(q[0], q[1]) for q in r]) for r in rings):
                 kinds["centroid outside its own outline (L/U-shaped building; kept)"] += 1
         row = {c: text(pr.get(c)) for c in header if c not in ("X", "Y")}
         if "changeset_timestamp" in row:
             ts = csv_timestamp(row["changeset_timestamp"])
             if ts is None:
-                problems.append(f"{key}: changeset_timestamp in an unknown format: {row['changeset_timestamp']!r}")
+                problems.append(
+                    f"{key}: changeset_timestamp in an unknown format: {row['changeset_timestamp']!r}"
+                )
             else:
                 row["changeset_timestamp"] = ts
         row["X"] = "" if lon is None else f"{lon:.{DECIMALS}f}"
@@ -166,8 +178,10 @@ def main():
         if not o:
             continue
         if o["X"].strip() and o["Y"].strip():
-            if row["X"] and (abs(float(o["X"]) - float(row["X"])) > NODE_TOLERANCE_DEG
-                             or abs(float(o["Y"]) - float(row["Y"])) > NODE_TOLERANCE_DEG):
+            if row["X"] and (
+                abs(float(o["X"]) - float(row["X"])) > NODE_TOLERANCE_DEG
+                or abs(float(o["Y"]) - float(row["Y"])) > NODE_TOLERANCE_DEG
+            ):
                 moved += 1
         elif row["X"]:
             filled += 1
@@ -185,7 +199,7 @@ def main():
         raise SystemExit("STOPPED, nothing written:\n  " + "\n  ".join(problems[:20]))
 
     with open(a.out, "w", encoding="utf-8", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=header, lineterminator="\n")   # LF, like the HDX CSV
+        w = csv.DictWriter(fh, fieldnames=header, lineterminator="\n")  # LF, like the HDX CSV
         w.writeheader()
         w.writerows(r for _, r in rows)
     print(f"wrote {a.out}  ({len(rows)} rows, {len(header)} columns)")

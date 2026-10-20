@@ -98,18 +98,34 @@ CHECKS = {
 
 # Source attributes the loader projects from each record (same list as geography_bronze.py).
 SOURCE_FIELDS = [
-    "area_name", "correspondence_code", "geographic_level", "reg", "prv", "mun", "bgy",
-    "old_name", "city_class", "income_classification", "urban_rural", "island_region",
+    "area_name",
+    "correspondence_code",
+    "geographic_level",
+    "reg",
+    "prv",
+    "mun",
+    "bgy",
+    "old_name",
+    "city_class",
+    "income_classification",
+    "urban_rural",
+    "island_region",
 ]
 LINEAGE_COLUMNS = [
-    "source_system", "source_version", "source_endpoint", "content_checksum", "batch_id",
-    "raw_path", "ingested_at",
+    "source_system",
+    "source_version",
+    "source_endpoint",
+    "content_checksum",
+    "batch_id",
+    "raw_path",
+    "ingested_at",
 ]
 
 
 # -----------------------------------------------------------------------------
 # dq_utils and config discovery (same search as the other QC scripts)
 # -----------------------------------------------------------------------------
+
 
 def _add_dq_utils_to_path():
     # Find dq_utils.py and put its folder on sys.path. Looks in this file's folder and the
@@ -126,8 +142,11 @@ def _add_dq_utils_to_path():
             candidates = [folder]
             for base in (folder, os.path.join(folder, "src")):
                 try:
-                    candidates += [os.path.join(base, d) for d in sorted(os.listdir(base))
-                                   if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))]
+                    candidates += [
+                        os.path.join(base, d)
+                        for d in sorted(os.listdir(base))
+                        if "quality" in d.lower() and os.path.isdir(os.path.join(base, d))
+                    ]
                 except OSError:
                     pass
             for c in candidates:
@@ -142,7 +161,8 @@ def _add_dq_utils_to_path():
             folder = parent
     raise ModuleNotFoundError(
         "dq_utils.py not found. It must be a Python FILE named dq_utils.py (not a notebook) in "
-        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched)))
+        "the quality folder. Looked in:\n  " + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 def find_config(explicit=None):
@@ -162,7 +182,9 @@ def find_config(explicit=None):
                 candidate = parent / sub / "sources_geography.yaml"
                 if candidate.is_file():
                     return candidate
-    raise FileNotFoundError("sources_geography.yaml not found. Pass --config_path with its full path.")
+    raise FileNotFoundError(
+        "sources_geography.yaml not found. Pass --config_path with its full path."
+    )
 
 
 def qualified_table(name):
@@ -176,6 +198,7 @@ def qualified_table(name):
 # Landing re-validation (independent of the loader; same rules)
 # -----------------------------------------------------------------------------
 
+
 def matching_manifest(path, source, version, endpoint):
     marker, manifest_path = path / "_SUCCESS", path / "manifest.json"
     if not marker.is_file() or not manifest_path.is_file():
@@ -186,7 +209,10 @@ def matching_manifest(path, source, version, endpoint):
     if manifest.get("status") != "landed":
         return None
     if (manifest.get("source_name"), manifest.get("source_version"), manifest.get("endpoint")) != (
-            source, version, endpoint):
+        source,
+        version,
+        endpoint,
+    ):
         return None
     if marker.read_text(encoding="utf-8").strip() != manifest.get("run_id"):
         raise ValueError("Success marker does not match manifest run_id.")
@@ -204,8 +230,11 @@ def validate_batch(path, manifest):
     names = manifest.get("files")
     if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
         raise ValueError("Manifest files must be a list of filenames.")
-    expected = {name for page in range(1, manifest["page_count"] + 1)
-                for name in (f"page_{page:04d}.json", f"records_page_{page:04d}.ndjson")}
+    expected = {
+        name
+        for page in range(1, manifest["page_count"] + 1)
+        for name in (f"page_{page:04d}.json", f"records_page_{page:04d}.ndjson")
+    }
     if len(names) != len(expected) or set(names) != expected:
         raise ValueError("Manifest file list does not match its page count.")
     actual = {p.name for p in path.iterdir() if p.name.startswith(("page_", "records_page_"))}
@@ -238,13 +267,18 @@ def validate_batch(path, manifest):
                 version = record.get("version")
                 if version is not None and str(version) != manifest["source_version"]:
                     raise ValueError("Record version does not match landing manifest.")
-                canonical = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                canonical = json.dumps(
+                    record, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                )
                 hashes.append(hashlib.sha256(canonical.encode("utf-8")).hexdigest())
                 page_records.append(record)
                 total += 1
         if results != page_records:
             raise ValueError("Raw API page and landed records differ.")
-    if any(manifest[f] != total for f in ("record_count", "landed_record_count", "expected_record_count")):
+    if any(
+        manifest[f] != total
+        for f in ("record_count", "landed_record_count", "expected_record_count")
+    ):
         raise ValueError("Landed counts do not reconcile with manifest.")
     checksum = hashlib.sha256("\n".join(sorted(hashes)).encode("utf-8")).hexdigest()
     if checksum != manifest.get("content_checksum"):
@@ -255,6 +289,7 @@ def validate_batch(path, manifest):
 # -----------------------------------------------------------------------------
 # Dry-run recorder (--write_results no): same interface as DQRun, writes nothing
 # -----------------------------------------------------------------------------
+
 
 class PrintOnly:
     validation_id = run_id = "dry-run"
@@ -270,9 +305,19 @@ class PrintOnly:
 
     def record(self, check_id, status=None, **kw):
         self.results.append((check_id, status))
-        print(f"  {status:4} {check_id} {kw.get('check_name')}"
-              + (f" | fail={kw.get('fail_count')}/{kw.get('total_count')}" if kw.get("fail_count") is not None else "")
-              + (f" | observed={kw.get('observed')} expected={kw.get('expected')}" if kw.get("observed") is not None else ""))
+        print(
+            f"  {status:4} {check_id} {kw.get('check_name')}"
+            + (
+                f" | fail={kw.get('fail_count')}/{kw.get('total_count')}"
+                if kw.get("fail_count") is not None
+                else ""
+            )
+            + (
+                f" | observed={kw.get('observed')} expected={kw.get('expected')}"
+                if kw.get("observed") is not None
+                else ""
+            )
+        )
         return status
 
     def capture_table_stats(self, table):
@@ -285,6 +330,7 @@ class PrintOnly:
 # -----------------------------------------------------------------------------
 # Checks
 # -----------------------------------------------------------------------------
+
 
 def run_checks(spark, dq, args, failures):
     cfg_path = find_config(args.config_path)
@@ -300,24 +346,49 @@ def run_checks(spark, dq, args, failures):
     if args.handoff_from is None:
         handoff_from_metadata(spark, args, metadata_table, source_name, table)
     batch = f"{SOURCE_KEY}:{args.content_checksum}"
-    context = json.dumps({"source_version": version, "source_endpoint": endpoint,
-                          "bronze_batch_id": args.bronze_batch_id,
-                          "landing_batch_path": args.landing_batch_path,
-                          "handoff_from": args.handoff_from}, separators=(",", ":"))
+    context = json.dumps(
+        {
+            "source_version": version,
+            "source_endpoint": endpoint,
+            "bronze_batch_id": args.bronze_batch_id,
+            "landing_batch_path": args.landing_batch_path,
+            "handoff_from": args.handoff_from,
+        },
+        separators=(",", ":"),
+    )
 
-    def rec(check_id, bad, fail_count=None, total_count=None, column=None,
-            observed=None, expected=None, detail="", status=None):
+    def rec(
+        check_id,
+        bad,
+        fail_count=None,
+        total_count=None,
+        column=None,
+        observed=None,
+        expected=None,
+        detail="",
+        status=None,
+    ):
         # One result. PASS, or the check's severity when bad; status overrides (e.g. WARN).
         name, kind, severity = CHECKS[check_id]
         status = status or ("PASS" if not bad else severity)
         if status == "FAIL":
             failures.append(check_id)
-        dq.record(check_id, table_name=table, source_key=SOURCE_KEY, batch_id=batch,
-                  check_name=name, check_type=kind, severity=severity, status=status,
-                  column_name=column, fail_count=fail_count, total_count=total_count,
-                  observed=None if observed is None else str(observed),
-                  expected=None if expected is None else str(expected),
-                  detail=(f"{detail}; " if detail else "") + context)
+        dq.record(
+            check_id,
+            table_name=table,
+            source_key=SOURCE_KEY,
+            batch_id=batch,
+            check_name=name,
+            check_type=kind,
+            severity=severity,
+            status=status,
+            column_name=column,
+            fail_count=fail_count,
+            total_count=total_count,
+            observed=None if observed is None else str(observed),
+            expected=None if expected is None else str(expected),
+            detail=(f"{detail}; " if detail else "") + context,
+        )
 
     # GB01 landing batch: complete, valid, and the one the loader handed over
     root = Path(cfg["landing_path"]).resolve()
@@ -326,12 +397,21 @@ def run_checks(spark, dq, args, failures):
         raise ValueError("landing_batch_path must be inside the configured landing_path.")
     manifest = matching_manifest(landing, source_name, version, endpoint)
     if manifest is None:
-        raise ValueError("Landing batch is incomplete or does not match the YAML source/version/endpoint.")
+        raise ValueError(
+            "Landing batch is incomplete or does not match the YAML source/version/endpoint."
+        )
     paths, count = validate_batch(landing, manifest)
-    matches = manifest["content_checksum"] == args.content_checksum and count == args.expected_record_count
-    rec("GB01", not matches, observed=f"checksum={manifest['content_checksum'][:12]}…, records={count}",
+    matches = (
+        manifest["content_checksum"] == args.content_checksum
+        and count == args.expected_record_count
+    )
+    rec(
+        "GB01",
+        not matches,
+        observed=f"checksum={manifest['content_checksum'][:12]}…, records={count}",
         expected=f"checksum={args.content_checksum[:12]}…, records={args.expected_record_count}",
-        detail="marker, manifest, files, JSON, counts, unique codes and content checksum validated")
+        detail="marker, manifest, files, JSON, counts, unique codes and content checksum validated",
+    )
     if not matches:
         raise ValueError("Landing manifest does not match the loader's handoff.")
 
@@ -361,14 +441,17 @@ def run_checks(spark, dq, args, failures):
     rec("GB02", bool(missing), observed=missing or "none", expected="no missing columns")
     if missing:
         raise ValueError(f"Bronze columns missing: {missing}")
-    try:                                               # stats are extra; must not stop the checks
+    try:  # stats are extra; must not stop the checks
         dq.capture_table_stats(table)
     except Exception as e:
         print(f"  note: table stats skipped ({str(e)[:150]})")
 
-    target_df = base.filter((F.col("source_system") == source_name) & (F.col("source_version") == version)
-                            & (F.col("source_endpoint") == endpoint)
-                            & (F.col("content_checksum") == args.content_checksum))
+    target_df = base.filter(
+        (F.col("source_system") == source_name)
+        & (F.col("source_version") == version)
+        & (F.col("source_endpoint") == endpoint)
+        & (F.col("content_checksum") == args.content_checksum)
+    )
     total, source_count = target_df.count(), source_df.count()
 
     rec("GB03", source_count != count, observed=source_count, expected=count)
@@ -379,10 +462,22 @@ def run_checks(spark, dq, args, failures):
     n_blank = target_df.filter(blank).count()
     rec("GB06", n_blank > 0, fail_count=n_blank, total_count=total, column="psgc_code")
 
-    dups = (target_df.groupBy("psgc_code").count().filter(F.col("count") > 1)
-            .agg(F.sum(F.col("count") - 1).alias("n")).first()["n"] or 0)
-    rec("GB07", dups > 0, fail_count=int(dups), total_count=total, column="psgc_code",
-        detail="counts extra records per code")
+    dups = (
+        target_df.groupBy("psgc_code")
+        .count()
+        .filter(F.col("count") > 1)
+        .agg(F.sum(F.col("count") - 1).alias("n"))
+        .first()["n"]
+        or 0
+    )
+    rec(
+        "GB07",
+        dups > 0,
+        fail_count=int(dups),
+        total_count=total,
+        column="psgc_code",
+        detail="counts extra records per code",
+    )
 
     source_keys = source_df.select("psgc_code").distinct()
     target_keys = target_df.select("psgc_code").distinct()
@@ -395,36 +490,68 @@ def run_checks(spark, dq, args, failures):
     n_keys = target_keys.count()
     payload_bad = ~F.col("t.source_record_json").eqNullSafe(F.col("s.source_record_json"))
     n_payload = joined.filter(payload_bad).select("psgc_code").distinct().count()
-    rec("GB10", n_payload > 0, fail_count=n_payload, total_count=n_keys, column="source_record_json",
-        detail="exact landed JSON text comparison")
+    rec(
+        "GB10",
+        n_payload > 0,
+        fail_count=n_payload,
+        total_count=n_keys,
+        column="source_record_json",
+        detail="exact landed JSON text comparison",
+    )
 
     attr_bad = F.lit(False)
     for name in source_df.columns:
         if name not in ("psgc_code", "source_record_json"):
             attr_bad = attr_bad | ~F.col(f"t.{name}").eqNullSafe(F.col(f"s.{name}"))
     n_attr = joined.filter(attr_bad).select("psgc_code").distinct().count()
-    rec("GB11", n_attr > 0, fail_count=n_attr, total_count=n_keys,
-        detail="every projected attribute, using the loader's extraction rules")
+    rec(
+        "GB11",
+        n_attr > 0,
+        fail_count=n_attr,
+        total_count=n_keys,
+        detail="every projected attribute, using the loader's extraction rules",
+    )
 
-    lineage_bad = (~F.col("batch_id").eqNullSafe(F.lit(args.bronze_batch_id)) | F.col("raw_path").isNull()
-                   | (F.length(F.trim("raw_path")) == 0) | F.col("ingested_at").isNull())
+    lineage_bad = (
+        ~F.col("batch_id").eqNullSafe(F.lit(args.bronze_batch_id))
+        | F.col("raw_path").isNull()
+        | (F.length(F.trim("raw_path")) == 0)
+        | F.col("ingested_at").isNull()
+    )
     n_lineage = target_df.filter(lineage_bad).count()
-    rec("GB12", n_lineage > 0, fail_count=n_lineage, total_count=total,
-        detail="raw_path / ingested_at may be kept from the first load of an identical snapshot")
+    rec(
+        "GB12",
+        n_lineage > 0,
+        fail_count=n_lineage,
+        total_count=total,
+        detail="raw_path / ingested_at may be kept from the first load of an identical snapshot",
+    )
 
     # GB13 rows equal the loader's 'processed' audit row for this batch (same idea as B13)
     if not spark.catalog.tableExists(metadata_table):
-        rec("GB13", True, status="WARN", observed="metadata table not found", expected=metadata_table)
+        rec(
+            "GB13",
+            True,
+            status="WARN",
+            observed="metadata table not found",
+            expected=metadata_table,
+        )
     else:
-        logged = spark.sql(f"""
+        logged = spark.sql(
+            f"""
             SELECT max_by(record_count, retrieved_at) AS n
             FROM {qualified_table(metadata_table)}
             WHERE batch_id = :batch AND source_name = :source AND bronze_table = :tbl
               AND lower(status) = 'processed'""",
-            args={"batch": args.bronze_batch_id, "source": source_name, "tbl": table}).first()["n"]
-        rec("GB13", logged is None or int(logged) != total, observed=total,
+            args={"batch": args.bronze_batch_id, "source": source_name, "tbl": table},
+        ).first()["n"]
+        rec(
+            "GB13",
+            logged is None or int(logged) != total,
+            observed=total,
             expected="no processed audit row" if logged is None else int(logged),
-            detail=f"{metadata_table}, batch_id = loader batch id")
+            detail=f"{metadata_table}, batch_id = loader batch id",
+        )
 
     if args.profile == "true":
         try:
@@ -437,7 +564,12 @@ def run_checks(spark, dq, args, failures):
 # Run
 # -----------------------------------------------------------------------------
 
-HANDOFF_ARGS = ("landing_batch_path", "bronze_batch_id", "content_checksum", "expected_record_count")
+HANDOFF_ARGS = (
+    "landing_batch_path",
+    "bronze_batch_id",
+    "content_checksum",
+    "expected_record_count",
+)
 
 
 def validate_handoff(args, error):
@@ -454,16 +586,23 @@ def handoff_from_metadata(spark, args, metadata_table, source_name, table):
     source and bronze table. The loader writes the same values there (raw_file_path = landing
     batch folder, record_count = rows of the snapshot)."""
     if not spark.catalog.tableExists(metadata_table):
-        raise ValueError(f"No handoff arguments and {metadata_table} not found. "
-                         "Run geography_bronze.py or pass the four handoff arguments.")
-    row = spark.sql(f"""
+        raise ValueError(
+            f"No handoff arguments and {metadata_table} not found. "
+            "Run geography_bronze.py or pass the four handoff arguments."
+        )
+    row = spark.sql(
+        f"""
         SELECT batch_id, content_checksum, raw_file_path, record_count, retrieved_at
         FROM {qualified_table(metadata_table)}
         WHERE source_name = :source AND bronze_table = :tbl AND lower(status) = 'processed'
-        ORDER BY retrieved_at DESC LIMIT 1""", args={"source": source_name, "tbl": table}).first()
+        ORDER BY retrieved_at DESC LIMIT 1""",
+        args={"source": source_name, "tbl": table},
+    ).first()
     if row is None:
-        raise ValueError(f"No handoff arguments and no processed {metadata_table} row for "
-                         f"{source_name} / {table}. Run geography_bronze.py first.")
+        raise ValueError(
+            f"No handoff arguments and no processed {metadata_table} row for "
+            f"{source_name} / {table}. Run geography_bronze.py first."
+        )
     args.landing_batch_path = row["raw_file_path"]
     args.bronze_batch_id = row["batch_id"]
     args.content_checksum = row["content_checksum"]
@@ -471,10 +610,13 @@ def handoff_from_metadata(spark, args, metadata_table, source_name, table):
 
     def error(msg):
         raise ValueError(f"ingestion_metadata handoff row is not usable: {msg}")
+
     validate_handoff(args, error)
     args.handoff_from = f"ingestion_metadata (processed {row['retrieved_at']})"
-    print(f"Handoff from {metadata_table}: batch {args.bronze_batch_id}, "
-          f"checksum {args.content_checksum[:12]}…, {args.expected_record_count} records")
+    print(
+        f"Handoff from {metadata_table}: batch {args.bronze_batch_id}, "
+        f"checksum {args.content_checksum[:12]}…, {args.expected_record_count} records"
+    )
 
 
 def parse_args(argv=None):
@@ -489,15 +631,25 @@ def parse_args(argv=None):
     p.add_argument("--job_run_id", default=None, help="Databricks {{job.run_id}}")
     p.add_argument("--run_id", default=None, help="old name of --job_run_id (still accepted)")
     p.add_argument("--code_version", default=None, help="Git commit or tag of this code")
-    p.add_argument("--fail_on_error", choices=("true", "false"), default="true",
-                   help="true: raise after writing results if any check is FAIL")
+    p.add_argument(
+        "--fail_on_error",
+        choices=("true", "false"),
+        default="true",
+        help="true: raise after writing results if any check is FAIL",
+    )
     p.add_argument("--profile", choices=("true", "false"), default="false")
-    p.add_argument("--write_results", choices=("yes", "no"), default="yes",
-                   help="no: print results only, write nothing")
-    args, _ = p.parse_known_args(argv)                 # notebook kernels pass their own arguments
+    p.add_argument(
+        "--write_results",
+        choices=("yes", "no"),
+        default="yes",
+        help="no: print results only, write nothing",
+    )
+    args, _ = p.parse_known_args(argv)  # notebook kernels pass their own arguments
     given = [n for n in HANDOFF_ARGS if getattr(args, n) is not None]
     if given and len(given) < len(HANDOFF_ARGS):
-        p.error("pass all four handoff arguments or none: " + ", ".join("--" + n for n in HANDOFF_ARGS))
+        p.error(
+            "pass all four handoff arguments or none: " + ", ".join("--" + n for n in HANDOFF_ARGS)
+        )
     args.handoff_from = "arguments" if given else None
     if given:
         validate_handoff(args, p.error)
@@ -513,8 +665,17 @@ def main(argv=None):
     if args.write_results == "yes":
         _add_dq_utils_to_path()
         from dq_utils import DQRun
-        dq = DQRun(layer="bronze", domain=DOMAIN, script_name=SCRIPT_NAME, job_run_id=args.job_run_id,
-                   source_keys=SOURCE_KEY, fail_on_error=False, code_version=args.code_version, spark=spark)
+
+        dq = DQRun(
+            layer="bronze",
+            domain=DOMAIN,
+            script_name=SCRIPT_NAME,
+            job_run_id=args.job_run_id,
+            source_keys=SOURCE_KEY,
+            fail_on_error=False,
+            code_version=args.code_version,
+            spark=spark,
+        )
     else:
         dq = PrintOnly()
     # fail_on_error=False: DQRun writes every result and the run_log row first; the gate is
@@ -532,11 +693,19 @@ def main(argv=None):
                 table = (cfg.get("sources", cfg).get(SOURCE_KEY) or {}).get("bronze_table")
             except Exception:
                 table = None
-            dq.record("GB00", table_name=table, source_key=SOURCE_KEY,
-                      batch_id=f"{SOURCE_KEY}:{args.content_checksum}" if args.content_checksum else None,
-                      check_name=name, check_type=kind,
-                      severity=severity, status="FAIL", fail_count=1, total_count=1,
-                      detail=f"{type(error).__name__}: {error}")
+            dq.record(
+                "GB00",
+                table_name=table,
+                source_key=SOURCE_KEY,
+                batch_id=f"{SOURCE_KEY}:{args.content_checksum}" if args.content_checksum else None,
+                check_name=name,
+                check_type=kind,
+                severity=severity,
+                status="FAIL",
+                fail_count=1,
+                total_count=1,
+                detail=f"{type(error).__name__}: {error}",
+            )
     print(f"Validation ID: {dq.validation_id}")
     if failures:
         message = "Geography bronze QC FAILED: " + ", ".join(sorted(set(failures)))

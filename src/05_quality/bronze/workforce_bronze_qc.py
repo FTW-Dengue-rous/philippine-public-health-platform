@@ -327,14 +327,25 @@ def run_checks(dq, cfg, entry, profile):
     skip = qc.get("skip_checks") or []
     overrides = qc.get("severity") or {}  # e.g. severity: {B03: WARN}
     bad_skip = [c for c in skip if c not in CHECKS or c == "B00"]
-    bad_sev = {c: v for c, v in overrides.items()
-               if c not in CHECKS or str(v).upper() not in ("WARN", "FAIL")}
+    bad_sev = {
+        c: v
+        for c, v in overrides.items()
+        if c not in CHECKS or str(v).upper() not in ("WARN", "FAIL")
+    }
     if bad_skip or bad_sev:
         # Raised before any check runs: main() records it as B00 FAIL for this source.
-        raise ValueError(f"invalid qc block in the YAML: skip_checks {bad_skip}, severity {bad_sev}. "
-                         "Use known check codes (not B00) and WARN or FAIL only.")
-    yaml_qc = "; ".join(x for x in (f"skip_checks={sorted(skip)}" if skip else "",
-                                     f"severity={dict(sorted(overrides.items()))}" if overrides else "") if x)
+        raise ValueError(
+            f"invalid qc block in the YAML: skip_checks {bad_skip}, severity {bad_sev}. "
+            "Use known check codes (not B00) and WARN or FAIL only."
+        )
+    yaml_qc = "; ".join(
+        x
+        for x in (
+            f"skip_checks={sorted(skip)}" if skip else "",
+            f"severity={dict(sorted(overrides.items()))}" if overrides else "",
+        )
+        if x
+    )
 
     def rec(check_id, ok=None, **kw):
         # One result row. Name and type come from CHECKS; severity from CHECKS or qc.severity.
@@ -366,8 +377,13 @@ def run_checks(dq, cfg, entry, profile):
     v = "_qc_scope"
     df.where(f"_source_key = {sql_str(key)}").createOrReplaceTempView(v)
     total = scalar(f"SELECT count(*) FROM {v}")
-    rec("B01", ok=total > 0, observed=total, expected="> 0",
-        detail=f"YAML qc overrides: {yaml_qc}" if yaml_qc else None)
+    rec(
+        "B01",
+        ok=total > 0,
+        observed=total,
+        expected="> 0",
+        detail=f"YAML qc overrides: {yaml_qc}" if yaml_qc else None,
+    )
     try:  # stats are extra; an error here must not stop the checks
         dq.capture_table_stats(t)
     except Exception as e:
@@ -573,8 +589,13 @@ def run_checks(dq, cfg, entry, profile):
     #     overridable): silver's lineage lookup needs exactly that one processed log row per
     #     file, so a missing or mismatched row would break the silver build later anyway.
     if meta is None:
-        rec("B13", ok=False, observed="no log", expected="ingestion metadata table",
-            detail=f"metadata log not found: {entry.get('metadata_table')}")
+        rec(
+            "B13",
+            ok=False,
+            observed="no log",
+            expected="ingestion metadata table",
+            detail=f"metadata log not found: {entry.get('metadata_table')}",
+        )
     else:
         for f, (n, loaded_at) in sorted(loaded.items()):
             if files is not None and f not in files:

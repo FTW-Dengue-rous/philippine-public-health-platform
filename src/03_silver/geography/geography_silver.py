@@ -38,7 +38,7 @@
 import argparse
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -56,9 +56,14 @@ spark = SparkSession.builder.getOrCreate()
 
 def parse_args():
     parser = argparse.ArgumentParser(description="PSGC geography Bronze to Silver")
-    parser.add_argument("--config_path", default=None,
-                        help="Full path to config/sources_geography.yaml (default: found above this file)")
-    parser.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
+    parser.add_argument(
+        "--config_path",
+        default=None,
+        help="Full path to config/sources_geography.yaml (default: found above this file)",
+    )
+    parser.add_argument(
+        "--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job"
+    )
     args, _ = parser.parse_known_args()  # notebook kernels pass their own arguments
     return args
 
@@ -69,6 +74,7 @@ def _dbutils():
         return handle
     try:
         from databricks.sdk.runtime import dbutils as handle
+
         return handle
     except Exception:
         return None
@@ -131,7 +137,7 @@ ARGS = parse_args()
 CONFIG_PATH = find_config(param(ARGS.config_path, "config_path", env="PSGC_CONFIG_PATH"))
 JOB_RUN_ID = param(ARGS.job_run_id, "job_run_id")
 
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+with open(CONFIG_PATH, encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
 print(f"Loaded config: {CONFIG_PATH}")
@@ -145,29 +151,19 @@ LAYER = "silver"
 
 psgc_config = config["sources"][SOURCE_KEY]
 
-required_config_keys = [
-    "version",
-    "bronze_table",
-    "geography_silver_table",
-    "qc_results_table"
-]
+required_config_keys = ["version", "bronze_table", "geography_silver_table", "qc_results_table"]
 
-missing_keys = [
-    key
-    for key in required_config_keys
-    if key not in psgc_config
-]
+missing_keys = [key for key in required_config_keys if key not in psgc_config]
 
 if missing_keys:
-    raise ValueError(
-        f"Missing required PSGC configuration: {missing_keys}"
-    )
+    raise ValueError(f"Missing required PSGC configuration: {missing_keys}")
 
 EXPECTED_SOURCE_VERSION = psgc_config["version"]
 
 # Accepted geographic levels (SG03). Shared with geography_silver_qc.py through the YAML.
 ACCEPTED_GEOGRAPHIC_LEVELS = [
-    str(level) for level in (psgc_config.get("silver_qc") or {}).get("accepted_geographic_levels") or []
+    str(level)
+    for level in (psgc_config.get("silver_qc") or {}).get("accepted_geographic_levels") or []
 ]
 if not ACCEPTED_GEOGRAPHIC_LEVELS:
     raise ValueError(
@@ -201,16 +197,11 @@ print(f"Total Bronze rows : {bronze_row_count:,}")
 # Inspect source snapshots
 # -----------------------------------------------------------------------------
 snapshot_profile = (
-    bronze_df
-    .groupBy(
-        "source_version",
-        "content_checksum",
-        "batch_id"
-    )
+    bronze_df.groupBy("source_version", "content_checksum", "batch_id")
     .agg(
         F.count("*").alias("row_count"),
         F.min("ingested_at").alias("first_ingested_at"),
-        F.max("ingested_at").alias("last_ingested_at")
+        F.max("ingested_at").alias("last_ingested_at"),
     )
     .orderBy(F.desc("last_ingested_at"))
 )
@@ -221,21 +212,17 @@ show(snapshot_profile)
 # -----------------------------------------------------------------------------
 # Validate configured source version exists
 # -----------------------------------------------------------------------------
-configured_version_count = (
-    bronze_df
-    .filter(F.col("source_version") == EXPECTED_SOURCE_VERSION)
-    .count()
-)
+configured_version_count = bronze_df.filter(
+    F.col("source_version") == EXPECTED_SOURCE_VERSION
+).count()
 
 if configured_version_count == 0:
     raise ValueError(
-        f"No Bronze records found for configured PSGC version "
-        f"'{EXPECTED_SOURCE_VERSION}'."
+        f"No Bronze records found for configured PSGC version '{EXPECTED_SOURCE_VERSION}'."
     )
 
 print(
-    f"Found {configured_version_count:,} Bronze rows "
-    f"for source version {EXPECTED_SOURCE_VERSION}"
+    f"Found {configured_version_count:,} Bronze rows for source version {EXPECTED_SOURCE_VERSION}"
 )
 
 
@@ -243,16 +230,12 @@ print(
 # Inspect logical snapshots for configured version
 # -----------------------------------------------------------------------------
 configured_snapshots = (
-    bronze_df
-    .filter(F.col("source_version") == EXPECTED_SOURCE_VERSION)
-    .groupBy(
-        "content_checksum",
-        "batch_id"
-    )
+    bronze_df.filter(F.col("source_version") == EXPECTED_SOURCE_VERSION)
+    .groupBy("content_checksum", "batch_id")
     .agg(
         F.count("*").alias("row_count"),
         F.min("ingested_at").alias("first_ingested_at"),
-        F.max("ingested_at").alias("last_ingested_at")
+        F.max("ingested_at").alias("last_ingested_at"),
     )
     .orderBy(F.desc("last_ingested_at"))
 )
@@ -261,10 +244,7 @@ show(configured_snapshots)
 
 snapshot_count = configured_snapshots.count()
 
-print(
-    f"Logical snapshots found for {EXPECTED_SOURCE_VERSION}: "
-    f"{snapshot_count}"
-)
+print(f"Logical snapshots found for {EXPECTED_SOURCE_VERSION}: {snapshot_count}")
 
 
 # -----------------------------------------------------------------------------
@@ -293,13 +273,10 @@ print(f"Expected rows     : {EXPECTED_ROW_COUNT:,}")
 # -----------------------------------------------------------------------------
 # Create the source snapshot DataFrame
 # -----------------------------------------------------------------------------
-source_df = (
-    bronze_df
-    .filter(
-        (F.col("source_version") == EXPECTED_SOURCE_VERSION)
-        & (F.col("content_checksum") == ACTIVE_CONTENT_CHECKSUM)
-        & (F.col("batch_id") == ACTIVE_BATCH_ID)
-    )
+source_df = bronze_df.filter(
+    (F.col("source_version") == EXPECTED_SOURCE_VERSION)
+    & (F.col("content_checksum") == ACTIVE_CONTENT_CHECKSUM)
+    & (F.col("batch_id") == ACTIVE_BATCH_ID)
 )
 
 source_row_count = source_df.count()
@@ -308,9 +285,7 @@ print(f"Selected Bronze rows: {source_row_count:,}")
 
 if source_row_count != EXPECTED_ROW_COUNT:
     raise ValueError(
-        f"Snapshot row-count mismatch. "
-        f"Expected {EXPECTED_ROW_COUNT:,}, "
-        f"found {source_row_count:,}."
+        f"Snapshot row-count mismatch. Expected {EXPECTED_ROW_COUNT:,}, found {source_row_count:,}."
     )
 
 
@@ -320,43 +295,31 @@ if source_row_count != EXPECTED_ROW_COUNT:
 def clean_string(column_name):
     trimmed = F.trim(F.col(column_name))
 
-    return F.when(
-        trimmed.isNull() | (trimmed == ""),
-        F.lit(None)
-    ).otherwise(trimmed)
+    return F.when(trimmed.isNull() | (trimmed == ""), F.lit(None)).otherwise(trimmed)
 
 
 # The damaged form of ñ, written as escapes so the editor cannot alter it
 MOJIBAKE_N = "\u00c3\u00b1"
 
-geography_candidate = (
-    source_df
-    .select(
-        clean_string("psgc_code").alias("psgc_code"),
-        clean_string("correspondence_code").alias("correspondence_code"),
-        clean_string("area_name").alias("area_name_raw"),
-        F.regexp_replace(
-            clean_string("area_name"), MOJIBAKE_N, "ñ"
-        ).alias("area_name"),
-        clean_string("geographic_level").alias("geographic_level"),
-
-        clean_string("reg").alias("region_code"),
-        clean_string("prv").alias("province_code"),
-        clean_string("mun").alias("municipality_code"),
-        clean_string("bgy").alias("barangay_code"),
-
-        clean_string("city_class").alias("city_class"),
-        clean_string("income_classification").alias("income_classification"),
-        clean_string("urban_rural").alias("urban_rural"),
-        clean_string("island_region").alias("island_region"),
-        clean_string("record_status").alias("record_status"),
-
-        clean_string("source_version").alias("source_version"),
-        clean_string("content_checksum").alias("content_checksum"),
-        clean_string("batch_id").alias("batch_id"),
-
-        F.current_timestamp().alias("silver_processed_at")
-    )
+geography_candidate = source_df.select(
+    clean_string("psgc_code").alias("psgc_code"),
+    clean_string("correspondence_code").alias("correspondence_code"),
+    clean_string("area_name").alias("area_name_raw"),
+    F.regexp_replace(clean_string("area_name"), MOJIBAKE_N, "ñ").alias("area_name"),
+    clean_string("geographic_level").alias("geographic_level"),
+    clean_string("reg").alias("region_code"),
+    clean_string("prv").alias("province_code"),
+    clean_string("mun").alias("municipality_code"),
+    clean_string("bgy").alias("barangay_code"),
+    clean_string("city_class").alias("city_class"),
+    clean_string("income_classification").alias("income_classification"),
+    clean_string("urban_rural").alias("urban_rural"),
+    clean_string("island_region").alias("island_region"),
+    clean_string("record_status").alias("record_status"),
+    clean_string("source_version").alias("source_version"),
+    clean_string("content_checksum").alias("content_checksum"),
+    clean_string("batch_id").alias("batch_id"),
+    F.current_timestamp().alias("silver_processed_at"),
 )
 
 
@@ -379,8 +342,7 @@ print(f"Silver candidate rows: {candidate_row_count:,}")
 # Inspect representative rows
 # -----------------------------------------------------------------------------
 show(
-    geography_candidate
-    .select(
+    geography_candidate.select(
         "psgc_code",
         "correspondence_code",
         "area_name",
@@ -389,9 +351,8 @@ show(
         "province_code",
         "municipality_code",
         "barangay_code",
-        "urban_rural"
-    )
-    .limit(20)
+        "urban_rural",
+    ).limit(20)
 )
 
 
@@ -409,30 +370,16 @@ print(f"Batch ID      : {ACTIVE_BATCH_ID}")
 # -----------------------------------------------------------------------------
 # SG01: NULL / Completeness
 # -----------------------------------------------------------------------------
-required_columns = [
-    "psgc_code",
-    "area_name",
-    "source_version",
-    "content_checksum",
-    "batch_id"
-]
+required_columns = ["psgc_code", "area_name", "source_version", "content_checksum", "batch_id"]
 
 null_condition = None
 
 for column_name in required_columns:
     condition = F.col(column_name).isNull()
 
-    null_condition = (
-        condition
-        if null_condition is None
-        else null_condition | condition
-    )
+    null_condition = condition if null_condition is None else null_condition | condition
 
-sg01_fail_count = (
-    geography_candidate
-    .filter(null_condition)
-    .count()
-)
+sg01_fail_count = geography_candidate.filter(null_condition).count()
 
 sg01_total_count = candidate_row_count
 
@@ -445,15 +392,8 @@ print(f"Rows evaluated                : {sg01_total_count:,}")
 # -----------------------------------------------------------------------------
 if sg01_fail_count > 0:
     show(
-        geography_candidate
-        .filter(null_condition)
-        .select(
-            "psgc_code",
-            "area_name",
-            "source_version",
-            "content_checksum",
-            "batch_id"
-        )
+        geography_candidate.filter(null_condition)
+        .select("psgc_code", "area_name", "source_version", "content_checksum", "batch_id")
         .limit(50)
     )
 
@@ -462,27 +402,14 @@ if sg01_fail_count > 0:
 # SG02: Grain uniqueness
 # -----------------------------------------------------------------------------
 duplicate_keys = (
-    geography_candidate
-    .groupBy(
-        "psgc_code",
-        "content_checksum"
-    )
-    .count()
-    .filter(F.col("count") > 1)
+    geography_candidate.groupBy("psgc_code", "content_checksum").count().filter(F.col("count") > 1)
 )
 
 sg02_duplicate_group_count = duplicate_keys.count()
 
-sg02_duplicate_row_count = (
-    duplicate_keys
-    .agg(
-        F.coalesce(
-            F.sum("count"),
-            F.lit(0)
-        ).alias("duplicate_rows")
-    )
-    .first()["duplicate_rows"]
-)
+sg02_duplicate_row_count = duplicate_keys.agg(
+    F.coalesce(F.sum("count"), F.lit(0)).alias("duplicate_rows")
+).first()["duplicate_rows"]
 
 sg02_total_count = candidate_row_count
 
@@ -495,54 +422,37 @@ print(f"Rows evaluated              : {sg02_total_count:,}")
 # Show duplicates only when found
 # -----------------------------------------------------------------------------
 if sg02_duplicate_group_count > 0:
-    show(
-        duplicate_keys
-        .orderBy(F.desc("count"))
-        .limit(50)
-    )
+    show(duplicate_keys.orderBy(F.desc("count")).limit(50))
 
 
 # -----------------------------------------------------------------------------
 # Profile geographic_level
 # -----------------------------------------------------------------------------
 geographic_level_profile = (
-    geography_candidate
-    .groupBy("geographic_level")
+    geography_candidate.groupBy("geographic_level")
     .agg(F.count("*").alias("row_count"))
     .orderBy("geographic_level")
 )
 
 show(geographic_level_profile)
 
-geographic_level_distinct_count = (
-    geography_candidate
-    .select("geographic_level")
-    .distinct()
-    .count()
-)
+geographic_level_distinct_count = geography_candidate.select("geographic_level").distinct().count()
 
-print(
-    f"Distinct geographic_level values: "
-    f"{geographic_level_distinct_count}"
-)
+print(f"Distinct geographic_level values: {geographic_level_distinct_count}")
 
 
 # -----------------------------------------------------------------------------
 # Inspect the null-level records (2 in Q2_2024; GS08 in the QC compares them with the YAML)
 # -----------------------------------------------------------------------------
-null_level_rows = (
-    geography_candidate
-    .filter(F.col("geographic_level").isNull())
-    .select(
-        "psgc_code",
-        "correspondence_code",
-        "area_name",
-        "region_code",
-        "province_code",
-        "municipality_code",
-        "barangay_code",
-        "source_version"
-    )
+null_level_rows = geography_candidate.filter(F.col("geographic_level").isNull()).select(
+    "psgc_code",
+    "correspondence_code",
+    "area_name",
+    "region_code",
+    "province_code",
+    "municipality_code",
+    "barangay_code",
+    "source_version",
 )
 
 show(null_level_rows)
@@ -551,22 +461,13 @@ show(null_level_rows)
 # -----------------------------------------------------------------------------
 # SG03 Accepted Values (list from the YAML, read at the top)
 # -----------------------------------------------------------------------------
-invalid_level_condition = (
-    F.col("geographic_level").isNotNull()
-    & ~F.col("geographic_level").isin(ACCEPTED_GEOGRAPHIC_LEVELS)
+invalid_level_condition = F.col("geographic_level").isNotNull() & ~F.col("geographic_level").isin(
+    ACCEPTED_GEOGRAPHIC_LEVELS
 )
 
-sg03_fail_count = (
-    geography_candidate
-    .filter(invalid_level_condition)
-    .count()
-)
+sg03_fail_count = geography_candidate.filter(invalid_level_condition).count()
 
-sg03_null_count = (
-    geography_candidate
-    .filter(F.col("geographic_level").isNull())
-    .count()
-)
+sg03_null_count = geography_candidate.filter(F.col("geographic_level").isNull()).count()
 
 sg03_total_count = candidate_row_count
 
@@ -582,7 +483,7 @@ expected_psgc_code = F.concat(
     F.lpad(F.col("region_code"), 2, "0"),
     F.lpad(F.col("province_code"), 3, "0"),
     F.lpad(F.col("municipality_code"), 2, "0"),
-    F.lpad(F.col("barangay_code"), 3, "0")
+    F.lpad(F.col("barangay_code"), 3, "0"),
 )
 
 hierarchy_mismatch_condition = (
@@ -593,11 +494,7 @@ hierarchy_mismatch_condition = (
     & (F.col("psgc_code") != expected_psgc_code)
 )
 
-sg04_fail_count = (
-    geography_candidate
-    .filter(hierarchy_mismatch_condition)
-    .count()
-)
+sg04_fail_count = geography_candidate.filter(hierarchy_mismatch_condition).count()
 
 sg04_total_count = candidate_row_count
 
@@ -606,8 +503,7 @@ print(f"Rows evaluated                   : {sg04_total_count:,}")
 
 if sg04_fail_count > 0:
     show(
-        geography_candidate
-        .filter(hierarchy_mismatch_condition)
+        geography_candidate.filter(hierarchy_mismatch_condition)
         .select(
             "psgc_code",
             "area_name",
@@ -616,7 +512,7 @@ if sg04_fail_count > 0:
             "province_code",
             "municipality_code",
             "barangay_code",
-            expected_psgc_code.alias("expected_psgc_code")
+            expected_psgc_code.alias("expected_psgc_code"),
         )
         .limit(50)
     )
@@ -628,9 +524,7 @@ if sg04_fail_count > 0:
 sg05_expected_count = source_row_count
 sg05_observed_count = candidate_row_count
 
-sg05_fail_count = abs(
-    sg05_expected_count - sg05_observed_count
-)
+sg05_fail_count = abs(sg05_expected_count - sg05_observed_count)
 
 sg05_total_count = sg05_expected_count
 
@@ -642,18 +536,12 @@ print(f"Row difference       : {sg05_fail_count:,}")
 # -----------------------------------------------------------------------------
 # SG06 Area name encoding
 # -----------------------------------------------------------------------------
-sg06_fail_count = (
-    geography_candidate
-    .filter(F.col("area_name").contains("\u00c3"))
-    .count()
-)
-sg06_repaired_count = (
-    geography_candidate
-    .filter(F.col("area_name") != F.col("area_name_raw"))
-    .count()
-)
+sg06_fail_count = geography_candidate.filter(F.col("area_name").contains("\u00c3")).count()
+sg06_repaired_count = geography_candidate.filter(
+    F.col("area_name") != F.col("area_name_raw")
+).count()
 print(f"SG06 - Names still damaged: {sg06_fail_count:,}")
-print(f"Names repaired            : {sg06_repaired_count:,}")   # 456 for Q2_2024
+print(f"Names repaired            : {sg06_repaired_count:,}")  # 456 for Q2_2024
 
 
 # -----------------------------------------------------------------------------
@@ -689,17 +577,9 @@ def make_qc_result(
     expected=None,
     detail=None,
 ):
-    fail_pct = (
-        fail_count / total_count
-        if total_count > 0
-        else 0.0
-    )
+    fail_pct = fail_count / total_count if total_count > 0 else 0.0
 
-    status = (
-        "PASS"
-        if fail_pct <= threshold
-        else severity
-    )
+    status = "PASS" if fail_pct <= threshold else severity
 
     return {
         "run_id": RUN_ID,
@@ -708,22 +588,18 @@ def make_qc_result(
         "source_key": SOURCE_KEY,
         "table_name": TARGET_TABLE,
         "layer": LAYER,
-        "executed_at": datetime.now(timezone.utc),
-
+        "executed_at": datetime.now(UTC),
         "check_id": check_id,
         "check_name": check_name,
         "check_type": check_type,
         "column_name": column_name,
         "admin_level": admin_level,
-
         "status": status,
         "severity": severity,
-
         "fail_count": int(fail_count),
         "total_count": int(total_count),
         "fail_pct": float(fail_pct),
         "threshold": float(threshold),
-
         "observed": observed,
         "expected": expected,
         "detail": detail,
@@ -742,11 +618,9 @@ qc_rows = [
         total_count=sg01_total_count,
         severity="FAIL",
         detail=(
-            "Required fields: psgc_code, area_name, "
-            "source_version, content_checksum, batch_id"
+            "Required fields: psgc_code, area_name, source_version, content_checksum, batch_id"
         ),
     ),
-
     make_qc_result(
         check_id="SG02",
         check_name="Geography grain uniqueness",
@@ -759,7 +633,6 @@ qc_rows = [
             f"Duplicate key groups: {sg02_duplicate_group_count}"
         ),
     ),
-
     make_qc_result(
         check_id="SG03",
         check_name="Geographic level accepted values",
@@ -774,7 +647,6 @@ qc_rows = [
             f"{sg03_null_count}"
         ),
     ),
-
     make_qc_result(
         check_id="SG04",
         check_name="PSGC hierarchy consistency",
@@ -782,12 +654,8 @@ qc_rows = [
         fail_count=sg04_fail_count,
         total_count=sg04_total_count,
         severity="WARN",
-        detail=(
-            "Checks whether hierarchy code components reconstruct "
-            "the 10-digit PSGC code."
-        ),
+        detail=("Checks whether hierarchy code components reconstruct the 10-digit PSGC code."),
     ),
-
     make_qc_result(
         check_id="SG05",
         check_name="Bronze to Silver candidate volume reconciliation",
@@ -827,10 +695,7 @@ qc_rows = [
 # -----------------------------------------------------------------------------
 qc_schema = spark.table(QC_TABLE).schema
 
-qc_results_df = spark.createDataFrame(
-    qc_rows,
-    schema=qc_schema
-)
+qc_results_df = spark.createDataFrame(qc_rows, schema=qc_schema)
 
 show(
     qc_results_df.select(
@@ -841,7 +706,7 @@ show(
         "severity",
         "fail_count",
         "total_count",
-        "fail_pct"
+        "fail_pct",
     )
 )
 
@@ -849,30 +714,17 @@ show(
 # -----------------------------------------------------------------------------
 # Append results to centralized qc_results
 # -----------------------------------------------------------------------------
-(
-    qc_results_df
-    .write
-    .mode("append")
-    .saveAsTable(QC_TABLE)
-)
+(qc_results_df.write.mode("append").saveAsTable(QC_TABLE))
 
-print(
-    f"Logged {qc_results_df.count()} QC results "
-    f"for validation {VALIDATION_ID}"
-)
+print(f"Logged {qc_results_df.count()} QC results for validation {VALIDATION_ID}")
 
 
 # -----------------------------------------------------------------------------
 # DQ gate
 # -----------------------------------------------------------------------------
-blocking_failure_count = (
-    qc_results_df
-    .filter(
-        (F.col("status") == "FAIL")
-        & (F.col("severity") == "FAIL")
-    )
-    .count()
-)
+blocking_failure_count = qc_results_df.filter(
+    (F.col("status") == "FAIL") & (F.col("severity") == "FAIL")
+).count()
 
 if blocking_failure_count > 0:
     raise RuntimeError(
@@ -881,10 +733,7 @@ if blocking_failure_count > 0:
         f"Validation ID: {VALIDATION_ID}"
     )
 
-print(
-    f"DQ gate passed. "
-    f"No blocking failures for validation {VALIDATION_ID}."
-)
+print(f"DQ gate passed. No blocking failures for validation {VALIDATION_ID}.")
 
 
 # -----------------------------------------------------------------------------
@@ -951,9 +800,7 @@ else:
 # -----------------------------------------------------------------------------
 # Register candidate as temporary view
 # -----------------------------------------------------------------------------
-geography_candidate.createOrReplaceTempView(
-    "geography_candidate"
-)
+geography_candidate.createOrReplaceTempView("geography_candidate")
 
 
 # -----------------------------------------------------------------------------
@@ -1035,18 +882,17 @@ merge_metrics = (
 )
 if merge_metrics and merge_metrics["operation"] == "MERGE":
     metrics = merge_metrics["operationMetrics"]
-    print(f"MERGE inserted: {metrics.get('numTargetRowsInserted')}, "
-          f"updated: {metrics.get('numTargetRowsUpdated')}")
+    print(
+        f"MERGE inserted: {metrics.get('numTargetRowsInserted')}, "
+        f"updated: {metrics.get('numTargetRowsUpdated')}"
+    )
 
 
 # -----------------------------------------------------------------------------
 # Post-write reconciliation
 # -----------------------------------------------------------------------------
-silver_snapshot_df = (
-    spark.table(TARGET_TABLE)
-    .filter(
-        F.col("content_checksum") == ACTIVE_CONTENT_CHECKSUM
-    )
+silver_snapshot_df = spark.table(TARGET_TABLE).filter(
+    F.col("content_checksum") == ACTIVE_CONTENT_CHECKSUM
 )
 
 silver_snapshot_count = silver_snapshot_df.count()
@@ -1066,25 +912,16 @@ if silver_snapshot_count != EXPECTED_ROW_COUNT:
 # Post-write uniqueness
 # -----------------------------------------------------------------------------
 post_write_duplicates = (
-    silver_snapshot_df
-    .groupBy(
-        "psgc_code",
-        "content_checksum"
-    )
+    silver_snapshot_df.groupBy("psgc_code", "content_checksum")
     .count()
     .filter(F.col("count") > 1)
     .count()
 )
 
-print(
-    f"Post-write duplicate logical keys: "
-    f"{post_write_duplicates:,}"
-)
+print(f"Post-write duplicate logical keys: {post_write_duplicates:,}")
 
 if post_write_duplicates > 0:
-    raise RuntimeError(
-        "Post-write uniqueness validation failed."
-    )
+    raise RuntimeError("Post-write uniqueness validation failed.")
 
 stale_batch_rows = silver_snapshot_df.filter(F.col("batch_id") != ACTIVE_BATCH_ID).count()
 print(f"Rows not on the active Bronze batch: {stale_batch_rows:,}")

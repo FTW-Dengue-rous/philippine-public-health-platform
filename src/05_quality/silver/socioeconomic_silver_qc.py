@@ -65,7 +65,6 @@ import re
 import sys
 
 import yaml
-
 from pyspark.sql import SparkSession
 
 
@@ -118,8 +117,8 @@ SCRIPT_NAME = "socioeconomic_silver_qc.py"
 CONFIG_NAME = "sources_socioeconomic.yaml"
 
 # Part of what a check means (see the CHECKS names), so kept in code.
-INCIDENCE_DROP_PP = 15      # S94: fall between two releases, percentage points (decision D4)
-GROWTH_REVIEW_PCT = 50      # S07: per capita growth outside -50 to 50 percent is worth a look
+INCIDENCE_DROP_PP = 15  # S94: fall between two releases, percentage points (decision D4)
+GROWTH_REVIEW_PCT = 50  # S07: per capita growth outside -50 to 50 percent is worth a look
 
 
 def parse_args():
@@ -141,8 +140,11 @@ def parse_args():
     )
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--code_version", default=None)
-    p.add_argument("--config_path", default=None,
-                   help=f"Full path to {CONFIG_NAME} (default: config/ above this file)")
+    p.add_argument(
+        "--config_path",
+        default=None,
+        help=f"Full path to {CONFIG_NAME} (default: config/ above this file)",
+    )
     a, _ = p.parse_known_args()
     return a
 
@@ -289,6 +291,7 @@ TABLES = {
     },
 }
 
+
 # ----------------------------------------------------------------------------------
 # Control values (S84): read from sources_socioeconomic.yaml (rule 2a, 2026-10-19)
 # ----------------------------------------------------------------------------------
@@ -317,8 +320,10 @@ def find_config(explicit=None):
             if parent == folder:
                 break
             folder = parent
-    raise FileNotFoundError(f"{CONFIG_NAME} not found. Pass --config_path. Looked in:\n  "
-                            + "\n  ".join(dict.fromkeys(searched)))
+    raise FileNotFoundError(
+        f"{CONFIG_NAME} not found. Pass --config_path. Looked in:\n  "
+        + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
 def sql_literal(v):
@@ -329,7 +334,7 @@ def sql_literal(v):
     return "'" + str(v).replace("'", "''") + "'"
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def load_controls():
     """{silver table: [(label, sql, expected)]} from the qc.control_values items that carry a
     `silver:` block: {column, where: {silver column: value}, scale}. expected = bronze expected
@@ -340,19 +345,28 @@ def load_controls():
     out = {}
     for table, cfg in TABLES.items():
         key = cfg["source_key"]
-        items = [cv for cv in ((sources.get(key) or {}).get("qc") or {}).get("control_values") or []
-                 if cv.get("silver")]
+        items = [
+            cv
+            for cv in ((sources.get(key) or {}).get("qc") or {}).get("control_values") or []
+            if cv.get("silver")
+        ]
         if not items:
-            raise ValueError(f"{CONFIG_NAME}: {key} has no qc.control_values with a silver: block (S84)")
+            raise ValueError(
+                f"{CONFIG_NAME}: {key} has no qc.control_values with a silver: block (S84)"
+            )
         rows = []
         for cv in items:
             sv = cv["silver"]
             if not sv.get("column") or not sv.get("where"):
-                raise ValueError(f"{CONFIG_NAME}: {key} control {cv.get('label')!r}: "
-                                 "silver block needs column and where")
+                raise ValueError(
+                    f"{CONFIG_NAME}: {key} control {cv.get('label')!r}: "
+                    "silver block needs column and where"
+                )
             where = " AND ".join(f"{c} = {sql_literal(v)}" for c, v in sv["where"].items())
             expected = round(float(cv["expected"]) * float(sv.get("scale", 1)), 6)
-            rows.append((cv["label"], f"SELECT max({sv['column']}) FROM {table} WHERE {where}", expected))
+            rows.append(
+                (cv["label"], f"SELECT max({sv['column']}) FROM {table} WHERE {where}", expected)
+            )
         out[table] = rows
     return out
 
@@ -422,10 +436,14 @@ class TableQC:
             rows = spark.sql(f"""SELECT parameters FROM {QUALITY}.build_log
                                  WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
                                    AND status = 'succeeded'""").collect()
-            self._params = json.loads(rows[0]["parameters"]) if rows and rows[0]["parameters"] else {}
+            self._params = (
+                json.loads(rows[0]["parameters"]) if rows and rows[0]["parameters"] else {}
+            )
         if key not in self._params:
-            raise KeyError(f"{self.table}: build {self.build_id} did not record {key!r}. "
-                           "Rebuild the table with the 2026-10-19 build file.")
+            raise KeyError(
+                f"{self.table}: build {self.build_id} did not record {key!r}. "
+                "Rebuild the table with the 2026-10-19 build file."
+            )
         return self._params[key]
 
     def years_sql(self, key):
@@ -707,7 +725,8 @@ def check_poverty(dq, profile):
             "tab2",
             "poverty_incidence_pct",
             " + ".join(
-                f"coalesce(sum({bronze_number(f'incidence_{y}')}), 0)" for y in t.param("poverty_years")
+                f"coalesce(sum({bronze_number(f'incidence_{y}')}), 0)"
+                for y in t.param("poverty_years")
             ),
             " + ".join(f"incidence_{y}" for y in t.param("poverty_years")),
         ),
@@ -921,7 +940,9 @@ def check_share(dq, profile):
         + f" FROM {BRONZE}.{SHARE_BRONZE} WHERE _source_key = '{SHARE_KEY}'"
     )
     t.value(
-        "S10", s, b,
+        "S10",
+        s,
+        b,
         column_name=f"share_pct (bronze share_{min(share_years)} ... share_{max(share_years)}, a/ counted as 0)",
     )
     t.count(
@@ -1048,7 +1069,9 @@ def check_child_mortality(dq, profile):
     for r in spark.sql(
         f"SELECT characteristic_group, count(DISTINCT characteristic) AS n FROM {MORT} GROUP BY 1"
     ).collect():
-        g[label_key(r["characteristic_group"])] = g.get(label_key(r["characteristic_group"]), 0) + r["n"]
+        g[label_key(r["characteristic_group"])] = (
+            g.get(label_key(r["characteristic_group"]), 0) + r["n"]
+        )
     expected_groups = {label_key(k): int(v) for k, v in t.param("characteristics_by_group").items()}
     incomplete = scalar(f"""SELECT count(*) FROM (SELECT 1 FROM {MORT} GROUP BY characteristic_group, characteristic
                                                   HAVING count(DISTINCT survey_year) <> {len(surveys)}

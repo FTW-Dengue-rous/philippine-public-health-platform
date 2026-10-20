@@ -51,7 +51,6 @@ import os
 import sys
 
 import yaml
-
 from pyspark.sql import SparkSession
 
 
@@ -118,8 +117,11 @@ def parse_args():
     p.add_argument("--profile", default="true", help="Also write a column profile")
     p.add_argument("--job_run_id", default=None, help="Pass {{job.run_id}} from a Databricks job")
     p.add_argument("--code_version", default=None)
-    p.add_argument("--config_path", default=None,
-                   help=f"Full path to {CONFIG_NAME} (default: config/ above this file)")
+    p.add_argument(
+        "--config_path",
+        default=None,
+        help=f"Full path to {CONFIG_NAME} (default: config/ above this file)",
+    )
     a, _ = p.parse_known_args()
     return a
 
@@ -215,11 +217,13 @@ def find_config(explicit=None):
             if parent == folder:
                 break
             folder = parent
-    raise FileNotFoundError(f"{CONFIG_NAME} not found. Pass --config_path. Looked in:\n  "
-                            + "\n  ".join(dict.fromkeys(searched)))
+    raise FileNotFoundError(
+        f"{CONFIG_NAME} not found. Pass --config_path. Looked in:\n  "
+        + "\n  ".join(dict.fromkeys(searched))
+    )
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def load_controls():
     """national: [(source_key, year, profession, expected, label)]  S64
     area:     [(label, area_key, year, profession, expected)]      S65
@@ -230,8 +234,11 @@ def load_controls():
         sources = (yaml.safe_load(f) or {}).get("sources") or {}
 
     def silver_items(key):
-        items = [cv for cv in ((sources.get(key) or {}).get("qc") or {}).get("control_values") or []
-                 if cv.get("silver")]
+        items = [
+            cv
+            for cv in ((sources.get(key) or {}).get("qc") or {}).get("control_values") or []
+            if cv.get("silver")
+        ]
         if not items:
             raise ValueError(f"{CONFIG_NAME}: {key} has no qc.control_values with a silver: block")
         return items
@@ -241,15 +248,23 @@ def load_controls():
         for cv in silver_items(key):
             sv = cv["silver"]
             if "year" not in sv or "profession" not in sv:
-                raise ValueError(f"{CONFIG_NAME}: {key} control {cv.get('label')!r}: silver block needs year and profession")
-            national.append((key, int(sv["year"]), str(sv["profession"]), cv["expected"], cv["label"]))
-    area = [(a["label"], a["area_key"], int(a["year"]), a["profession"], a["expected"])
-            for a in ((sources.get(FHSIS_KEY) or {}).get("silver_qc") or {}).get("area_controls") or []]
+                raise ValueError(
+                    f"{CONFIG_NAME}: {key} control {cv.get('label')!r}: silver block needs year and profession"
+                )
+            national.append(
+                (key, int(sv["year"]), str(sv["profession"]), cv["expected"], cv["label"])
+            )
+    area = [
+        (a["label"], a["area_key"], int(a["year"]), a["profession"], a["expected"])
+        for a in ((sources.get(FHSIS_KEY) or {}).get("silver_qc") or {}).get("area_controls") or []
+    ]
     if not area:
         raise ValueError(f"{CONFIG_NAME}: {FHSIS_KEY}.silver_qc.area_controls is missing (S65)")
     psmo = [cv for cv in silver_items(PSMO_KEY) if cv["silver"].get("total")]
     if len(psmo) != 1:
-        raise ValueError(f"{CONFIG_NAME}: {PSMO_KEY} needs exactly one control with silver: {{total: ...}} (S78)")
+        raise ValueError(
+            f"{CONFIG_NAME}: {PSMO_KEY} needs exactly one control with silver: {{total: ...}} (S78)"
+        )
     return {"national": national, "area": area, "psmo": psmo[0]["expected"]}
 
 
@@ -309,10 +324,14 @@ class TableQC:
             rows = spark.sql(f"""SELECT parameters FROM {QUALITY}.build_log
                                  WHERE build_id = '{self.build_id}' AND target_table = '{self.table}'
                                    AND status = 'succeeded'""").collect()
-            self._params = json.loads(rows[0]["parameters"]) if rows and rows[0]["parameters"] else {}
+            self._params = (
+                json.loads(rows[0]["parameters"]) if rows and rows[0]["parameters"] else {}
+            )
         if key not in self._params:
-            raise KeyError(f"{self.table}: build {self.build_id} did not record {key!r}. "
-                           "Rebuild the table with the 2026-10-19 build file.")
+            raise KeyError(
+                f"{self.table}: build {self.build_id} did not record {key!r}. "
+                "Rebuild the table with the 2026-10-19 build file."
+            )
         return self._params[key]
 
     def years(self, key):
@@ -325,9 +344,14 @@ class TableQC:
         for bronze, source_key, extra in DECLARED_INPUTS[self.table]:
             if extra is None:
                 sheets = {(int(d["year"]), d["sheet"]) for d in self.param("denominator_sheets")}
-                extra = "(" + " OR ".join(
-                    f"({FILE_YEAR} = {y} AND _source_sheet = '{sh.replace(chr(39), chr(39) * 2)}')"
-                    for y, sh in sorted(sheets)) + ")"
+                extra = (
+                    "("
+                    + " OR ".join(
+                        f"({FILE_YEAR} = {y} AND _source_sheet = '{sh.replace(chr(39), chr(39) * 2)}')"
+                        for y, sh in sorted(sheets)
+                    )
+                    + ")"
+                )
             out.append((bronze, source_key, extra))
         return out
 
@@ -615,8 +639,8 @@ def check_headcount(dq, profile):
     t.count(
         "S08",
         f"""SELECT count(*) FROM {HC}
-                       WHERE (_source_key = '{FHSIS_KEY}' AND year NOT IN ({', '.join(map(str, fhsis_years))}))
-                          OR (_source_key = '{PSA_KEY}' AND year NOT IN ({', '.join(map(str, psa_years))}))""",
+                       WHERE (_source_key = '{FHSIS_KEY}' AND year NOT IN ({", ".join(map(str, fhsis_years))}))
+                          OR (_source_key = '{PSA_KEY}' AND year NOT IN ({", ".join(map(str, psa_years))}))""",
         total_sql,
         column_name="year",
         detail=f"years recorded by the build: FHSIS {fhsis_years[0]}-{fhsis_years[-1]}, PSA {psa_years[0]}-{psa_years[-1]}",
@@ -743,11 +767,14 @@ def check_headcount(dq, profile):
         source_key=PSA_KEY,
         column_name="headcount_total",
         detail=f"years in both sources: {common_in}. "
-        + (listing(f"""SELECT p.year, p.profession, 'PSA', p.headcount_total, 'FHSIS', f.headcount_total FROM {HC} p
+        + (
+            listing(f"""SELECT p.year, p.profession, 'PSA', p.headcount_total, 'FHSIS', f.headcount_total FROM {HC} p
                                LEFT JOIN {HC} f ON f._source_key = '{FHSIS_KEY}' AND f.area_key = 'ph'
                                                AND f.year = p.year AND f.profession = p.profession
                                WHERE p._source_key = '{PSA_KEY}' AND p.area_key = 'ph' AND p.year IN ({common_in})
-                                 AND NOT (p.headcount_total <=> f.headcount_total)""") or ""),
+                                 AND NOT (p.headcount_total <=> f.headcount_total)""")
+            or ""
+        ),
     )
     t.count(
         "S72",
@@ -804,7 +831,9 @@ def check_denominator(dq, profile):
         total_sql,
         column_name="reported_population, household_estimates",
     )
-    den_years = sorted({int(d["year"]) for d in t.param("denominator_sheets") if d["side"] == "population"})
+    den_years = sorted(
+        {int(d["year"]) for d in t.param("denominator_sheets") if d["side"] == "population"}
+    )
     hh_years = ", ".join(str(y) for y in t.years("households_years"))
     t.count(
         "S08",
