@@ -2,7 +2,7 @@
 
 Why silver rebuilds its tables in full, what that costs, and how to cut the cost later.
 
-Status date: 2026-10-19. Decision: D-57 (replaces the "per-source rebuild next" plan in AD-15). Back to the [silver overview](README.md).
+Status date: 2026-10-20. Decisions: D-57 (replaces the "per-source rebuild next" plan in AD-15) and D-59 (runs stay manual; R0 and R1 deferred). Back to the [silver overview](README.md).
 
 ---
 
@@ -12,6 +12,7 @@ Status date: 2026-10-19. Decision: D-57 (replaces the "per-source rebuild next" 
 - **We planned two optimisations and decided not to do them for now:** per-source incremental rebuild and table layout tuning (`OPTIMIZE`, Z-order, partitioning). No silver domain is near a million rows, so both would cost more effort or compute than they save. Both move to the recommendations (section 3a and section 6).
 - The real cost problem is not row volume. Our sources change rarely, so most runs rebuild silver and gold from **unchanged** inputs.
 - The cheapest fix is to **skip silver and gold when nothing changed** (R1). Per-source incremental (R3) comes last, when a domain reaches millions of rows.
+- **For the capstone, runs stay manual (D-59).** New data arrives through people (FOI uploads, downloads, the PSGC and HDX landing jobs, all run by hand), so whoever lands a file starts the job. There are no unattended runs to skip, so R0 and R1 are deferred, in the safer form described in section 6.
 
 ## 2. How silver runs today
 
@@ -58,14 +59,14 @@ These were planned after the capstone. The team decided not to build them now be
 | RS-1 | Every run rebuilds every silver and gold table, even when no bronze file changed | Compute is spent on unchanged work. With a weekly schedule, most runs would process identical inputs |
 | RS-2 | One new file rebuilds its whole table | A new FOI file for one source rebuilds every source in `diseases_metric_silver` |
 | RS-3 | Rewrite cost grows with the **total** rows, not the **new** rows | Fine today. It does not scale to millions of rows per domain |
-| RS-4 | Nothing skips a run automatically | The schedule in the job YAML is commented out, so runs are manual today. Switching it on without R1 multiplies RS-1 |
+| RS-4 | Nothing skips a run automatically | Runs are started by hand (the schedule in the job YAML is paused; D-59), so no run happens without a reason. Switching on a schedule or a trigger without R1 would multiply RS-1 |
 | RS-5 | Where the run time goes is not measured per task | Full runs on 2026-10-16 and 2026-10-17 took about 65–70 minutes including bronze. The task timeline was not broken down, so measure it before optimising |
 
 ## 5. When to revisit
 
 | Trigger | Do |
 |---|---|
-| The job should run automatically | R0 (file-arrival trigger) first; R1 only if a fixed schedule is kept |
+| The job should run without anyone starting it | R0 (trigger on a marker folder, or from the ingestion jobs), together with R1 (skip only on automatic runs) |
 | Sources start arriving often (monthly or weekly feeds) | R1, then R2 |
 | A domain table reaches millions of rows, or one silver task becomes the slowest part of the run | R3 for that domain, with R5 |
 
@@ -73,12 +74,14 @@ These were planned after the capstone. The team decided not to build them now be
 
 | # | What | How | Saving | Effort |
 |---|---|---|---|---|
-| **R0** | **Job settings only (YAML, no code)** | (a) `trigger.file_arrival` on the landing path instead of a schedule, so the job runs only when a new file lands; code or rule changes still need a manual run. (b) `performance_target: STANDARD` for the serverless Python tasks; the SQL warehouse at the smallest size with a short auto-stop | Large for no-change runs; lower DBUs per run | 1 hour |
-| **R1** | **Skip silver and gold when nothing changed** | After the bronze gates, a `change_check` task compares each domain's current bronze inputs (file, sheet, load time) with the `build_inputs` of its latest succeeded silver build (the logic of the freshness checks S16, S33, S63, S83). It sets a task value `has_changes`. A Databricks `condition_task` runs silver, gold and QC only when it is true. A `force_rebuild` job parameter overrides it, because a code or rule change (like D-44) must rebuild without new data | Largest: a no-change run costs bronze plus one check | 0.5–1 day |
+| **R0** | **Start the job when a batch of data is ready (job YAML, no pipeline code)** | (a) A `file_arrival` trigger on a small marker folder (`<landing_root>/_ready/`), **not** on the whole landing Volume. After uploading every file of a batch, the person drops one marker file there. The PSGC and HDX ingestion jobs can instead end with a task that starts the pipeline job. Watching the whole Volume would start runs halfway through a multi-file upload, and the pipeline's own writes into landing (HDX `bronze_handoff.json`, `bronze_qc_summary.json`) could start the job again. Code, YAML and reference-CSV changes still need a manual run. (b) The SQL warehouse at the smallest size that works, with a short auto-stop (safe to apply now; no logic change). `performance_target: STANDARD` for the serverless Python tasks: lower cost per run, slower start | Runs only when there is new data; lower cost per run | 1–2 hours |
+| **R1** | **Skip silver and gold on automatic runs when nothing changed** | After the bronze gates, a `change_check` task compares each domain's current bronze inputs (file, sheet, load time) with the `build_inputs` of its latest succeeded silver build (the logic of the freshness checks S16, S33, S63, S83) and sets a task value `has_changes`. A Databricks `condition_task` runs silver, gold and their QC when `has_changes` is true **or the run was started by hand**: branch on the run's trigger type (`{{job.trigger.type}}`), or on a `force_rebuild` job parameter that defaults to true for manual runs. So only an automatic run can skip. A code, YAML, reference-CSV or geography change is always followed by a manual run, so it can never be skipped by mistake, and the check needs bronze inputs only. A skipped run's evidence is the `change_check` output; `mart_evidence_readiness` keeps the previous build times | Largest once runs are automatic: a no-change run costs bronze plus one check | 0.5–1 day |
 | **R2** | **Per-domain skip** | The same check per domain. Each domain's silver chain runs only when its bronze changed. Gold reads across domains, so gold stays a full rebuild whenever any silver table changed | Large | 1 day |
 | **R3** | **Per-source incremental inside a domain** (diseases first) | Rebuild unit = `_source_key` (+ `_source_file`), written with Delta `replaceWhere`; `diseases_metric_silver` partitioned by `_source_key`. Per-source gates on the candidate, cross-source gates (S40–S44) on the published table. `diseases_source_coverage_silver` recomputes only the changed sources. QC S09 and S33 scoped to the rebuilt sources. `build_log` and `build_inputs` record which sources a build touched. Not MERGE on the business key: per-source replace keeps the rows read = rows loaded + rows set aside accounting ([reconciliation](reconciliation.md)) | Moderate today; grows with volume | 2–3 days |
 | **R4** | Pin inputs | Read bronze with `VERSION AS OF` from `build_inputs` and pass `{{job.run_id}}` as the build id. Helps R1–R3 prove exactly what each build read | Correctness, not cost | 1 day |
 | **R5** | Table layout tuning | `OPTIMIZE` (and Z-order on the common filter columns) for tables that reach millions of rows; partition by `_source_key` only together with R3. Deferred by decision, see section 3a | Read speed at volume; none today | 0.5 day |
+
+Evidence when R0 and R1 are built: (1) an automatic run with no data change skips silver and gold; (2) a manual run (or `force_rebuild=true`) rebuilds in full, and every gold G12 row passes. Record both before relying on the trigger.
 
 Rules for R3, if it is built:
 
@@ -87,7 +90,7 @@ Rules for R3, if it is built:
 
 ## 7. For the presentation
 
-> Silver rebuilds its tables in full on purpose. At our volume the rebuild is cheap, every check sees the whole table, and a rule change reaches every row at once. The real waste would be rebuilding unchanged data on a schedule, so the first optimisation is to skip silver and gold when no bronze file changed. We had planned per-source incremental builds and table tuning such as `OPTIMIZE` and partitioning, but every domain is still under a million rows, so we deferred them to the recommendations for when volume grows.
+> Silver rebuilds its tables in full on purpose. At our volume the rebuild is cheap, every check sees the whole table, and a rule change reaches every row at once. The real waste would be rebuilding unchanged data on a schedule, so the first optimisation is to skip silver and gold when no bronze file changed. For now runs are manual: the person who lands new data starts the job, so there is nothing to skip yet. We had planned per-source incremental builds and table tuning such as `OPTIMIZE` and partitioning, but every domain is still under a million rows, so we deferred them to the recommendations for when volume grows.
 
 ## 8. History of updates
 
@@ -98,3 +101,4 @@ Rules for R3, if it is built:
 | 2026-10-19 | Section 3a: per-source incremental and `OPTIMIZE` / Z-order / partitioning recorded as planned, then deferred because volume is under a million rows; R5 added |
 | 2026-10-19 | R0 added: file-arrival trigger and serverless standard mode (job YAML only) |
 | 2026-10-19 | Back link to the silver overview; R3 links the reconciliation page |
+| 2026-10-20 | D-59: runs stay manual for the capstone. R0 rewritten to trigger on a marker folder (or from the ingestion jobs), not the whole landing Volume; R1 skips only automatic runs, so a manual run always rebuilds. Warehouse auto-stop can be applied now |
