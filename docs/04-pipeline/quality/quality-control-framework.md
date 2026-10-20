@@ -1,6 +1,6 @@
 # Quality control framework
 
-The rules every quality check in the platform follows: where checks run, what stops the pipeline, how a status is decided, where results are stored, and how checks are added or changed. Individual checks are listed in the [check catalog](quality-check-catalog.md). The identifiers and lineage behind them are fixed by the [lineage and quality contract](lineage-and-quality-contract.md).
+This page sets the rules for every quality check. It covers where checks run, what stops the pipeline, how a check gets its status, where results go, and how to add or change a check. The [check catalog](quality-check-catalog.md) lists each check. The [lineage and quality contract](lineage-and-quality-contract.md) fixes the identifiers and lineage behind them.
 
 Status date: 2026-10-20. Back to the [quality overview](README.md).
 
@@ -13,7 +13,7 @@ Status date: 2026-10-20. Back to the [quality overview](README.md).
 | Check before the next layer starts | Every layer's QC runs before the layer that reads it. A FAIL stops the job there |
 | Protect the write, then record it | Build gates stop a bad candidate before publishing; QC scripts check the published table and store the result. Both exist on purpose |
 | Never change data in a check | QC reads and records. It never fixes, deletes or moves a data row |
-| Set aside with a reason, never drop | A row that can't be used gets a `row_disposition` with its reason; the share is checked (S29) |
+| Set aside with a reason, never drop | An unusable row gets a `row_disposition` with its reason. S29 checks the share |
 | One meaning per code | A code is never reused or renamed; a new idea gets a new code |
 | No typed numbers in the logic | Expected values live in `config/sources_<domain>.yaml` or in the settings a build records (`build_log.parameters`); a missing value fails the check (rule 2a) |
 | Faithful versus correct | Bronze checks that a load is faithful to its file. Silver and gold check meaning, rules and agreement between sources |
@@ -34,7 +34,7 @@ flowchart LR
 
 | Step | Where | Stops on | What stays as it was |
 |---|---|---|---|
-| Loader checks | Each bronze loader, per source | Header, required columns, decoding, no data rows; rows in table ≠ rows read | Nothing is written for that source; a `failed` load-log row |
+| Loader checks | Each bronze loader, per source | Header, required columns, decoding, no data rows; rows in table ≠ rows read | The loader writes nothing for that source. The load log gets a `failed` row |
 | Bronze QC | `run_bronze.py`, after each domain's load | Any FAIL | The run stops before the next domain |
 | Preload gate | `bronze_gate.py`, one job task per domain | A source in FAIL, CRASHED, STALE or NOT_CHECKED | That domain's silver does not start |
 | Silver build gates | Inside each build file (`__gates` table, or the Python gate in geography and population) | Any gate with failures > 0 | The published table; a `failed` row in `build_log` |
@@ -42,7 +42,25 @@ flowchart LR
 | Gold build gates | Inside each gold build file | Any gate > 0, including a silver input whose latest QC has a FAIL | The published gold table |
 | Gold QC | `gold_qc.py` | Any FAIL | Anything that depends on it (dashboard refresh) |
 
-A WARN never stops the chain. It is recorded, listed in `v_open_issues`, and read by a person.
+A WARN never stops the chain. QC records it and lists it in `v_open_issues`. A person reviews it.
+
+### What the checks look for
+
+| Kind | Question | Examples |
+|---|---|---|
+| Existence | Is the table there, with rows? | B01, S01, G01 |
+| Completeness | Did every file, row and period arrive? | B02, B03, S09, S54, G09 |
+| Uniqueness | Is each key and grain unique? No double load? | B06, S03, G02, G03 |
+| Validity | Are types, vocabularies and ranges correct? | B15, S11, S66, G11 |
+| Integrity | Does every key resolve? | S37, S49, G04 |
+| Consistency | Do values, statuses and bases agree? Do totals equal their parts? | B12, S36, S68, G08 |
+| Accuracy | Do the numbers match a published control or the layer below? | B11, S10, S21, S34, G07 |
+| Timeliness | Was the table built from the latest inputs? Is the source recent? | S16, S33, S98, G06 |
+| Auditability | Did the check run? Is the table the one the build wrote? | B00, S00, G00, S30, G05 |
+| Idempotency | Does a rerun give the same content? | G12 |
+| Business monitoring | Is a change plausible? | S58, S94, G13 |
+
+The seven programme attributes map onto these kinds as a proposal (O-06); see the [quality overview](README.md).
 
 Bronze also re-checks itself: an unchanged source whose last QC did not clear is re-queued by `run_bronze.py` (D-50), so a fix in the YAML `qc` block clears it without touching the file.
 
@@ -50,12 +68,12 @@ Bronze also re-checks itself: an unchanged source whose last QC did not clear is
 
 | Severity | Use it when | Effect |
 |---|---|---|
-| **FAIL** | The table is wrong, incomplete or can't be traced: missing file, lost or doubled rows, broken lineage, a published control that doesn't match, a key that isn't unique | The script raises at the end; the job stops |
+| **FAIL** | The table is wrong, incomplete or untraceable. Examples: a missing file, lost or doubled rows, broken lineage, a control that doesn't match, a key that isn't unique | The script raises an error at the end. The job stops |
 | **WARN** | The table is a faithful copy, but the source has a gap or disagreement a person should read: repeated rows, sources that disagree, a total that doesn't add up, a value to verify | Recorded; does not stop |
 
 Choosing a severity for a new check: if the published number could be wrong because of what the check found, it's FAIL. If the number is right but its source is imperfect, it's WARN.
 
-## 4. How a status is decided
+## 4. How a check gets its status
 
 `dq_utils.DQRun.record()` decides the status:
 
@@ -63,12 +81,12 @@ Choosing a severity for a new check: if the published number could be wrong beca
 |---|---|
 | Given | The check passes PASS, or its severity, directly |
 | Plain | From `fail_count` / `total_count`: PASS when the failing share ≤ `threshold` (default 0), otherwise the check's severity |
-| Banded | With `warn_threshold` and / or `min_fail_rows`: PASS up to the warn line; WARN up to the threshold or when failing rows ≤ the row floor; the check's severity above both. Used by S29 (WARN up to 5% or 10 rows) |
+| Banded | Uses `warn_threshold`, `min_fail_rows` or both. PASS up to the warn line. WARN up to the threshold, or when failing rows ≤ the row floor. Above both, the check's own severity. S29 uses it (WARN up to 5% or 10 rows) |
 | Value | Observed = expected (numbers within 0.0005), otherwise the check's severity |
 
-A check that raises an error is recorded as `B00` / `S00` / `G00` FAIL for its table, with the error text; the other tables still run, and the run fails at the end. A setting or control that a check needs and can't find is such an error, so a check can't be switched off by deleting its input.
+When a check raises an error, QC records `B00`, `S00` or `G00` FAIL for its table with the error text. The other tables still run. The run fails at the end. A missing setting or control counts as such an error. So nobody can switch a check off by deleting its input.
 
-## 5. Where results are stored
+## 5. Where results go
 
 All in `public_health.quality`, append-only:
 
@@ -105,10 +123,11 @@ Views for reading: `v_latest_results`, `v_table_health`, `v_open_issues`, `v_run
 | Expected rows, control totals and values | `qc` block of the source's YAML entry | Named per file. A new file fails until a person verifies the value and updates the YAML |
 | Silver controls | The same `qc.control_values` items, with a `silver:` block saying where the value sits in silver | One number, checked in bronze and in silver |
 | Build settings (years, counts, cut-offs) | `build_log.parameters` of the build that wrote the table | QC reads them back; a table built without them is S00 FAIL |
+| Gold settings and reviewed lists | Step [0] of each gold file holds the settings. `build_log.parameters` records them. Reviewed lists (sources, named areas, professions) are views. Gold counts them into `build_inputs.input_rows` | No query types a number that the logic depends on (D-62). The [seed data](../gold/seed-data.md) page lists the gold settings in section 9 |
 | Policy constants (S29 limits, S97 bands, S99 tolerance, S58 30%, S94 15 points, S07 ±50%) | Named constants in the QC script, one comment each | Part of what the check means; change them with a reason in the comment |
-| Bronze overrides | `qc.skip_checks`, `qc.severity` in the YAML | Known codes only; never `B00`; WARN or FAIL only; every override written into B01's detail (D-53) |
+| Bronze overrides | `qc.skip_checks`, `qc.severity` in the YAML | Known codes only. Never `B00`. WARN or FAIL only. B01's detail records every override (D-53) |
 
-There are no overrides in silver or gold: a check is changed in the script, reviewed in the pull request.
+Silver and gold have no overrides. To change a check, edit the script. The pull request review covers the change.
 
 ## 8. Set-aside rows
 
@@ -131,11 +150,14 @@ For `sharing: restricted` sources and their silver tables (D-47):
 
 ## 10. Expected WARNs
 
-A WARN is expected when it is listed, with its reason, on the layer page:
+A WARN is expected when its layer page lists it with a reason:
 
 - bronze: [bronze quality checks](../bronze/bronze-quality-checks.md), section 11;
 - silver: [silver quality checks](../silver/silver-quality-checks.md), per domain and section 14;
-- gold: G12 differs once after a rule change that rebuilds rows (for example the weekly `date_key` after D-44).
+- gold ([gold validation](../gold/analytical-validation-and-traceability.md), section 4):
+  - G12 differs once after a rule change that rebuilds rows, such as the weekly `date_key` after D-44;
+  - G13 warns when a boundary or code change moves a census population;
+  - G07 claims warns when suppressed region cells make gold lower than silver.
 
 A WARN that is not listed is a finding: explain it on the layer page, or add it to the [backlog](../../08-governance/known-issues-and-backlog.md).
 
@@ -165,5 +187,6 @@ A WARN that is not listed is a finding: explain it on the layer page, or add it 
 | 2026-10-07 | Quality schema and `DQRun` (D-14, D-15) |
 | 2026-10-09 | Build records and row dispositions (contract v1.2, v1.3) |
 | 2026-10-18 | Gold QC (D-48) |
-| 2026-10-19 | Bronze re-queue and preload gate (D-50, D-51); overrides validated (D-53); rule 2a: no typed numbers in silver QC |
-| 2026-10-20 | Page written |
+| 2026-10-19 | Bronze re-queue and preload gate added (D-50, D-51). Overrides validated (D-53). Rule 2a: no typed numbers in silver QC |
+| 2026-10-20 | Page written (silver chat) |
+| 2026-10-20 | Merged with the gold pass: kinds of check, gold settings (D-62), gold expected WARNs |

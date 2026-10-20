@@ -1,6 +1,6 @@
 # Architecture overview
 
-This page shows how the platform is built: the layers, where data lives, how the job runs and where quality is checked. Read it before any layer page.
+This page shows how the platform works. It covers the layers, where data lives, how the job runs and where checks happen. Read it before any layer page.
 
 Status date: 2026-10-20. Platform facts (versions, libraries, what to change outside Databricks) live in [reproducibility](../07-operations/reproducibility.md).
 
@@ -8,7 +8,15 @@ Status date: 2026-10-20. Platform facts (versions, libraries, what to change out
 
 ## 1. One-line summary
 
-A medallion lakehouse on Databricks: source files land as-is, **bronze** copies them as text, **silver** cleans and codes them to one geography, **gold** models them as a star schema with marts, and one **quality** schema records every check, build and input. One job runs it all and stops on the first failure.
+The platform is a medallion lakehouse on Databricks.
+
+- Source files land as they are.
+- **Bronze** copies them as text.
+- **Silver** cleans them and codes them to one geography.
+- **Gold** models them as a star schema with marts.
+- The **quality** schema records every check, build and input.
+
+One job runs it all. It stops on the first failure.
 
 ## 2. Architecture diagram
 
@@ -58,8 +66,8 @@ flowchart TB
 | Layer | Schema | Unit of work | Write pattern | Owns |
 |---|---|---|---|---|
 | Landing | Volume folder | One file | Never edited; new release = new file | Original files |
-| Bronze | `public_health.bronze` | One file or sheet | Delta `replaceWhere` per file (file sources); insert-only `MERGE` (PSGC); append per version (HDX) | Faithful copy as text + lineage |
-| Silver | `public_health.silver` | One table build | Write-audit-publish full rebuild; `MERGE` for geography and boundaries; state carried forward for the facility registry | Types, PSGC codes, row-level lineage, set-aside rows |
+| Bronze | `public_health.bronze` | One file or sheet | File sources: `replaceWhere` per file. PSGC: insert-only `MERGE`. HDX: append per version | Faithful copy as text + lineage |
+| Silver | `public_health.silver` | One table build | Write-audit-publish full rebuild. Geography and boundaries use `MERGE`. The facility registry carries its state forward | Types, PSGC codes, row-level lineage, set-aside rows |
 | Gold | `public_health.gold` | One table build | Write-audit-publish; marts and default views are views | Model, source selection, rates, marts |
 | Quality | `public_health.quality` | One check, run or build | Append-only | Every result, build, input and disposition |
 
@@ -82,7 +90,7 @@ What each layer must **not** do:
 | Workforce | headcount, area denominator, specialist | `fact_workforce_capacity`, `fact_area_indicator` |
 | Socioeconomic | poverty, health expenditure (2), child mortality | `fact_area_indicator` |
 
-**Geography is the spine.** `geography_silver` is the only table that may define a PSGC code (D-30). Every other domain maps its labels to it through reviewed reference maps, and its build is gated against it.
+**Geography is the spine.** `geography_silver` is the only table that may define a PSGC code (D-30). Every other domain maps its labels to it through reviewed reference maps. A gate checks each build against it.
 
 ## 5. Gold model
 
@@ -112,7 +120,7 @@ Detail: `src/04_gold/README.md` and [gold docs](../04-pipeline/gold/README.md).
 
 ## 6. Orchestration
 
-One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public_health_job.yml` and deployed with Asset Bundles. A second job, `ph-public-health-setup` (`resources/ph_public_health_setup_job.yml`), creates the schemas (bronze, silver, gold, quality), the quality tables and the load log; the pipeline runs it as its first task.
+One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public_health_job.yml` and deployed with Asset Bundles. A second job, `ph-public-health-setup` (`resources/ph_public_health_setup_job.yml`), creates the schemas, the quality tables and the load log. The pipeline runs it as its first task.
 
 | Stage | Tasks | Waits for |
 |---|---|---|
@@ -131,7 +139,7 @@ One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public
 | Concurrency | `max_concurrent_runs: 1` (PSGC and HDX loaders allow one writer) |
 | Compute | Serverless. Python tasks on environment `default` (pyyaml, openpyxl); `geo` adds shapely for the OSM point-in-polygon step. SQL tasks on a SQL warehouse |
 | Schedule | Defined, paused (Monday 06:00 Asia/Manila). Runs stay manual (D-59) |
-| Not in the job | `src/01_ingestion` (API landing: PSGC, HDX boundaries), manual uploads for the other four domains (AD-17), and `builders/` (reference CSV generators), all run by hand |
+| Not in the job | You run these by hand: `src/01_ingestion` (PSGC and HDX API landing), the manual uploads for the other four domains (AD-17), and `builders/` (reference CSV generators) |
 
 ## 7. Serving
 
@@ -149,7 +157,7 @@ The dashboard is a Databricks AI/BI (Lakeview) dashboard with Genie, deployed by
 | Item | Value |
 |---|---|
 | Viewer permissions | `embed_credentials: false`: viewers query with their own permissions, so table grants decide what each viewer sees |
-| Refresh | Marts are views, so the dashboard shows the latest gold build on its next query. A `dashboard_refresh` task after `qc_gold` is defined in the job YAML but commented out; it would run only when gold QC passes |
+| Refresh | Marts are views, so the dashboard shows the latest gold build on its next query. The job YAML holds a `dashboard_refresh` task after `qc_gold`, commented out. If enabled, it runs only when gold QC passes |
 | Restricted data | Aggregates only, cells under 3 suppressed (D-47); IHME and OpenStreetMap attribution lines on their charts |
 | Wording | "Recorded", "lowest 20% of planning units", "straight-line distance" ([gold usage rules](../04-pipeline/gold/gold-usage-rules.md)) |
 
@@ -162,7 +170,7 @@ Three kinds of check, one record:
 | Kind | Where | Stops | Writes |
 |---|---|---|---|
 | Loader checks | Bronze, around each write | That source's load | `ingestion_metadata` status |
-| Build gates | Silver and gold, on the candidate before publish | That build; the published table is untouched | `build_log` (`failed`) |
+| Build gates | Silver and gold, on the candidate before publish | That build. The published table stays as it was | `build_log` (`failed`) |
 | QC scripts | Every layer, on stored tables, through `DQRun` | The job, before the next layer | `qc_results`, `run_log`, `table_stats`, `profile`, `quarantine` |
 
 Plus two job-level gates:
@@ -188,10 +196,10 @@ A dashboard number traces back to a source cell. See [data lineage map](../02-da
 
 | Property | How |
 |---|---|
-| Idempotent | Files replaced, never appended twice; builds publish only after gates pass; `MERGE` on stable keys; surrogate keys are hashes of natural keys |
+| Idempotent | Bronze replaces a file's rows and never appends them twice. Builds publish only after their gates pass. `MERGE` runs on stable keys. Surrogate keys are hashes of natural keys |
 | Incremental | Bronze loads only new or changed files. Silver and gold rebuild in full on purpose (D-57); cost control is by skipping unchanged work, see the [silver rebuild strategy](../04-pipeline/silver/rebuild-strategy.md) |
 | Gated | Loader checks, build gates, QC scripts, preload gate, silver-QC gate in gold |
-| Recoverable | Failed builds leave published tables untouched; Delta history keeps old versions; every failure has a rerun path |
+| Recoverable | A failed build leaves the published table as it was. Delta history keeps old versions. Every failure has a rerun path |
 | Auditable | Lineage columns, build tables, QC results linked to the job run id |
 
 ## 11. Environments
@@ -215,5 +223,5 @@ A dashboard number traces back to a source cell. See [data lineage map](../02-da
 | 2026-10-16 / 17 | Full end-to-end runs 1 and 2 |
 | 2026-10-18 | Gold promoted to `public_health.gold`; `gold_qc.py` |
 | 2026-10-19 | Preload gate, QC re-queue, geography inside `run_bronze.py`. Page written |
-| 2026-10-20 | Reliability: silver full rebuild per D-57 (was "per-source rebuild next"); gold starts at `gold_01` (no gold setup file); runs stay manual (D-59) |
-| 2026-10-20 | Manual download and upload shown in the diagram (AD-17, D-63); setup job named; serving section added; `prod` target noted as defined but unused |
+| 2026-10-20 | Reliability row updated. Silver uses a full rebuild (D-57). Gold starts at `gold_01`. Runs stay manual (D-59) |
+| 2026-10-20 | Diagram shows the manual download and upload (AD-17, D-63). Setup job named. Serving section added. `prod` target noted as unused. Rewritten in short, active sentences |

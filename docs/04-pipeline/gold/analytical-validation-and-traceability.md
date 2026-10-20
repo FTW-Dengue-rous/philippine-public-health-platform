@@ -1,6 +1,11 @@
 # Gold — analytical validation and traceability
 
-How gold proves its numbers can be trusted: the gates inside every build, the gold QC that runs after publishing (G00–G13), the checks that prove a rerun gives the same result, and how to trace a dashboard number back to its source cell.
+This page shows how gold proves its numbers. It covers:
+
+- the gates inside every build;
+- the gold QC that runs after publishing (G00–G13);
+- the checks that prove a rerun gives the same result;
+- how to trace a dashboard number back to its source cell.
 
 Status date: 2026-10-20. Back to the [gold overview](README.md). Every check code across layers: [quality check catalog](../quality/quality-check-catalog.md). Results of the recorded runs: [quality results and evidence](../quality/quality-results-and-evidence.md).
 
@@ -8,16 +13,20 @@ Status date: 2026-10-20. Back to the [gold overview](README.md). Every check cod
 
 ## 1. Summary
 
-Gold is checked at four points:
+Checks run at four points:
 
 | # | When | What | Where | On failure |
 |---|---|---|---|---|
-| 1 | **Before the build** | Every silver input has a succeeded build, and its latest silver QC has no FAIL | Step [1] and the first gates of every table file | The build stops; the published table is untouched; a `failed` row goes to `build_log` |
+| 1 | **Before the build** | Every silver input has a succeeded build, and its latest silver QC has no FAIL | Step [1] and the first gates of every table file | The build stops. The published table stays as it was. `build_log` gets a `failed` row |
 | 2 | **Before publishing** | Build gates on the candidate: keys, grain, foreign keys, control totals, business rules | `__gates` in every table file | Same |
 | 3 | **After publishing** | Gold QC on the published objects | `gold_qc.py` (G00–G13), last job task | A FAIL makes the task fail; the dashboard refresh does not start |
-| 4 | **On demand** | Check queries at the end of seed and mart files; evidence queries | End of gold 10, 11, 19, 22, 23, 24; `gold_o13_evidence.sql` | Read by a person |
+| 4 | **On demand** | Check queries at the end of seed and mart files; evidence queries | End of gold 10, 11, 19, 22, 23, 24; `gold_o13_evidence.sql` | A person reads them |
 
-**Why both gates and QC.** A gate stops a bad candidate before anyone sees it. QC checks what was actually published and stores the result, so a reviewer or the dashboard can read it later. QC also checks things a gate cannot: that nothing wrote the table after the build, that inputs did not move since, and that a rerun gives the same content.
+**Why both gates and QC.** A gate stops a bad candidate before anyone sees it. QC checks what gold actually published. It stores the result for reviewers and the dashboard. QC also checks three things a gate cannot:
+
+- Nothing wrote the table after the build.
+- The inputs did not move since.
+- A rerun gives the same content.
 
 ## 2. Inputs: gold's own preload gate
 
@@ -29,13 +38,22 @@ Step [1] of every table file lists each input with the version its latest succee
 | `silver input whose latest QC has a FAIL` | Any silver input's latest QC run has a FAIL | `block_on_silver_qc_fail` (true) |
 | `candidate has no rows` | The candidate is empty | — |
 
-A silver input with **no** QC run does not stop the build. It makes the build's `approval` **provisional** in `build_log.parameters`, which `mart_evidence_readiness` shows.
+A silver input with **no** QC run does not stop the build. It sets the build's `approval` to **provisional** in `build_log.parameters`. `mart_evidence_readiness` shows that flag.
 
 ## 3. Build gates per file
 
-Every gate returns a count of failing rows; every count must be 0. Common gates on every table: candidate has rows, inputs built, no silver FAIL, primary key and required key columns not null, primary key unique, natural key or grain unique.
+Every gate returns a count of failing rows. Every count must be 0. A table fails its gate when any listed item is true.
 
-| File | Gates beyond the common ones |
+Every table runs these common gates:
+
+- the candidate has rows;
+- every input has a build;
+- no silver input has a FAIL;
+- the primary key and required key columns are not null;
+- the primary key is unique;
+- the natural key or grain is unique.
+
+| File | Extra gates (the build fails when any item is true) |
 |---|---|
 | 01 `dim_geography` | No snapshot date; PSGC code on two boundaries of one level (AB07); no boundary matched at all; centroid outside the Philippines or area ≤ 0; city without a city class; name missing; locality with no planning unit; parent or unit key not in the candidate |
 | 02 `dim_date` | Grain outside year, month, week, snapshot; `period_basis` outside the five conventions; weekly period without dates, not 7 days, or not its ISO week and year (D-44, D-46); year missing, month outside 1–12, week outside 1–53; start after end; no registry snapshot period |
@@ -54,7 +72,7 @@ Every gate returns a count of failing rows; every count must be 0. Common gates 
 
 ## 4. Gold QC (`gold_qc.py`)
 
-Runs after `gold_24`, as the last job task. Writes through `dq_utils.DQRun` with layer `gold` and domain `gold`, like every other QC script. Each of the 9 model tables is read at **one fixed version** (its latest), so every check of a table sees the same data.
+Gold QC runs after `gold_24` as the last job task. It writes through `dq_utils.DQRun` with layer `gold` and domain `gold`, like every other QC script. It reads each of the 9 model tables at **one fixed version** (its latest). So every check of a table sees the same data.
 
 | Code | Check | Severity | Fails when |
 |---|---|---|---|
@@ -73,7 +91,18 @@ Runs after `gold_24`, as the last job task. Writes through `dq_utils.DQRun` with
 | G12 | Content unchanged since the previous QC run | WARN | The content fingerprint differs from the previous run (idempotency evidence) |
 | G13 | Census population change plausible | WARN | An area halved or more than doubled between censuses |
 
-**G07 controls.** `dim_facility` rows and beds; registry facilities and beds (listed); published hospitals and authorized beds; disease rows and value total (metric + deaths by age + TB programme); workforce rows and eligible headcount; census population of the areas in `dim_geography`; poverty rows (2 × silver); claims filed at region level. Claims is WARN when gold is lower, because a region cell from fewer than 3 hospitals is suppressed; higher is always FAIL.
+**G07 controls.** G07 compares these gold totals with silver:
+
+- `dim_facility` rows and beds;
+- registry facilities and beds (listed);
+- published hospitals and authorized beds;
+- disease rows and value total (metric + deaths by age + TB programme);
+- workforce rows and eligible headcount;
+- census population of the areas in `dim_geography`;
+- poverty rows (2 × silver);
+- claims filed at region level.
+
+A lower claims total gives WARN, because gold suppresses region cells from fewer than 3 hospitals. A higher claims total is always FAIL.
 
 **G13 is business monitoring.** A province that halves between censuses is usually a boundary or code change (for example the Negros Island Region, the Maguindanao split), not an error. It is a WARN so a person reads it.
 
@@ -83,13 +112,13 @@ Runs after `gold_24`, as the last job task. Writes through `dq_utils.DQRun` with
 
 **Claim.** Running gold again on the same inputs gives the same content.
 
-**How it is measured.** For each model table:
+**How QC measures it.** For each model table:
 
 ```
 fingerprint = "rows=<n>;hash=<sum over rows of xxhash64(to_json(all columns except _gold_build_id))>"
 ```
 
-`_gold_build_id` is left out because it is the only column that changes on a rebuild. The keys are hashes of natural keys, so they do not change.
+The fingerprint leaves out `_gold_build_id`, the only column that changes on a rebuild. The keys are hashes of natural keys, so they stay the same.
 
 **Procedure for the evidence runs** (capture plan: [evidence](../../06-evidence/README.md), section 2).
 
@@ -128,9 +157,9 @@ Example: the TB notification rate of one planning unit on the dashboard.
 | Step | Use | Result |
 |---|---|---|
 | 1 | `mart_area_burden_indicator` row: `planning_unit_key`, `burden_indicator_key`, `reference_year`, `population_year` | The unit, indicator and years |
-| 2 | `mart_base_planning_unit`: the unit's localities and population | The denominator and how it was summed |
+| 2 | `mart_base_planning_unit`: the unit's localities and population | The denominator and how gold summed it |
 | 3 | `fact_disease_metric` rows of the unit's localities (`disease_code = tb_all_forms`, `metric_name = cases`, `data_source_key`, `date_key`) | The counts summed |
-| 4 | `_gold_build_id` of those rows → `quality.build_log` | When the fact was built, with which settings and code version |
+| 4 | `_gold_build_id` of those rows → `quality.build_log` | When gold built the fact, with which settings and code version |
 | 5 | `quality.build_inputs` of that build | The silver tables and the versions read |
 | 6 | Silver row: `_source_key`, `_source_file`, `_source_sheet`, `_source_row_num`, `_metric_source_columns` | The source cell |
 | 7 | `_silver_build_id` → `build_inputs.content_checksum`, `load_batch_id` | The exact file version and load |
@@ -138,7 +167,7 @@ Example: the TB notification rate of one planning unit on the dashboard.
 
 Steps 6–8 are the silver part of the [lineage and quality contract](../quality/lineage-and-quality-contract.md), Appendix A.7.
 
-**Why lineage is per build, not per row.** A gold row is usually an aggregate of many silver rows. Listing every contributing row on every gold row would multiply storage for little gain. The build record (inputs and versions) plus the code version is enough to reproduce the number, as long as the input versions are retained (contract O4).
+**Why lineage is per build, not per row.** A gold row is usually an aggregate of many silver rows. A list of every source row on every gold row would multiply storage for little gain. The build record (inputs and versions) and the code version reproduce the number. This works while Delta keeps the input versions (contract O4).
 
 ## 8. Validation against the business questions
 
@@ -202,10 +231,10 @@ ORDER BY started_at DESC;
 | Limitation | Effect |
 |---|---|
 | Views have no build record | Readiness does not cover marts; G09 checks only that they are readable and not empty |
-| Inputs are read at their current version | `build_inputs` records the version but the build does not pin it (`VERSION AS OF`, R4) |
+| Builds read inputs at their current version | `build_inputs` records the version. The build does not pin it (`VERSION AS OF`, R4) |
 | G codes are not in `check_registry` yet | `strict_registry` is off for gold QC (O-17) |
 | No drift check | G12 compares with the previous run only; no trend over runs |
-| Restricted cells | Suppressed cells cannot be checked against silver one by one; region totals are checked instead |
+| Restricted cells | QC cannot compare suppressed cells with silver one by one. It compares region totals instead |
 
 ## 12. History of updates
 
@@ -215,4 +244,4 @@ ORDER BY started_at DESC;
 | 2026-10-14 | Gates rewritten for the combined model; all gates 0 on the first run |
 | 2026-10-18 | `gold_qc.py` written (G01–G13), D-48 |
 | 2026-10-19 | G05 ignores OPTIMIZE and VACUUM; gold 23 check 3 |
-| 2026-10-20 | Gold 02 weekly gate (D-44, D-46); null keys stay null in gold 04 and 12 so their gates can fire; settings recorded in `build_log.parameters`. Page written |
+| 2026-10-20 | Gold 02 weekly gate added (D-44, D-46). Null keys stay null in gold 04 and 12 so their gates can fire. `build_log.parameters` records the settings. Page written |

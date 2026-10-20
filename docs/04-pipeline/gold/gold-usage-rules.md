@@ -1,6 +1,6 @@
 # Gold — usage rules
 
-The rules every query, chart and export must follow. The facts hold overlapping rows on purpose, so a plain `SUM` over a fact is almost always wrong. Read this page before you add up anything.
+Every query, chart and export must follow these rules. The facts hold overlapping rows on purpose. So a plain `SUM` over a fact is almost always wrong. Read this page before you add up anything.
 
 Status date: 2026-10-20. Back to the [gold overview](README.md).
 
@@ -27,14 +27,14 @@ A total is valid only when the query filters **every** column in the second colu
 | `fact_workforce_capacity` | `source_role = 'preferred'` **and** `profession_code` **and** `analysis_eligible` | `v_workforce_preferred` |
 | `fact_area_indicator` | `indicator_name` **and** `indicator_category` **and** `value_status = 'ok'` **and** one period | `v_area_indicator_latest` (`is_latest_period`) |
 
-**Why each filter is needed:**
+**Why each filter matters:**
 
 | Fact | Overlap the filter removes |
 |---|---|
-| Facility capacity | Three bases count the same hospitals (registry today, PSA yearly, occupancy); occupancy is at three geographic levels and three breakdowns; published rows have `total` beside government and private |
-| Disease metric | Several sources per disease; 20 age bands beside the all-ages row; male and female beside both sexes; claims at three levels |
+| Facility capacity | Three bases count the same hospitals: registry today, PSA yearly, occupancy. Occupancy comes at three geographic levels and three breakdowns. Published rows have `total` beside government and private |
+| Disease metric | Several sources per disease. 20 age bands beside the all-ages row. Male and female beside both sexes. Claims at three levels |
 | Workforce | PSA beside FHSIS for 2018–2023; country, region, province and locality rows together |
-| Area indicator | Several years; census and FHSIS population; a financing agent beside its parent |
+| Area indicator | Several years. Census and FHSIS population. A financing agent beside its parent |
 
 ## 3. Never add these together
 
@@ -71,7 +71,7 @@ Never compare an FHSIS-population rate with a census-population rate. Never inte
 | "Authorized beds" | "Available beds", "staffed beds" | Licensed capacity only |
 | "Straight-line distance" | "Travel distance", "travel time" | No road network |
 | "Notified TB cases" | "TB cases" | Notifications reflect detection and reporting |
-| "Claims at hospitals in <area>" | "Claims of residents of <area>" | The area is where care was delivered |
+| "Claims at hospitals in <area>" | "Claims of residents of <area>" | The area is where the hospital delivered care |
 | "Amount claimed" | "Amount paid" | The release gives the amount claimed |
 | "Peak cases per 100 beds (relative)" | "Beds needed", "would exceed capacity" | No admission or length-of-stay assumption (BQ2 is stretch 2) |
 | "Health workers (public sector)" | "Health workers" | Private practitioners are not counted |
@@ -82,7 +82,7 @@ Never compare an FHSIS-population rate with a census-population rate. Never inte
 
 | Data | Rule |
 |---|---|
-| FOI releases: DOH dengue (`doh_foi_dengue`), hospital beds and occupancy (`doh_foi_hospital_beds`), PhilHealth claims | **Aggregates only.** Cells built from fewer than 3 records or hospitals are suppressed and shown blank with the reason. No row-level export. Raw files are never redistributed (D-47) |
+| FOI releases: DOH dengue (`doh_foi_dengue`), hospital beds and occupancy (`doh_foi_hospital_beds`), PhilHealth claims | **Aggregates only.** Gold suppresses cells built from fewer than 3 records or hospitals. The dashboard shows them blank with the reason. No row-level export. Nobody redistributes the raw files (D-47) |
 | IHME GBD | No row-level export (non-commercial user agreement). Show the IHME attribution line on every chart |
 | OpenStreetMap points | Show "© OpenStreetMap contributors" (ODbL 1.0). Never a facility count |
 | Open PSA and DOH sources | Show the source name and as-of date |
@@ -118,4 +118,5 @@ Never compare an FHSIS-population rate with a census-population rate. Never inte
 |---|---|
 | 2026-10-14 | Selection contract per fact and the default views (review point 2); two denominators (review point 3) |
 | 2026-10-18 | D-47 restricted rule |
-| 2026-10-20 | Page written; restricted-data section links to the data governance page |
+| 2026-10-20 | Page written. The restricted-data section links to the data governance page |
+| 2026-10-20 | Rewritten in short, active sentences |
