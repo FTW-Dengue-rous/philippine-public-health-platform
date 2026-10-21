@@ -3914,7 +3914,7 @@
           },
           "position": {
             "x": 0,
-            "y": 63,
+            "y": 64,
             "width": 7,
             "height": 13
           }
@@ -4041,7 +4041,7 @@
           },
           "position": {
             "x": 0,
-            "y": 52,
+            "y": 53,
             "width": 12,
             "height": 5
           }
@@ -4158,7 +4158,7 @@
           },
           "position": {
             "x": 0,
-            "y": 11,
+            "y": 25,
             "width": 6,
             "height": 1
           }
@@ -4219,23 +4219,6 @@
                 }
               },
               {
-                "name": "dashboards/01f1c8fddbd7135cab216852dce3db97/datasets/01f1cb844e4e14e38b10e4b84c0916da_province",
-                "query": {
-                  "datasetName": "07f945d0",
-                  "fields": [
-                    {
-                      "name": "province",
-                      "expression": "`province`"
-                    },
-                    {
-                      "name": "province_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
                 "name": "dashboards/01f1c8fddbd7135cab216852dce3db97/datasets/01f1ccb2d8441eb4898d9bdc63e73672_province",
                 "query": {
                   "datasetName": "f3c4db94",
@@ -4280,10 +4263,6 @@
                   },
                   {
                     "fieldName": "province",
-                    "queryName": "dashboards/01f1c8fddbd7135cab216852dce3db97/datasets/01f1cb844e4e14e38b10e4b84c0916da_province"
-                  },
-                  {
-                    "fieldName": "province",
                     "queryName": "dashboards/01f1c8fddbd7135cab216852dce3db97/datasets/01f1ccb2d8441eb4898d9bdc63e73672_province"
                   }
                 ]
@@ -4296,7 +4275,7 @@
             }
           },
           "position": {
-            "x": 6,
+            "x": 0,
             "y": 11,
             "width": 6,
             "height": 1
@@ -4424,7 +4403,7 @@
           },
           "position": {
             "x": 0,
-            "y": 41,
+            "y": 42,
             "width": 6,
             "height": 11
           }
@@ -4490,9 +4469,9 @@
             }
           },
           "position": {
-            "x": 7,
-            "y": 21,
-            "width": 4,
+            "x": 6,
+            "y": 25,
+            "width": 6,
             "height": 1
           }
         },
@@ -4630,7 +4609,7 @@
           },
           "position": {
             "x": 6,
-            "y": 41,
+            "y": 42,
             "width": 6,
             "height": 11
           }
@@ -4751,7 +4730,7 @@
           },
           "position": {
             "x": 0,
-            "y": 58,
+            "y": 59,
             "width": 12,
             "height": 4
           }
@@ -5280,7 +5259,7 @@
           },
           "position": {
             "x": 0,
-            "y": 40,
+            "y": 41,
             "width": 12,
             "height": 1
           }
@@ -5296,7 +5275,7 @@
           },
           "position": {
             "x": 0,
-            "y": 57,
+            "y": 58,
             "width": 12,
             "height": 1
           }
@@ -5514,7 +5493,7 @@
           },
           "position": {
             "x": 0,
-            "y": 25,
+            "y": 26,
             "width": 12,
             "height": 6
           }
@@ -5617,7 +5596,7 @@
           },
           "position": {
             "x": 0,
-            "y": 32,
+            "y": 33,
             "width": 12,
             "height": 8
           }
@@ -5666,7 +5645,7 @@
           },
           "position": {
             "x": 6,
-            "y": 31,
+            "y": 32,
             "width": 6,
             "height": 1
           }
@@ -5779,6 +5758,11 @@
                       "expression": "SUM(`gap_sort_value`)"
                     }
                   ],
+                  "filters": [
+                    {
+                      "expression": "`province_name` IN (`province_name`) OR TRUE"
+                    }
+                  ],
                   "cubeGroupingSets": {
                     "sets": [
                       {
@@ -5881,7 +5865,7 @@
           },
           "position": {
             "x": 6,
-            "y": 12,
+            "y": 11,
             "width": 6,
             "height": 9
           }
@@ -5897,7 +5881,7 @@
           },
           "position": {
             "x": 0,
-            "y": 62,
+            "y": 63,
             "width": 12,
             "height": 1
           }
@@ -5916,7 +5900,7 @@
           },
           "position": {
             "x": 7,
-            "y": 63,
+            "y": 64,
             "width": 5,
             "height": 6
           }
