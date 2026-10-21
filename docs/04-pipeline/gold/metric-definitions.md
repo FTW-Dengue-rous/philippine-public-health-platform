@@ -15,10 +15,10 @@ Status date: 2026-10-20. Back to the [gold overview](README.md).
 |---|---|
 | A metric is null when any input is null. Null is never zero | A zero would look like "nothing there" and raise a gap flag that is a data gap |
 | Rates use the **census population** of the unit, except the two FHSIS facility rates | One denominator across domains makes rates comparable (D-39) |
-| A rate is null when the count year and the population year are more than **2 years** apart | O-15 |
+| A rate is normally null when the count year and the population year are more than **2 years** apart | O-15. The kidney mart retains its calculated rates for traceability, but marks such rows `comparison_eligible = false` and gives `outside_alignment_window` as the exclusion reason. |
 | A rate is null when the population is null or 0 | A missing denominator gives no valid rate |
 | Percentages from a source are never summed or averaged | A share of a share is not a share |
-| Marts round rates only for display: 2 decimals, ratios to whole persons, distances to 0.1 km | Ranking uses the rounded value shown |
+| Marts round rates for display: normally 2 decimals, ratios to whole persons, and distances to 0.1 km | Ranking uses the underlying unrounded value unless the relevant SQL states otherwise. TB notification rates are stored and displayed to 1 decimal. |
 
 ## 2. Supply
 

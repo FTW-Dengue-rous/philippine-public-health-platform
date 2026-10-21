@@ -10,7 +10,7 @@ Rules:
 - IDs were assigned on 2026-10-12, when this log was compiled from the team's notes and plans. Dates are the day the choice was recorded (2026). Check each row against your own notes and correct it if the team remembers it differently.
 - An open question (O-xx) is closed by a decision; its row says which one.
 
-Moved here from `docs/decisions.md` on 2026-10-20. Status date: 2026-10-20.
+Moved here from `docs/decisions.md` on 2026-10-20. Status date: 2026-10-21.
 
 ## Made
 
@@ -100,7 +100,7 @@ Moved here from `docs/decisions.md` on 2026-10-20. Status date: 2026-10-20.
 | O-14 | Pandemic period in `dim_date` (open decision 5) | Closed by D-61 (2026-10-19): 2020–2022. |
 | O-15 | Alignment window between a count year and its population year (open decision 7) | 2 years in the marts. |
 | O-16 | Show `other` planning units on the dashboard (Isabela City, the SGA municipalities) | They are in the marts. Display not decided. |
-| O-17 | `check_registry` codes for bronze and gold | Since 2026-10-21, `quality_registry_seed.sql` (Step 1b) holds every code: GB, HB, SG, GS, AB, AS/ASB, the per-domain S codes, S59 and G01–G13. Still open: run the setup job, check that the `qc_registry` job task passes, then switch every QC script to `strict_registry=True`. |
+| O-17 | `check_registry` codes for bronze and gold | Since 2026-10-21, `quality_registry_seed.sql` (Step 1b) holds every code: GB, HB, SG, GS, AB, AS/ASB, the per-domain S codes, S59 and G01–G13. **Closed 2026-10-21:** the `qc_registry` job task passed in the final runs, and `strict_registry=True` is now the default in `dq_utils.py` (and in `psgc_population_silver_qc.py`). An unknown code stops its QC script. The first strict run is the next job run. |
 
 ## History of updates
 
@@ -113,3 +113,4 @@ Moved here from `docs/decisions.md` on 2026-10-20. Status date: 2026-10-20.
 | 2026-10-20 | D-63 (manual acquisition for file-based domains, AD-17) added |
 | 2026-10-20 | Rewritten in short, active sentences |
 | 2026-10-21 | Registry seed holds every check code (O-17); only the switch to `strict_registry=True` is left |
+| 2026-10-21 | O-17 closed: `qc_registry` passed in the final runs; `strict_registry=True` is the default |

@@ -323,7 +323,7 @@ This page is for people. The scripts use a table instead: `public_health.quality
 | Filled by | `quality_registry_seed.sql`, in the setup job, on every run. It only adds missing codes, so a rerun changes nothing |
 | Checked by | `qc_registry`, the last task of the pipeline job (`quality_registry_check.sql`). It fails when a script uses a code the registry does not hold, or holds under another layer |
 | Holds today | Every code on this page (since 2026-10-21) |
-| Still open | The scripts run with `strict_registry=False`, except population QC. After one run where `qc_registry` passes, switch every script to `strict_registry=True` (O-17, to-do 7) |
+| Strict mode | On since 2026-10-21. `strict_registry=True` is the default in `dq_utils.py` and in `psgc_population_silver_qc.py`; `qc_registry` passed in the final runs first. An unknown code now stops its QC script. The first strict run is the next job run (O-17) |
 
 **Adding a check code:** add it to the script, to this page, and to Step 1b of `quality_registry_seed.sql`, in the same pull request. If you forget the seed, `qc_registry` fails and names the code.
 
@@ -334,3 +334,4 @@ This page is for people. The scripts use a table instead: `public_health.quality
 | 2026-10-20 | Page written from the QC scripts' check lists (silver chat) |
 | 2026-10-20 | Merged with the gold pass: S tables per domain, the gold validation link, named build gates, G07/G08 pointer |
 | 2026-10-21 | Section 6 rewritten: the seed holds every code and runs in the setup job; the `qc_registry` job task checks it; only the switch to `strict_registry=True` is left (O-17) |
+| 2026-10-21 | Section 6: strict mode on (O-17 closed) |

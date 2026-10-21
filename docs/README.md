@@ -22,7 +22,7 @@ Each overview links to its reference README. When the two differ, the code and i
 | Understand the project in 15 minutes | [Root README](../README.md) → [problem and business context](01-context/problem-and-business-context.md) → [architecture overview](03-architecture/architecture-overview.md) → [assumptions](01-context/assumptions.md) and [limitations and recommendations](01-context/limitations-and-recommendations.md) |
 | Check that the numbers can be trusted | [Quality control framework](04-pipeline/quality/quality-control-framework.md) → [silver reconciliation](04-pipeline/silver/reconciliation.md) → [analytical validation and traceability](04-pipeline/gold/analytical-validation-and-traceability.md) → [evidence](06-evidence/README.md) |
 | Use the gold tables or the dashboard | [Gold usage rules](04-pipeline/gold/gold-usage-rules.md) → [metric definitions](04-pipeline/gold/metric-definitions.md) → [dashboard guide](05-dashboard/dashboard-guide.md) |
-| Run or fix the pipeline | [Setup guide](07-operations/setup-guide.md) → [runbook](07-operations/runbook.md) → [troubleshooting](07-operations/troubleshooting.md) |
+| Run or fix the pipeline | [Setup guide](07-operations/setup-guide.md) → [runbook](07-operations/runbook.md) → [troubleshooting](07-operations/troubleshooting.md) → [CI/CD and testing](07-operations/ci-cd-and-testing.md) |
 | Know why something was done this way | [Decision log](08-governance/decision-log.md) (D-xx) and [architecture decisions](03-architecture/architecture-decisions.md) (AD-xx) |
 
 ## Folders
@@ -49,6 +49,7 @@ docs/
 ├── 04-pipeline/                           each layer, per domain
 │   ├── bronze/
 │   │   ├── README.md                        bronze overview
+│   │   ├── psgc-ingestion.md                PSGC API landing job
 │   │   ├── bronze-quality-checks.md         every bronze check: loader checks, QC, the gate
 │   │   ├── diseases.md · facilities.md · workforce.md · socioeconomic.md
 │   │   ├── geography.md                     PSGC API landing and HDX boundaries
@@ -77,13 +78,16 @@ docs/
 │       └── quality-results.md               results of the recorded runs
 ├── 05-dashboard/
 │   └── dashboard-guide.md
-├── 06-evidence/                           screenshots and query outputs, by run
-│   ├── README.md                            what each folder proves and how it was captured
-│   ├── architecture/ · bronze/ · silver/ · gold/
-│   ├── idempotency/                         run-01/ … run-03/, run-comparison.md
-│   └── reconciliation/                      results for the method in 04-pipeline/silver/reconciliation.md
+├── 06-evidence/                           run records, query outputs and screenshots
+│   ├── README.md                            how evidence is captured; index of runs
+│   ├── evidence_queries.sql                 the seven evidence queries (B1, S1, S2, G1, I1, I2, I3)
+│   ├── idempotency/comparison.md            earlier manual comparisons (history)
+│   └── 2026-10-21-final-runs/               the evidence: three runs on the same inputs
+│       ├── README.md                        runs, rules, comparison
+│       └── run-1/ · run-2/ · run-3/         run record and screenshots per run
 ├── 07-operations/
 │   ├── setup-guide.md · runbook.md · troubleshooting.md
+│   ├── ci-cd-and-testing.md                 CI checks, CD to Databricks, local checks
 │   └── reproducibility.md                   running without Databricks
 └── 08-governance/
     ├── data-governance.md                   restricted data (D-47), suppression, attribution
@@ -103,3 +107,9 @@ docs/
 | "Recorded" | Listed in the source registry. It does not prove that nothing else exists |
 | Dates | Written as YYYY-MM-DD. A number stated as a fact about the data carries the date it was checked, or points to where the live value is stored |
 | File names | No version or date in a page name; versions and dates are inside the page and in the [change log](08-governance/change-log.md) |
+
+## History of updates
+
+| Date | Change |
+|---|---|
+| 2026-10-21 | Folder tree and reading paths updated: assumptions split from limitations and recommendations, `quality-results.md`, `ci-cd-and-testing.md`, `psgc-ingestion.md`, `gold-data-dictionary.md`, 06-evidence final runs |

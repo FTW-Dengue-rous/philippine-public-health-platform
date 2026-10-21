@@ -115,7 +115,7 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 
 Yes = implemented and verified on Databricks. The final evidence session has recorded successful runs 1 and 2; run 3 and reconciliation remain pending. See the [final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md), [quality results](docs/04-pipeline/quality/quality-results.md), and [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
 
-The Lakeview dashboard has eight pages and reads gold tables in `public_health.gold`. It refreshes when opened. Open it from the Databricks UI; see the [dashboard guide](docs/05-dashboard/dashboard-guide.md) for pages, filters, and data freshness checks.
+The dashboard has eight pages. Confirm the published dashboard definition and serving schema with its owner before deployment, then save a successful refresh check before presenting it as live. See the [dashboard guide](docs/05-dashboard/dashboard-guide.md) for pages, filters, and freshness checks.
 
 ## What the data shows
 
@@ -129,13 +129,13 @@ Headline figures from the current gold build. "Recorded" means listed in the sou
 | Registry beds per 10,000 residents (national) | 8.0 |
 | Beds per 10,000 residents: provinces under 10% poverty vs 20-30% poverty | 10.3 vs 6.2 |
 
-The locality counts were verified against `public_health.gold.mart_locality_service_presence` on 2026-10-19; the other figures are the team's presented dashboard values (see the [dashboard guide](docs/05-dashboard/dashboard-guide.md)). Limits that apply to every chart, and the team's recommendations, are in [limitations and recommendations](docs/01-context/limitations-and-recommendations.md). The assumptions behind the figures are in [assumptions](docs/01-context/assumptions.md).
+The locality counts were verified against `public_health.gold.mart_locality_service_presence` on 2026-10-19. Before final publication, rerun and save the headline-figures query output for every value in this table; do not rely on the README as evidence. Limits that apply to every chart, and the team's recommendations, are in [limitations and recommendations](docs/01-context/limitations-and-recommendations.md). The assumptions behind the figures are in [assumptions](docs/01-context/assumptions.md).
 
 ## How quality is enforced
 
 * **Gated layers** — bronze and silver QC stop the job on a FAIL-level check; a preload gate stops a domain's silver when one of its bronze sources is not cleared; silver builds validate keys, duplicates and lineage before publishing.
 * **Traceable** — every silver row carries lineage columns; every build records its inputs in `quality.build_log` and `quality.build_inputs`; rows that are dropped, quarantined or merged are recorded with a reason in `quality.row_disposition`.
-* **Idempotent** — bronze loads only new or changed files; silver and gold use write-audit-publish. Reruns are safe and a failed build leaves the published table untouched.
+* **Repeatability evidence** — the recorded final runs show unchanged file loaders did not reload files, all 28 recorded silver and gold tables kept the same row counts, and G12 fingerprints matched for nine gold tables in runs 2 and 3. This does not by itself prove dashboard freshness, recovery, or every mart-specific validation.
 * **Honest about gaps** — nulls stay null. Every excluded area or row carries a reason.
 * **Gold QC** — checks published gold tables (G00–G13: row counts, primary keys, grain uniqueness, foreign keys, published-table integrity, freshness against inputs, control totals, value consistency, default views, selection contract, measure ranges, idempotency fingerprint, census plausibility). Any FAIL fails the last task of the job. See the [quality framework](docs/04-pipeline/quality/quality-control-framework.md) and the [check catalog](docs/04-pipeline/quality/quality-check-catalog.md).
 

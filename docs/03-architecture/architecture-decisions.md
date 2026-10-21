@@ -84,7 +84,7 @@ Status date: 2026-10-20.
 |---|---|
 | **Decision** | `public_health.quality` holds `qc_results` (21 agreed columns), `run_log`, `table_stats`, `profile`, `quarantine`, `build_log`, `build_inputs`, `row_disposition` and views. Every QC script writes through `dq_utils.DQRun`. |
 | **Why** | One result format across layers and domains. Append-only, so domains can check in parallel. |
-| **Trade-off** | `check_registry` is not seeded yet; most scripts run with `strict_registry=False` (O-17). |
+| **Trade-off** | Since 2026-10-21 `check_registry` holds every code and every QC script runs with `strict_registry=True` (the `dq_utils.py` default): an unknown code stops the script, so a new check needs its seed row in the same change (O-17). |
 
 ## AD-07 Write-audit-publish builds
 
@@ -218,3 +218,4 @@ Status date: 2026-10-20.
 | 2026-10-20 | AD-17 added: manual acquisition for file-based domains (D-63) |
 | 2026-10-20 | Rewritten in short, active sentences |
 | 2026-10-20 | AD-18 to AD-21 added: DABs, serverless environments, NHFR spine, BQ1 scope. AD-09 updated with PSGC Q2 2024. Linked to D-64–D-67 in the decision log |
+| 2026-10-21 | AD on the check registry: seed complete; strict registry on (O-17) |

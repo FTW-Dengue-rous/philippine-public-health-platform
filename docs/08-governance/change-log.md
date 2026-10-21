@@ -24,6 +24,8 @@ Status date: 2026-10-21. Add a row for every full run and every change that alte
 
 | Date | Layer | Change | Decision |
 |---|---|---|---|
+| 2026-10-21 | quality | `strict_registry=True` is the default in `dq_utils.py` and `psgc_population_silver_qc.py` (gold QC comment updated). The `qc_registry` job task passed in the final runs first. An unknown check code now stops its QC script | O-17 |
+| 2026-10-21 | job | `qc_registry` task added after `qc_gold` (`quality_registry_check.sql`); the registry seed (Step 1b) holds every check code and runs in the setup job. `quality_setup.sql`: gold check types mapped to quality attributes | O-17 |
 | 2026-10-21 | CI | Failing CI checks on `dev` fixed; they pass. Tests stay thin (KI-02) | — |
 | 2026-10-20 | docs | Architecture: AD-17 manual acquisition added (D-63). The diagram shows the manual upload. New serving section covers dashboard pages, `embed_credentials: false` and refresh. `prod` target noted as unused | D-63 |
 | 2026-10-20 | job | Job YAML: `gold_00_setup` task removed. Gold dimensions wait for `qc_silver_cross_domain`. Dated notes cover the bronze and silver changes and the environments (no new library). Optional `dashboard_refresh` added, commented out. Setup and dashboard YAML comments updated. Dashboard datasets now point to `public_health.gold` instead of `test_gold2` | D-59, D-60 |
@@ -57,3 +59,4 @@ Status date: 2026-10-21. Add a row for every full run and every change that alte
 | 2026-10-20 | Page written. Evidence runs 1–3 still to record |
 | 2026-10-20 | Gold revision, job YAML and gold/quality docs rows added |
 | 2026-10-21 | CI fix row added |
+| 2026-10-21 | Final runs row (replaces the 2026-10-20 "to record" row); registry and strict-mode rows |

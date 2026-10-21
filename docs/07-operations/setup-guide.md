@@ -5,7 +5,7 @@ Last updated: 2026-10-21
 
 How to set up a Databricks workspace to run LUNASaan? from an empty catalog to a dashboard. To run without Databricks, read [reproducibility](reproducibility.md) instead.
 
-Status date: 2026-10-20. Items marked **confirm** depend on your workspace.
+Status date: 2026-10-21. Items marked **confirm** depend on your workspace.
 
 ---
 
@@ -33,7 +33,7 @@ databricks bundle validate -t dev
 databricks bundle deploy -t dev
 ```
 
-This deploys two jobs: the pipeline (`resources/ph_public_health_job.yml`) and the setup job (`ph_public_health_setup_job.yml`). The pipeline's first task runs the setup job, which creates the schemas (`bronze`, `silver`, `gold`, `quality`), `bronze.ingestion_metadata` and the quality tables. It only creates what is missing, so it is safe on every run.
+This deploys two jobs: the pipeline (`resources/ph_public_health_job.yml`) and the setup job (`ph_public_health_setup_job.yml`). The pipeline's first task runs the setup job, which creates the schemas (`bronze`, `silver`, `gold`, `quality`), `bronze.ingestion_metadata` and the quality tables, and seeds `quality.check_registry` (`quality_registry_seed.sql`). It only creates or adds what is missing, so it is safe on every run.
 
 ## 3. Land the data
 
@@ -63,7 +63,7 @@ Runs are started by hand (D-59): whoever lands new data starts the job.
 databricks bundle run ph_public_health_pipeline -t dev
 ```
 
-Or press **Run now** on the job in the workspace. The job runs setup → bronze (+ bronze QC) → preload gate → silver (+ silver QC) → cross-domain QC → gold → gold QC, and stops on the first failed gate or FAIL check. A first run on an empty workspace loads every file; later runs load only new or changed files.
+Or press **Run now** on the job in the workspace. The job runs setup → bronze (+ bronze QC) → preload gate → silver (+ silver QC) → cross-domain QC → gold → gold QC → registry check (`qc_registry`), and stops on the first failed gate or FAIL check. A first run on an empty workspace loads every file; later runs load only new or changed files.
 
 ## 5. Check the run
 
@@ -100,3 +100,4 @@ Start with the [runbook](runbook.md): it says how to read the message, where to 
 | Date | Change |
 |---|---|
 | 2026-10-20 | Page written |
+| 2026-10-21 | Setup job seeds `check_registry`; `qc_registry` in the run order |

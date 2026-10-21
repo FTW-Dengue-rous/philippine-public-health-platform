@@ -90,7 +90,7 @@ One S29 WARN fewer than 2026-10-19: the Zamboanga Sibugay row override (D-58) re
 
 ### 4.1 Test build, 2026-10-14 (`test_gold2`)
 
-All build gates returned 0 on every table. Row counts and mart figures from that build are in the [table catalog](../gold/table-catalog.md) and the [findings report](../gold/findings-report.md). `gold_qc.py` did not exist yet.
+All build gates returned 0 on every table. This historical test build is not the evidence source for current static findings; use the recorded final-run evidence for those results. `gold_qc.py` did not exist yet.
 
 ### 4.2 Final build: runs 1 and 2 recorded; run 3 pending
 
@@ -108,12 +108,15 @@ The final job ran twice on unchanged inputs on 2026-10-21. The records are in th
 | Gold 23 check 3 | No row | Pending |
 | Gold 24 check 1 (`schema_name = 'gold'`) | No QC missing, no stale table | Pending |
 | `gold_o13_evidence.sql` Q1–Q6 | Read for D-56 | Pending |
+| Bronze does not reload (query I3) | Every source "loaded 0, failed 0" in runs 2 and 3 | Runs 1, 2 and 3: all 40 sources |
+
+The mart checks (gold 11, 22, 23, 24) and `gold_o13_evidence.sql` were not captured in the final runs. Run them once after run 3 if time allows.
 
 Record the run-3 result here with its date and `validation_id`, then link the final comparison and reconciliation evidence.
 
 ## 5. Evidence to capture
 
-The folders, the capture steps for the three runs and the queries (B1, S1, S2, G1, I1, I2) are in the [evidence guide](../../06-evidence/README.md). In addition, for gold:
+The folders, the capture steps for the three runs and the queries (B1, S1, S2, G1, I1, I2, I3 in `evidence_queries.sql`) are in the [evidence guide](../../06-evidence/README.md). In addition, for gold:
 
 | Item | Where it goes |
 |---|---|
