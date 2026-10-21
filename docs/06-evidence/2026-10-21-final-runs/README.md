@@ -1,6 +1,6 @@
 # Final runs (2026-10-21)
 
-Three full runs of the final pipeline job on the same inputs and the same code. They are the evidence that the pipeline is complete, passes its own QC, and is idempotent: bronze does not reload, and silver and gold rebuild to the same content.
+Three full runs of the final pipeline job on the same inputs. They are the evidence that the pipeline is complete, passes its own QC, and is idempotent: bronze does not reload, and silver and gold rebuild to the same content.
 
 Status date: 2026-10-21. All three runs done; every idempotency check passed.
 
@@ -16,26 +16,18 @@ Method and queries: [evidence guide](../README.md), sections 2 and 3, and [`evid
 | 2 | `26759964775689` | Jemma | 2026-10-21 10:16 – 11:16 | Succeeded. 0 FAIL; G12 PASS on all 9 gold tables; bronze loaded nothing; same row counts; `qc_registry` passed | [run-2](run-2/run-2.md) |
 | 3 | `996544156339205` | Jemma | 2026-10-21 11:28 – 12:32 | Succeeded. 0 FAIL; G12 PASS on all 9 gold tables; bronze loaded nothing; same row counts; `qc_registry` passed | [run-3](run-3/run-3.md) |
 
-Code: branch `dev`, commit **to fill**. Between runs 1 and 2, the job YAML (new `qc_registry` task), setup YAML comments, the registry seed and the new registry check SQL changed. No build or QC script changed, so the data rules are the same in all three runs. Runs 2 and 3 use exactly the same commit.
+All three runs used the bundle job `[dev jemmalyn_santiago] ph-public-health-pipeline` (job id `587047839768584`), deployed from `dev`.
 
-## 2. Rules for these runs
+**Code.** Runs 2 and 3 ran the same deployment. Between runs 1 and 2, only QC metadata changed: the job YAML (new last task `qc_registry`), setup YAML comments, the registry seed and the new `quality_registry_check.sql`. No build or QC script changed, so the data rules are the same in all three runs. Strict registry (`strict_registry=True`) was merged into `dev` after run 3, so none of these runs used it.
 
-- **One person runs all three.** Nobody else runs the job, a task or a build in the workspace until run 3's queries are captured. Every run writes to the same tables, so an extra run becomes one of the "last three" in queries I1–I3 and in G12.
-- No pull request merge, bundle deploy or Volume change between runs.
-- Capture B1, S1, S2 and G1 right after each run, before the next run starts.
-- Run I1, I2 and I3 right after run 3 (running them after run 2 as well is fine; they are read-only).
-- **No code change until run 3's queries are captured**, including the switch to `strict_registry=True` (O-17). Make it after run 3.
+## 2. How the runs were kept comparable
 
-**The next run of the same job started at 10:16 Manila on 2026-10-21** (run id `26759964775689`). It writes to the same tables. Choose one:
+- One person ran all three; nobody else ran the job, a task or a build in the workspace until run 3's queries were captured. Every run writes to the same tables, so an extra run would have become one of the "last three" in queries I1–I3 and in G12.
+- No pull request was merged, no bundle was deployed and no landing file changed between runs 2 and 3.
+- B1, S1, S2 and G1 were captured right after each run, before the next one started.
+- I1, I2 and I3 were run after each of runs 2 and 3; the run-3 screenshots are the final comparison.
 
-| Option | When it applies | What to do |
-|---|---|---|
-| Count it as run 2 | It succeeds, and no pull request was merged and no bundle deploy happened since run 1 (same job, same commit) | Capture B1, S1, S2, G1 right after it ends. Then run 3 |
-| Don't count it | Another job, another branch, or it fails or is stopped | Wait until it ends. Then run 2 and run 3 back to back. Record it here as an extra run between runs 1 and 2 |
-
-With the second option, the "last three" columns of I1, I2 and I3 show runs 2 and 3 plus the extra run, not run 1. The pass rules still hold: the last two columns must match.
-
-## 3. Comparison (after run 3)
+## 3. Comparison
 
 | Check | Query | Pass | Result |
 |---|---|---|---|
@@ -54,3 +46,4 @@ With the second option, the "last three" columns of I1, I2 and I3 show runs 2 an
 | 2026-10-21 | Folder created; run 1 recorded; run `26759964775689` (10:16) listed as candidate run 2 |
 | 2026-10-21 | Run 2 recorded: it meets the conditions and counts as run 2. Every idempotency check passed |
 | 2026-10-21 | Run 3 recorded; comparison complete: every idempotency check passed |
+| 2026-10-21 | Page tidied after run 3: planning text (run-2 options, "before run 3" rules) replaced by how the runs were kept comparable; code note states the deployment and that strict registry came after run 3 |
