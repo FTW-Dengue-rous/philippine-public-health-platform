@@ -1,5 +1,8 @@
 # Bronze — quality checks
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Every check that guards the bronze layer: what it tests, which source it runs on, how bad a failure is, and what to do about it. The check IDs, names and severities on this page are the ones in the QC scripts' `CHECKS` dictionaries.
 
 Status date: 2026-10-20. Back to the [bronze overview](README.md). The full reference (loaders, `run_bronze.py`, recovery) is [`src/02_bronze/README.md`](../../../src/02_bronze/README.md); every code across all layers (B, S, G) is in the [quality check catalog](../quality/quality-check-catalog.md).

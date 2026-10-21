@@ -1,5 +1,8 @@
 # Troubleshooting
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Symptoms we have met, their usual cause and the fix. For the general procedure (read the message, look at the evidence, fix at the source, rerun downward), see the [runbook](runbook.md). Each layer's quality page has a longer "when a check fails" table: [bronze](../04-pipeline/bronze/bronze-quality-checks.md), [silver](../04-pipeline/silver/silver-quality-checks.md).
 
 Status date: 2026-10-20.

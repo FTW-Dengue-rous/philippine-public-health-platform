@@ -1,5 +1,8 @@
 # Silver — facilities
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Where care is offered: one registry of facility establishments with their beds, the facility counts that agencies publish, hospital bed occupancy, and health sites mapped in OpenStreetMap. Every facility and point is placed in a PSGC city or municipality.
 
 Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), section 4.3. Back to the [silver overview](README.md).
@@ -65,7 +68,7 @@ Every check of this domain, with its rule and severity: [silver quality checks](
 
 - `facility_key` is stable across runs; join on it, not on names.
 - Use `analysis_beds` with `analysis_beds_basis`; `authorized_beds` is HFSRB only.
-- "Recorded" means listed in the registry. It does not prove that no facility exists.
+- "Recorded" means listed in the registry as of its source date. Not listed does not mean absent.
 - Bed occupancy is aggregate only (restricted): cells from fewer than 3 records are suppressed in gold.
 - PSA hospital counts before and after 2013 use different definitions.
 

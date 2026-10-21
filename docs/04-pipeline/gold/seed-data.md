@@ -1,5 +1,8 @@
 # Gold — seed data
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Gold holds a few **reviewed lists**: choices the team makes, written as rows in the SQL files instead of logic buried in queries. This page lists each one, what it decides, why it is a list, and how to change it safely.
 
 Status date: 2026-10-20. Back to the [gold overview](README.md).

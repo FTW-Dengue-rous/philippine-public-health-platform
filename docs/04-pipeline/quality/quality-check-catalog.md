@@ -1,5 +1,8 @@
 # Quality check catalog
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Every check code in the platform, in one list. A code has one meaning in every domain and is never reused. `*00` always means "the QC script crashed".
 
 The names and severities here are the ones in the scripts (`CHECKS` dictionaries and recorded `check_name`). How each check works, what fails it and what to do: [bronze quality checks](../bronze/bronze-quality-checks.md), [silver quality checks](../silver/silver-quality-checks.md), and [gold analytical validation and traceability](../gold/analytical-validation-and-traceability.md). Rules for severities and gates: [quality control framework](quality-control-framework.md).

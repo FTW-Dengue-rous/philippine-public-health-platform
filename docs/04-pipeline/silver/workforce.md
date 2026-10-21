@@ -1,5 +1,8 @@
 # Silver — workforce
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Who provides care: public health workers by profession, area and year, the population figures FHSIS prints beside them, and a directory count of medical oncologists.
 
 Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), section 4.4. Back to the [silver overview](README.md).

@@ -1,5 +1,8 @@
 # Assumptions
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 This page lists what the platform assumes to be true. Each assumption shapes the results. If one turns out wrong, the results that depend on it change too.
 
 Status date: 2026-10-20. Each row names where the assumption shows in the data, so you can check it.
@@ -13,7 +16,7 @@ Limits of the study and the data, and the team's recommendations, are in [limita
 | ID | Assumption | Why the team accepts it | Where it shows |
 |---|---|---|---|
 | AS-01 | The Q2 2024 PSGC snapshot is the one geography for all years | One code set lets every domain join. Older areas keep named keys, for example `hist:maguindanao` | `dim_geography.snapshot_date` |
-| AS-02 | The facility registry (NHFR and HFSRB) lists the facilities that exist | It is the official registry. "Recorded" means listed. It does not prove that a facility exists or not | `has_hospital_recorded` |
+| AS-02 | The facility registry (NHFR and HFSRB) is the project’s source for listed facilities | It is the official registry. "Recorded" means listed as of the source date; not listed does not mean absent | `has_hospital_recorded` |
 | AS-03 | Authorized beds stand in for capacity | No source gives staffed beds | `authorized_beds`, `analysis_beds_basis` |
 | AS-04 | A count and a population are comparable when their years differ by 2 years or less | Census years are 2015, 2020 and 2024 only | Mart rates are null outside the window (O-15) |
 | AS-05 | IHME province estimates include their HUCs | Death rates fall in the normal range only when the HUC population is included (D-42) | `area_coverage_map` |

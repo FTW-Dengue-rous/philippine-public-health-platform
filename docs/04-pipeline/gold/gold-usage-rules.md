@@ -1,5 +1,8 @@
 # Gold — usage rules
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Every query, chart and export must follow these rules. The facts hold overlapping rows on purpose. So a plain `SUM` over a fact is almost always wrong. Read this page before you add up anything.
 
 Status date: 2026-10-20. Back to the [gold overview](README.md).

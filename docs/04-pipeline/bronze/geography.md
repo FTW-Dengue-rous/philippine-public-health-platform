@@ -1,5 +1,8 @@
 # Bronze Layer - Geography Domain
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 ## 1. Domain Overview
 
 The Geography Bronze domain loads geographic reference records and administrative-boundary features into Bronze tables. It covers two notebooks:

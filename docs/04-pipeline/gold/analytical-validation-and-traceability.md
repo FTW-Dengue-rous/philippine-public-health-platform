@@ -1,5 +1,8 @@
 # Gold — analytical validation and traceability
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 This page shows how gold proves its numbers. It covers:
 
 - the gates inside every build;
@@ -7,7 +10,7 @@ This page shows how gold proves its numbers. It covers:
 - the checks that prove a rerun gives the same result;
 - how to trace a dashboard number back to its source cell.
 
-Status date: 2026-10-20. Back to the [gold overview](README.md). Every check code across layers: [quality check catalog](../quality/quality-check-catalog.md). Results of the recorded runs: [quality results and evidence](../quality/quality-results-and-evidence.md).
+Status date: 2026-10-20. Back to the [gold overview](README.md). Every check code across layers: [quality check catalog](../quality/quality-check-catalog.md). Results of the recorded runs: [quality results and evidence](../quality/quality-results.md).
 
 ---
 

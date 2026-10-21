@@ -1,5 +1,8 @@
 # PSGC Bronze Ingestion Evidence
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 ## Purpose
 
 This document records validation evidence for the PSA Philippine

@@ -1,5 +1,8 @@
 # Reproducibility: running without Databricks
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 The team builds and runs LUNASaan? on Databricks, but the pipeline depends on a short list of **capabilities**, not on Databricks. This page lists them, gives the Databricks implementation and an open-source one for each, and names the few places in the code that are tied to Databricks. With these capabilities, every layer can be rebuilt from the landing files.
 
 Status date: 2026-10-20. Platform facts live here; layer pages link to this page instead of repeating them.

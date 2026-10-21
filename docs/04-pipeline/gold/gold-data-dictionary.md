@@ -1,5 +1,8 @@
 # Gold — data dictionary
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Every column of every object in `public_health.gold`, in the order the object returns them. This is the technical dictionary. Plain-language definitions of the business terms are in the [business data dictionary](business-data-dictionary.md); formulas are in [metric definitions](metric-definitions.md).
 
 Status date: 2026-10-20. Column lists checked against the SQL files of 2026-10-20. Back to the [gold overview](README.md).

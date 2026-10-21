@@ -1,5 +1,8 @@
 # Setup guide
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 How to set up a Databricks workspace to run LUNASaan? from an empty catalog to a dashboard. To run without Databricks, read [reproducibility](reproducibility.md) instead.
 
 Status date: 2026-10-20. Items marked **confirm** depend on your workspace.
@@ -49,6 +52,8 @@ python src/02_bronze/run_bronze.py --plan true
 ```
 
 On Databricks, run the same as a notebook cell or a one-off Python task.
+
+The HDX ingestion is a manual dependency. Use only a completed run folder with its `handoff.json`; the pipeline does not silently fall back to an older boundary run. See [troubleshooting](troubleshooting.md) if the handoff is incomplete.
 
 ## 4. Run the pipeline
 
