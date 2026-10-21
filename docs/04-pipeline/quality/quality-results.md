@@ -5,7 +5,7 @@ Last updated: 2026-10-21
 
 This page gives the results of the recorded runs, layer by layer, with their evidence. Each result names its date and its `validation_id` where it has one. Use them to find the result again in `public_health.quality`. Screenshots and query outputs go to [`06-evidence/`](../../06-evidence/README.md).
 
-Status date: 2026-10-20.
+Status date: 2026-10-21.
 
 ---
 
@@ -18,7 +18,9 @@ Status date: 2026-10-20.
 | 2026-10-19 | Bronze notebook runs (baseline QC, gate, `run_bronze`) | Bronze | Gate passed; 0 blocking |
 | 2026-10-19 | Silver rebuild with the revisions (D-44, rule 2a) | Silver | Diseases 0 FAIL. Population 0 FAIL. Cross-domain 0 FAIL |
 | 2026-10-20 | Workforce rebuild (Zamboanga Sibugay override) and cross-domain QC | Silver | 0 FAIL |
-| Pending | Evidence runs 1–3 on the final job YAML | All, including gold QC | — |
+| 2026-10-21 | Final evidence run 1 | All, including gold QC | Succeeded; 0 FAIL; 7 expected gold WARNs |
+| 2026-10-21 | Final evidence run 2 | All, including gold QC | Succeeded; 0 FAIL; 2 standing gold WARNs; G12 PASS for all 9 gold tables |
+| Pending | Final evidence run 3 and reconciliation | All, including gold QC | — |
 
 The full runs of 2026-10-16/17 used the job and gold of those dates. Gold was in `test_gold2` and had no `gold_qc.py` yet. `qc_results` holds their per-check results. The team wrote their layer pages before the post-capstone revisions.
 
@@ -90,23 +92,24 @@ One S29 WARN fewer than 2026-10-19: the Zamboanga Sibugay row override (D-58) re
 
 All build gates returned 0 on every table. Row counts and mart figures from that build are in the [table catalog](../gold/table-catalog.md) and the [findings report](../gold/findings-report.md). `gold_qc.py` did not exist yet.
 
-### 4.2 Final build: to record
+### 4.2 Final build: runs 1 and 2 recorded; run 3 pending
 
-Run on the final job YAML (2026-10-20), three times on the same inputs ([capture plan](../../06-evidence/README.md), section 2).
+The final job ran twice on unchanged inputs on 2026-10-21. The records are in the [final evidence session](../../06-evidence/2026-10-21-final-runs/README.md). A third run and reconciliation are still required before claiming complete idempotency evidence.
 
 | Item | Expected | Result |
 |---|---|---|
-| Every gold build | `succeeded` in `build_log`; every gate 0 | Pending |
-| Gold QC run 1 | 0 FAIL. G12 WARN once on `dim_date` and `fact_disease_metric` (weekly `date_key` changed, D-44, D-46); other G12 rows PASS or "first fingerprint". G13 WARN possible (boundary changes between censuses) | Pending |
-| Gold QC runs 2 and 3 | 0 FAIL; **every G12 row PASS "same as previous"** (query I2) | Pending |
-| Row counts across runs 1–3 | Same count for every table (query I1) | Pending |
+| Every gold build, runs 1 and 2 | `succeeded` in `build_log`; every gate 0 | Recorded in the run records: all 28 silver and gold tables succeeded in each run |
+| Gold QC run 1 | 0 FAIL; G12 can WARN once after a content change; G13 and G07 can WARN | Recorded: 118 checks, 111 PASS, 7 expected WARN, 0 FAIL. See [run 1](../../06-evidence/2026-10-21-final-runs/run-1/run-1.md) |
+| Gold QC run 2 | 0 FAIL; G12 PASS "same as previous" | Recorded: 118 checks, 116 PASS, 2 standing WARN, 0 FAIL; G12 PASS for all 9 gold tables. See [run 2](../../06-evidence/2026-10-21-final-runs/run-2/run-2.md) |
+| Row counts across runs 1 and 2 | Same count for every table (query I1) | Recorded: `same_count` true for all 28 tables in run 2 |
+| Gold QC run 3 and final comparison | 0 FAIL; **every G12 row PASS "same as previous"** (query I2) | Pending |
 | Gold 11 check 1 | All 17 HUCs `matched` | Pending |
 | Gold 22 check 1 | No `ihme_province_coverage_not_confirmed` | Pending |
 | Gold 23 check 3 | No row | Pending |
 | Gold 24 check 1 (`schema_name = 'gold'`) | No QC missing, no stale table | Pending |
 | `gold_o13_evidence.sql` Q1–Q6 | Read for D-56 | Pending |
 
-Record each result here with the date and `validation_id`, and screenshot it.
+Record the run-3 result here with its date and `validation_id`, then link the final comparison and reconciliation evidence.
 
 ## 5. Evidence to capture
 
@@ -159,3 +162,4 @@ SELECT * FROM public_health.quality.v_run_errors ORDER BY started_at DESC;
 | 2026-10-16, 10-17 | Full runs 1 and 2 |
 | 2026-10-19 | Bronze notebook runs; silver rebuild and QC |
 | 2026-10-20 | Workforce rebuild and cross-domain QC. Page written; gold section ready for the final runs |
+| 2026-10-21 | Final evidence runs 1 and 2 recorded. Gold section updated from the evidence records; run 3 and reconciliation remain pending |

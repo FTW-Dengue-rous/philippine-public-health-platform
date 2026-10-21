@@ -2,7 +2,7 @@
 
 Dated runs and revisions of the platform, newest first. Pages carry their own history; this page is the one place to see what changed when, and which run proves it.
 
-Status date: 2026-10-20. Add a row for every full run and every change that alters a published table.
+Status date: 2026-10-21. Add a row for every full run and every change that alters a published table.
 
 ---
 
@@ -10,7 +10,7 @@ Status date: 2026-10-20. Add a row for every full run and every change that alte
 
 | Date | Run | Result | Evidence |
 |---|---|---|---|
-| 2026-10-20 | Evidence runs 1–3: full job on the same inputs | **To record:** gate, silver and gold QC summaries; G12 PASS on runs 2 and 3 (run 1 shows G12 WARN once on `dim_date` and `fact_disease_metric`: weekly `date_key` changed, D-44, D-46) | [`06-evidence/idempotency/`](../06-evidence/README.md); [quality results](../04-pipeline/quality/quality-results-and-evidence.md), section 4.2 |
+| 2026-10-21 | Evidence runs 1–3: full job on the same inputs | Runs 1 and 2 recorded: 0 FAIL; run 2 has G12 PASS on all 9 gold tables. Run 3 and reconciliation remain to record. | [final-run evidence](../06-evidence/2026-10-21-final-runs/README.md); [quality results](../04-pipeline/quality/quality-results.md), section 4.2 |
 | 2026-10-20 | Workforce rebuild (`00` → `03`) with the Zamboanga Sibugay override. Then `workforce_silver_qc.py` and `silver_cross_domain_qc.py` | Headcount 28,080, denominator 3,024. Workforce QC 0 FAIL. Cross-domain 68 checks, 0 FAIL, 10 WARN (`14f27bc1-8c3f-48dd-aa5c-8a6faddd2ed4`) | [Silver quality checks](../04-pipeline/silver/silver-quality-checks.md), section 14 |
 | 2026-10-19 | Silver rebuild with the rule 2a and D-44 revisions, every domain and QC | Cross-domain 68 checks, 0 FAIL, 11 WARN (`e56cdd87-64bd-4686-9f32-74ff95622ed6`). Diseases QC 143 checks, 0 FAIL, 7 WARN. Population QC 19 checks, 0 FAIL, 5 WARN. `silver_rev_d44_verify.sql` steps 1–4 passed | Silver quality checks, section 14 |
 | 2026-10-19 | Bronze from a notebook: baseline QC, gate, `run_bronze.py` over 6 domains (four runs) | Gate: 41 sources, 39 PASS, 2 WARN, 0 blocking. `run_bronze`: 46 sources unchanged, 0 failed, 0 re-queued | [Bronze quality checks](../04-pipeline/bronze/bronze-quality-checks.md), section 11 |

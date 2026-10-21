@@ -14,8 +14,6 @@ One record per pipeline session, named by date. The final runs are the evidence 
 06-evidence/
 ├── README.md                          this guide and the run index (section 5)
 ├── evidence_queries.sql               the seven queries (B1, S1, S2, G1, I1, I2, I3)
-├── 2026-10-18-new-workspace-run.md    first full run in this workspace (history)
-├── idempotency/comparison.md          earlier manual comparisons (history)
 └── 2026-10-21-final-runs/             the evidence: three runs on the same inputs
     ├── README.md                      runs, rules, comparison (I1, I2, I3)
     ├── run-1/                         run-1.md and its screenshots
@@ -57,7 +55,7 @@ For each run, save into `run-N/` of the session folder:
 
 After run 3, fill the comparison in the session `README.md` from queries I1, I2 and I3: row counts per table, the G12 status per gold table, and what each bronze loader did, across the three runs.
 
-Then run the reconciliation queries A–D once and save them in `reconciliation/` with the run date. Record the three runs in the [change log](../08-governance/change-log.md) and the results in [quality results and evidence](../04-pipeline/quality/quality-results-and-evidence.md).
+Then run the reconciliation queries A–D once and save them in `reconciliation/` with the run date. Record the three runs in the [change log](../08-governance/change-log.md) and the results in [quality results](../04-pipeline/quality/quality-results.md).
 
 ### Idempotency passes when
 
@@ -103,7 +101,6 @@ Notes on reading them:
 
 | Date | Record | Status | What it shows |
 |---|---|---|---|
-| 2026-10-18 | [First full run in this workspace](2026-10-18-new-workspace-run.md) | History | Setup, bronze, silver and gold ran end to end; bronze and silver QC 0 FAIL. No gold QC yet; idempotency not tested |
 | 2026-10-21 | [Final runs](2026-10-21-final-runs/README.md) | Evidence, in progress | Three runs on the same inputs: QC in every layer, incremental bronze, idempotency |
 
 **Final runs, 2026-10-21:**

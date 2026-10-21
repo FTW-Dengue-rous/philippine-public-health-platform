@@ -15,7 +15,7 @@ Each overview links to its reference README. When the two differ, the code and i
 
 | You want to | Read |
 |---|---|
-| Understand the project in 15 minutes | [Root README](../README.md) → [problem and business context](01-context/problem-and-business-context.md) → [architecture overview](03-architecture/architecture-overview.md) → [assumptions and limitations](01-context/assumptions-and-limitations.md) |
+| Understand the project in 15 minutes | [Root README](../README.md) → [problem and business context](01-context/problem-and-business-context.md) → [architecture overview](03-architecture/architecture-overview.md) → [assumptions](01-context/assumptions.md) and [limitations and recommendations](01-context/limitations-and-recommendations.md) |
 | Check that the numbers can be trusted | [Quality control framework](04-pipeline/quality/quality-control-framework.md) → [silver reconciliation](04-pipeline/silver/reconciliation.md) → [analytical validation and traceability](04-pipeline/gold/analytical-validation-and-traceability.md) → [evidence](06-evidence/README.md) |
 | Use the gold tables or the dashboard | [Gold usage rules](04-pipeline/gold/gold-usage-rules.md) → [metric definitions](04-pipeline/gold/metric-definitions.md) → [dashboard guide](05-dashboard/dashboard-guide.md) |
 | Run or fix the pipeline | [Setup guide](07-operations/setup-guide.md) → [runbook](07-operations/runbook.md) → [troubleshooting](07-operations/troubleshooting.md) |
@@ -29,7 +29,8 @@ docs/
 ├── 01-context/                            why the platform exists
 │   ├── problem-and-business-context.md      business questions BQ1, BQ2; users; success criteria
 │   ├── scope.md                             in and out of scope
-│   ├── assumptions-and-limitations.md       limits that apply to every result
+│   ├── assumptions.md                        assumptions used by the analysis
+│   ├── limitations-and-recommendations.md    limits that apply to every result
 │   └── glossary.md                          terms, codes and abbreviations
 ├── 02-data/                               what data we use
 │   ├── data-sources.md                      every source dataset, by domain
@@ -59,7 +60,7 @@ docs/
 │   ├── gold/
 │   │   ├── README.md                        gold overview
 │   │   ├── conceptual-model.md · logical-data-model-and-erd.md
-│   │   ├── table-catalog.md · data-dictionary.md · business-data-dictionary.md
+│   │   ├── table-catalog.md · gold-data-dictionary.md · business-data-dictionary.md
 │   │   ├── data-marts.md · metric-definitions.md · gold-usage-rules.md
 │   │   ├── seed-data.md · sample-queries.md
 │   │   ├── analytical-validation-and-traceability.md
@@ -69,7 +70,7 @@ docs/
 │       ├── lineage-and-quality-contract.md  the contract every build follows
 │       ├── quality-control-framework.md     gates, severities, where results are stored
 │       ├── quality-check-catalog.md         every check code (B, S, G) and what it means
-│       └── quality-results-and-evidence.md  results of the recorded runs
+│       └── quality-results.md               results of the recorded runs
 ├── 05-dashboard/
 │   └── dashboard-guide.md
 ├── 06-evidence/                           screenshots and query outputs, by run

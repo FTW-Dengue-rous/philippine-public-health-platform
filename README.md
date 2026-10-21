@@ -64,13 +64,13 @@ A previous-scope question, outside the active scope and retained as a stretch go
 
 * **BQ2** — If a selected historical dengue outbreak recurred against the latest available hospital capacity, which regions or provinces would face the greatest estimated bed shortfalls under different assumptions? (dengue surge stress test; previous scope)
 
-BQ1 breaks down into pillars: Need (N1-N4), Supply (S1-S3), Access (A1-A2), Workforce (W1-W2), Equity (E1-E2), Priority (P1-P2), plus supporting (SUP1-SUP6) and conditional (CON1-CON3) analyses.
+BQ1 breaks down into pillars: Need (N1-N4), Supply (S1-S3), Access (A1-A4), Workforce (W1-W2), Equity (E1-E2), Priority (P1-P2), plus supporting (SUP1-SUP6) and conditional (CON1-CON3) analyses.
 
 **Built in gold and shown on the dashboard (BQ1):**
 
 * **Need (N1–N4)** — Leading causes of death by region; disease prevalence/mortality by province; dengue peaks and recurring burden; TB notification counts by municipality.
 * **Supply (S1–S3)** — Hospital counts and authorized beds relative to population, by level and ownership; bed occupancy by area and ownership; BHS, RHU and health-centre availability (S3 is shown as registry-based presence; full FHSIS counts are query-only).
-* **Access (A1–A2)** — Share of municipalities with no in-scope hospital; service presence and distance to the nearest hospital (Level 3 presence, A2, is query-only).
+* **Access (A1–A4)** — Areas with no hospital or licensed primary care recorded; highest recorded hospital level; population per recorded facility or bed; and distance to the nearest hospital. The dashboard shows the core access views; some detail is query-only.
 * **Workforce (W1–W2)** — Public doctors, nurses and midwives relative to population (the LGU-employed vs DOH-deployed split, W2, is query-only).
 * **Equity (E1–E2)** — Poverty vs service supply, beds and access; government bed share by poverty band (income-class analysis, E2, is query-only).
 * **Priority (P1–P2)** — Areas combining high disease burden with low supply, poor access or disadvantage; ranking stability under different weights.
@@ -113,7 +113,7 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 | Workforce (FHSIS, PSA, PSMO) | Yes | Yes | Yes | Yes |
 | Socioeconomic (poverty, expenditure) | Yes | Yes | Yes | Yes |
 
-Yes = implemented and verified on Databricks. The full pipeline (bronze, silver, gold) was verified end to end on 2026-10-18 in the current workspace; see the [run record](docs/06-evidence/2026-10-18-new-workspace-run.md). Recorded QC outcomes are in [quality results and evidence](docs/04-pipeline/quality/quality-results-and-evidence.md); post-run verification steps and expected row counts are in the [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
+Yes = implemented and verified on Databricks. The final evidence session has recorded successful runs 1 and 2; run 3 and reconciliation remain pending. See the [final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md), [quality results](docs/04-pipeline/quality/quality-results.md), and [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
 
 The Lakeview dashboard has eight pages and reads gold tables in `public_health.gold`. It refreshes when opened. Open it from the Databricks UI; see the [dashboard guide](docs/05-dashboard/dashboard-guide.md) for pages, filters, and data freshness checks.
 
@@ -156,8 +156,8 @@ Full documentation lives in [`docs/`](docs/README.md). Key entry points:
 * **Maintaining the platform?** -> [Architecture](docs/03-architecture/architecture-overview.md) -> [CI/CD setup](docs/03-architecture/ci-cd-setup.md) -> [Troubleshooting](docs/07-operations/troubleshooting.md)
 * **Using the dashboard?** -> [Dashboard guide](docs/05-dashboard/dashboard-guide.md) -> [Metric definitions](docs/04-pipeline/gold/metric-definitions.md)
 * **Lineage and quality contract** -> [Lineage and quality contract](docs/04-pipeline/quality/lineage-and-quality-contract.md)
-* **Handover** -> [Handover checklist](handover-checklist.md)
-* **Verified execution** -> [Evidence: 2026-10-18 full pipeline run](docs/06-evidence/2026-10-18-new-workspace-run.md)
+* **Handover** -> [Documentation reading paths](docs/README.md) -> [Setup guide](docs/07-operations/setup-guide.md) -> [Runbook](docs/07-operations/runbook.md)
+* **Verified execution** -> [Final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md)
 
 ## Repository layout
 
