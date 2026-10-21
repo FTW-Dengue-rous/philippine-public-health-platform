@@ -1,0 +1,78 @@
+sources:
+  psgc:
+    source_name: "PSA PSGC"
+    base_url: "https://classification.psa.gov.ph/psgc"
+    version: "Q2_2024"
+    endpoint: "all"
+    page_size: 1000
+
+    landing_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/psgc"
+
+    bronze_table: "public_health.bronze.geography_bronze"
+    geography_silver_table: "public_health.silver.geography_silver"
+    qc_results_table: "public_health.quality.qc_results"
+    metadata_table: "public_health.bronze.ingestion_metadata"
+
+    # Settings read by geography_silver.py and geography_silver_qc.py (added 2026-10-19).
+    # Bronze reads none of them.
+    silver_qc:
+      # PSGC level codes accepted in geography_silver.geographic_level (SG03, GS04). A null
+      # level is allowed; any other value stops the build.
+      accepted_geographic_levels: [Reg, Prov, City, Mun, SubMun, Bgy]
+      # Codes PSA publishes with no level. Q2_2024 has two: 0990100000 (placeholder "City of
+      # Isabela (Not a Province)"; the city itself is 0990101000) and 1999900000 (Special
+      # Geographic Area). Neither is used as an area. GS08 WARNs and lists the codes when a
+      # snapshot's null-level codes differ from this list.
+      null_level_codes: ["0990100000", "1999900000"]
+
+  hdx_phl_admin:
+    source_name: "HDX Philippines Administrative Boundaries"
+    source_system: "HDX"
+
+    dataset_id: "cod-ab-phl"
+    source_format: "GeoJSON"
+
+    base_url: "https://data.humdata.org"
+
+    landing_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/admin_boundaries"
+    staging_path: "/Volumes/workspace/default/ftw-b12-de/groups/g5_landing/psgc/_staging/geojson_to_jsonl"
+
+    required_levels: [1, 2, 3]
+    layer_extensions: [".geojson", ".json"]
+    layer_pattern: '(?:^|[_-])(?:adm|admin)(\d+)(?=[_.-]|$)'
+
+    bronze_table: "public_health.bronze.admin_boundaries_bronze"
+    dq_results_table: "public_health.bronze.admin_boundaries_dq"
+    admin_boundaries_silver_table: "public_health.silver.admin_boundaries_silver"
+    qc_results_table: "public_health.quality.qc_results"
+
+    silver_qc:
+      required_columns:
+        - admin_level
+        - boundary_pcode
+        - boundary_name
+        - area_sqkm
+        - center_lat
+        - center_lon
+        - geometry_type
+        - geometry_json
+        - source_crs
+        - source_version
+        - batch_id
+        - source_file
+        - record_sha256
+
+      accepted_geometry_types:
+        - Polygon
+        - MultiPolygon
+
+      # HDX boundaries with no one-to-one PSGC area. They are classed SPECIAL_STRUCTURE and keep
+      # a null psgc_code. Read by admin_boundaries_silver.py (classification, and the
+      # NAME_VARIANT step skips the ADM3 children) and by AS08 in admin_boundaries_silver_qc.py
+      # (added 2026-10-19; both had their own typed copy before). Names as in the HDX cod-ab-phl
+      # file loaded in bronze. A name HDX changes leaves the boundary unclassified, which stops
+      # the build ("Reconciliation incomplete").
+      special_structures:
+        adm2_name_prefixes: ["Metropolitan Manila"]
+        adm2_names: ["City of Isabela (not a province)", "Special Geographic Area"]
+        adm3_parent_adm2_names: ["Special Geographic Area"]

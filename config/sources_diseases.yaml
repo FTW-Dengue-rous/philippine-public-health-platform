@@ -1,0 +1,1050 @@
+# =============================================================================
+# sources_diseases.yaml — disease domain
+#
+# One entry per source. The bronze loader reads an entry, loads the file(s)
+# to bronze with every data column as STRING, and adds the lineage columns:
+#   _rescued_data | _source_key | _source_file | _source_sheet |
+#   _source_row_num | _as_of_date | _ingested_at
+#
+# Conventions
+#   - Entry name = source_key = folder name. Never change a key once in use.
+#   - Bronze keeps the ORIGINAL column names from the file. Only characters
+#     Delta does not allow (space , ; { } ( ) = tab newline) and "." become "_".
+#     Renaming to standard names (column_map) happens in silver.
+#   - path is relative to landing_root. Use `files:` to list files explicitly,
+#     or a glob in `path`.
+#   - as_of_date = date the file was downloaded or released (NOT load time).
+#     A file in `files:` can override it: {name: x.csv, as_of_date: 2026-11-01}
+#   - header_mode:
+#       single -> the file has one clean header row (at index skip_rows)
+#       names  -> column names are listed here in `columns` (list, or {position: name});
+#                 data starts at data_start_row. Use for titles / multi-row headers.
+#                 Unnamed positions become col_<n>.
+#       none   -> col_0, col_1, ... (stacked tables with no consistent columns)
+#   - A file in `files:` can be a dict and override: sheet, data_start_row, skip_rows,
+#     encoding, encoding_errors, delimiter, as_of_date, header_mode, columns,
+#     required_columns, header_check. Format is taken from the file extension.
+#   - enabled: false -> skipped when source_keys = ALL (still runs if named explicitly).
+#   - Row numbers are 0-based, counted from the first row of the file/sheet.
+#   - Bronze tables are named <domain>_<source>_<content>_bronze, e.g. diseases_hdx_dengue_bronze.
+#   - One folder = one layout = one bronze table. A new file goes into the folder that
+#     matches its geography level and grain, and is added to that entry's `files:` list.
+#   - load_mode (used by silver): upsert -> per merge key keep the row with the
+#     latest _as_of_date. Bronze always keeps every file.
+#   - qc: settings used by the bronze QC script. expected_rows and control numbers must be
+#     verified against the file / published source. skip_checks: [B08] switches a check off;
+#     severity: {B03: WARN} changes what a failed check produces for that source.
+#   - qc.control_values items may carry a `silver:` block (year, and for the TB programme
+#     indicator and drug_resistance). Bronze QC ignores it; diseases_silver_qc.py S34 reads the
+#     same number from silver. qc.control_totals of doh_foi_dengue and
+#     philhealth_foi_claims_hospital are read by S34 as they are. One number, written once
+#     (rule 2a, 2026-10-19).
+#   - sharing (D-47): open / public = published data. restricted = FOI releases and the hospital
+#     extract, where our requests promised academic use and aggregate reporting only: never
+#     committed to the repo, never profiled, published in gold as aggregates with cells from
+#     fewer than 3 records or hospitals suppressed. IHME is restricted by its licence (no
+#     redistribution), handled the same way.
+#
+# Ingestion-contract checks (run by the loader BEFORE anything is written)
+#   - header_check: the physical title/header rows must contain the expected text at
+#     the expected positions (case and spacing ignored, "contains" match). Checked on the
+#     raw rows, before YAML column names are applied, so a shifted or inserted column
+#     stops the load instead of loading values under the wrong names.
+#       header_check:
+#         - {row: 3, expect: {0: "Year", 1: "Total", 3: "NCR"}}
+#     Use it on every header_mode: names / none entry. To see the rows of a file, run
+#       python diseases_bronze.py --show_headers 10 --source_keys <key>
+#   - required_columns: for header_mode: single, header names that must exist (raw
+#     names as in the file; they are cleaned the same way as the header).
+#   - encoding_errors: strict (default) stops on a byte that does not fit the encoding.
+#     Set replace on an entry to load anyway; replaced bytes are counted and logged.
+#
+# Items marked CONFIRM were not verified against the actual file.
+# Entries 1-12: checks written from the real files on 2026-10-06.
+# Entries 13-16 and hdx_dengue_province_weekly_2021.csv: checks and row counts verified
+# against the real files on 2026-10-07.
+# Entries 17-19: checks, row counts and control values verified against the real files on 2026-10-14.
+# =============================================================================
+
+version: 1
+
+landing_root: /Volumes/workspace/default/ftw-b12-de/groups/g5_landing
+
+defaults:
+  domain: diseases
+  all_columns_as_string: true
+  load_mode: upsert
+  silver_enabled: true
+  encoding_errors: strict
+  metadata_table: "public_health.bronze.ingestion_metadata"
+  qc_results_table: "public_health.quality.qc_results"        # written through dq_utils.DQRun (quality_setup.sql)
+  silver_target: "public_health.silver.diseases_metric_silver"
+
+sources:
+
+  # ---------------------------------------------------------------------------
+  # 1. DOH FOI dengue: region x month, Jan 2021 to Sep 2025  (RESTRICTED)
+  # ---------------------------------------------------------------------------
+  doh_foi_dengue:
+    description: DOH dengue surveillance, cases and deaths by region and month
+    agency: Department of Health
+    obtained_via: eFOI
+    ticket_number: null                    # CONFIRM
+    original_file: dengue_surveillance_2021_2025.csv
+    path: diseases/restricted/doh_foi/dengue/doh_foi_dengue_region_monthly_2021_2025.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.diseases_doh_foi_dengue_bronze"
+    required_columns: [Year, Month, Region, Cases, Deaths]
+    as_of_date: 2025-09-30                 # data extracted around Sept 2025; CONFIRM the date on the FOI response
+    load_mode: upsert
+    merge_keys: [region_name, year, month]
+    sharing: restricted                    # D-47: FOI release, academic use, aggregates only, cells < 3 suppressed
+    coverage: 2021-01 to 2025-09, 18 regions (includes Negros Island Region)
+    column_map:
+      Year: year
+      Month: month
+      Region: region_name
+      Cases: cases
+      Deaths: deaths
+    disease:
+      disease_key: dengue
+      geo_level: region
+      geo_match_on: region_name
+      period_grain: month
+      period_columns: {year: year, month: month}
+      metrics: [cases, deaths]
+    qc:
+      expected_rows: 1026
+      numeric_columns: [Year, Month, Cases, Deaths]
+      control_totals:                      # also silver QC S34 (cases per year in diseases_metric_silver)
+        group_by: Year
+        sum: Cases
+        expected: {2021: 80919, 2022: 264390, 2023: 214638, 2024: 413960, 2025: 240540}
+    notes:
+      - The FOI request was filed around September 2025, so the file ends at September 2025.
+      - 2025 is a partial year (January to September). Never compare it with a full year.
+      - The last months before extraction (about July to September 2025) are likely incomplete because of reporting lag.
+      - A newer DOH file with a later as_of_date will replace overlapping months through the upsert.
+
+  # ---------------------------------------------------------------------------
+  # 2. UP NOAH dengue: region x week, 2016-2019 and 2022-2025  (OPEN, ODbL)
+  # ---------------------------------------------------------------------------
+  upnoah:
+    description: UP NOAH dengue and environmental variables, regional weekly sheet
+    agency: UP Resilience Institute (NOAH)
+    obtained_via: public download (GitHub)
+    url: https://github.com/UPRI-NOAH/dengue-rainfall-dataset
+    doi: 10.5281/zenodo.19448854
+    original_file: Dengue_Environmental Vars_Dataset.xlsx
+    path: diseases/upnoah/upnoah_dengue_region_weekly_2016_2025.xlsx
+    format: xlsx
+    sheet: Regional Data
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.diseases_upnoah_dengue_regional_bronze"
+    required_columns: [REGION, YR, WN, DC_DOH, FLAG_DEKADAL_APPROX, FLAG_PLAUSIBILITY]
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    merge_keys: [region_name, year, week]
+    sharing: open
+    license: ODbL v1.0 (attribution, share-alike)
+    coverage: 2016-2019 and 2022-2025 weekly, 17 regions; 2020-2021 absent
+    column_map:
+      REGION: region_name
+      YR: year
+      WN: week
+      DC_DOH: cases
+    passthrough_bronze_only: [RF_HDX, Temp_ERA5-Land, SH_ERA5-Land]
+    quality_flag_columns: [FLAG_DEKADAL_APPROX, FLAG_PLAUSIBILITY]
+    disease:
+      disease_key: dengue
+      geo_level: region
+      geo_match_on: region_name
+      period_grain: week
+      period_columns: {year: year, week: week}
+      metrics: [cases]
+    qc:
+      expected_rows: 7072
+      numeric_columns: [YR, WN, DC_DOH]
+    control_file: diseases/upnoah/PH_REGIONS-DC.csv   # used in silver QC, not bronze
+    notes:
+      - 17 regions, old definition (no Negros Island Region).
+      - "D-46 (2026-10-19): DC_DOH = DOH Epidemiology Bureau counts (FOI 2026-031) by ISO week. They are reported counts, not approximations. FLAG_DEKADAL_APPROX marks the RAINFALL column (dekadal values spread to weeks), not the cases."
+      - "Silver: period_basis iso_week, YR = ISO year, WN = ISO week, period Monday to Sunday; is_approximated = false. A WN above the ISO weeks of its year fails the silver gate."
+      - "The README folds week 53 into week 52. No year on hand has 53 ISO weeks (2016-2019, 2022-2025; checked 2026-10-19, max WN = 52 every year), so the folding changes no row today. 2026 has 53 ISO weeks: check a new release before loading it."
+
+
+  # ---------------------------------------------------------------------------
+  # 3. HDX dengue: province x week, 2016-2020 plus a separate 2021 file (OPEN)
+  # ---------------------------------------------------------------------------
+  hdx_dengue:
+    description: Dengue cases and deaths by province and week
+    agency: Humanitarian Data Exchange (HDX)
+    obtained_via: public download
+    url: https://data.humdata.org/dataset/philippine-dengue-cases-and-deaths
+    path: diseases/hdx_dengue
+    files:
+      - hdx_dengue_province_weekly_2016_2021.csv
+      - hdx_dengue_province_weekly_2021.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.diseases_hdx_dengue_bronze"
+    required_columns: [loc, cases, deaths, date, Region]     # `year` exists only in the 2021 file
+    header_check:
+      - {row: 1, expect: {0: "#adm2", 1: "#affected", 3: "#date"}}   # HXL tag row sits right under the header
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    merge_keys: [province_name, period_date]
+    sharing: open
+    license: CC BY (Creative Commons Attribution International)
+    license_url: https://docs.humdata.org/about/data-licenses
+    coverage: 2016 to 2021, weekly, by province (first file runs to early Jan 2021; second file covers 2021)
+    column_map:
+      loc: province_name
+      cases: cases
+      deaths: deaths
+      date: period_date
+      Region: region_name
+      year: source_year
+    optional_columns: [year]
+    silver_row_filters:
+      - "province_name NOT LIKE '#%'"       # HXL tag row under the header
+    disease:
+      disease_key: dengue
+      geo_level: province
+      geo_match_on: province_name
+      period_grain: week
+      period_columns: {date: period_date}
+      date_format: M/d/yyyy
+      metrics: [cases, deaths]
+    qc:
+      expected_rows:
+        hdx_dengue_province_weekly_2016_2021.csv: 32702
+        hdx_dengue_province_weekly_2021.csv: 253
+      numeric_columns: [cases, deaths]
+      max_non_numeric_rows_per_file: 1      # the HXL tag row
+    notes:
+      - Use the original download. Excel reinterprets dates with day <= 12.
+      - Check every province has dates exactly 7 days apart.
+      - "D-44 (2026-10-19): each date CLOSES its week (every date is a Sunday, the last day of an ISO week; checked 2026-10-19 with each file read in its own date format). Silver: period_basis iso_week_ending_date, period = date - 6 to date, year and week = ISO year and ISO week of the date. A few edge weeks move year (2021-01-03 belongs to ISO 2020 week 53)."
+      - "Missing weeks in the source (checked 2026-10-19 after the D-44 rebuild; each gap is exactly one week): week ending 2019-01-06 for all 126 areas (ISO 2019 week 1, so 2019 has 51 of 52 weeks); 2016-11-13 for 46 areas, 2017-11-12 for 41, 2020-11-15 for 46. Silver keeps them as gaps (no zero filled); silver QC S43 shows them as WARN."
+      - "date_format below is the big file's format. The 2021 file uses d/M/yyyy; diseases_silver_01 reads each file with its own format (settings hdx_main_date_format, hdx_repeat_file_date_format)."
+
+      - "hdx_dengue_province_weekly_2021.csv repeats the 252 rows of 2021 already in the 2016-2021 file (same cases and deaths), and writes dates as dd/MM/yyyy (03/01/2021 = 3 January). The big file uses M/d/yyyy. Silver must use the 2016-2021 file only for these weeks, or parse dates per file."
+      - Expect older province names (Compostela Valley, undivided Maguindanao).
+      - Assign region from the province via the geography table.
+      - Derive year and week from the parsed date (ISO year and week, D-44), not from the source year column.
+      - loc includes highly urbanized cities (e.g. ANGELES CITY) as separate rows.
+
+  # ---------------------------------------------------------------------------
+  # 4. DOH FOI tuberculosis, Region II: seven stacked tables  (RESTRICTED, bronze only)
+  # ---------------------------------------------------------------------------
+  doh_foi_tb_region2:
+    description: DOH Region II TB data 2020-2025 (incidence, notifications, mortality, cases by province, municipality, age and sex)
+    agency: Department of Health
+    obtained_via: eFOI
+    ticket_number: null                    # CONFIRM
+    original_file: Requested 2020-2025 TB Data from FOI - Sheet1.csv
+    path: diseases/restricted/doh_foi/tb/doh_foi_tb_region2_annual_2020_2025.csv
+    format: csv
+    delimiter: ","
+    encoding: utf-8
+    header_mode: none                      # stacked tables, no single header row -> col_0 .. col_12
+    skip_rows: 0
+    bronze_table: "public_health.bronze.diseases_doh_foi_tb_region2_bronze"
+    header_check:                          # the seven stacked tables must start where expected
+      - {row: 0, expect: {0: "Annual TB Incidence per 100,000"}}
+      - {row: 1, expect: {0: "Year", 1: "2020", 6: "2025"}}
+      - {row: 3, expect: {0: "Annual TB Notification"}}
+      - {row: 6, expect: {0: "Annual TB Mortality"}}
+      - {row: 9, expect: {0: "TB Cases per Province"}}
+      - {row: 10, expect: {1: "2020", 6: "2025"}}
+      - {row: 16, expect: {0: "TB Cases per City"}}
+      - {row: 116, expect: {0: "disaggregated by Age and Sex"}}
+      - {row: 117, expect: {0: "Age/Sex", 1: "2020", 11: "2025"}}
+      - {row: 118, expect: {1: "Male", 2: "Female", 11: "Male", 12: "Female"}}
+    as_of_date: 2026-10-01                 # CONFIRM date received
+    load_mode: latest_file
+    silver_enabled: false
+    sharing: restricted                    # D-47: FOI release, academic use, aggregates only
+    coverage: Region II only, 2020-2025, annual
+    qc:
+      expected_rows: 127
+      skip_checks: [B08]                  # repeated year header rows between the stacked tables
+    notes:
+      - Seven tables stacked in one sheet; split them in silver by the title rows.
+      - Numbers mix plain and comma formats; "n/a" appears; age band "45-44" should be 45-54.
+      - Some municipalities are split into numbered units (Aparri 1, Aparri 2).
+      - Municipality table has no province column; Quirino and Quezon repeat across provinces.
+
+  # ===========================================================================
+  # PSA registered deaths by cause. One entry per layout (level x grain).
+  # Year is not a column in these files: silver reads it from _source_file.
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # 5. PSA deaths: national x month, 2020-2024  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_deaths_national_monthly:
+    description: Registered deaths by cause of death and month of occurrence, Philippines
+    agency: Philippine Statistics Authority
+    obtained_via: PSA Deaths Statistical Tables (2020-2022) and OpenSTAT (2023-2024)
+    path: diseases/psa_deaths/national_monthly
+    header_mode: names
+    columns: [cause_of_death, total, january, february, march, april, may, june,
+              july, august, september, october, november, december]
+    files:
+      # Each file checks: the year in its title, the header cells, and that the first data row is Total.
+      - name: psa_deaths_national_monthly_2020.xlsx
+        sheet: T10
+        data_start_row: 4
+        header_check: [{row: 0, expect: {0: "Philippines: 2020"}}, {row: 1, expect: {0: "Cause of Death", 1: "Total", 2: "Month of Occurrence"}}, {row: 2, expect: {2: "January", 7: "June", 13: "December"}}, {row: 4, expect: {0: "Total"}}]
+      - name: psa_deaths_national_monthly_2021.xlsx
+        sheet: T11
+        data_start_row: 4
+        header_check: [{row: 0, expect: {0: "Philippines: 2021"}}, {row: 1, expect: {0: "Cause of Death", 1: "Total", 2: "Month of Occurrence"}}, {row: 2, expect: {2: "January", 7: "June", 13: "December"}}, {row: 4, expect: {0: "Total"}}]
+      - name: psa_deaths_national_monthly_2022.xlsx
+        sheet: T13
+        data_start_row: 4
+        header_check: [{row: 0, expect: {0: "Philippines: 2022"}}, {row: 1, expect: {0: "Cause of Death", 1: "Total", 2: "Month of Occurrence"}}, {row: 2, expect: {2: "January", 7: "June", 13: "December"}}, {row: 4, expect: {0: "Total"}}]
+      - name: psa_deaths_national_monthly_2023.csv
+        data_start_row: 2
+        header_check: [{row: 0, expect: {0: "Philippines: 2023"}}, {row: 1, expect: {0: "Cause of Death", 1: "Total", 2: "January", 7: "June", 13: "December"}}, {row: 2, expect: {0: "Total"}}]
+      - name: psa_deaths_national_monthly_2024.csv
+        data_start_row: 2
+        header_check: [{row: 0, expect: {0: "Philippines: 2024"}}, {row: 1, expect: {0: "Cause of Death", 1: "Total", 2: "January", 7: "June", 13: "December"}}, {row: 2, expect: {0: "Total"}}]
+    delimiter: ","
+    encoding: utf-8
+    bronze_table: "public_health.bronze.diseases_psa_deaths_national_monthly_bronze"
+    as_of_date: 2026-10-04                 # download date; CONFIRM
+    load_mode: upsert
+    merge_keys: [cause_code, year, month]
+    sharing: open
+    license: CC BY 4.0
+    disease:
+      geo_level: national
+      period_grain: month
+      metrics: [deaths]
+    qc:
+      expected_rows:
+        psa_deaths_national_monthly_2020.xlsx: 117
+        psa_deaths_national_monthly_2021.xlsx: 120
+        psa_deaths_national_monthly_2022.xlsx: 120
+        psa_deaths_national_monthly_2023.csv: 116
+        psa_deaths_national_monthly_2024.csv: 116
+      numeric_columns: [total, january, december]
+      row_sum:
+        total: total
+        parts: [january, february, march, april, may, june, july, august, september, october, november, december]
+      control_values:
+        - {label: "2020 all causes", column: total, expected: 613936, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2020.%'", silver: {year: 2020}}
+        - {label: "2021 all causes", column: total, expected: 879429, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2021.%'", silver: {year: 2021}}
+        - {label: "2022 all causes", column: total, expected: 679766, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2022.%'", silver: {year: 2022}}
+        - {label: "2023 all causes", column: total, expected: 694821, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2023.%'", silver: {year: 2023}}
+        - {label: "2024 all causes", column: total, expected: 701884, where: "upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2024.%'", silver: {year: 2024}}
+    notes:
+      - Excel files hold many sheets; only the cause-by-month sheet is loaded.
+      - Source and notes lines at the bottom of each Excel sheet are loaded as rows; drop them in silver.
+      - Cause labels differ by year (1-005, ....1-005, long dash, optional ICD range). Extract the code in silver.
+      - Group and detail rows are both present; map diseases from detail codes only.
+      - 2020-2022 are pandemic years. COVID rows have no cause code.
+
+  # ---------------------------------------------------------------------------
+  # 6. PSA deaths: region x year, by age group, 2023-2024  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_deaths_region_annual:
+    description: Registered deaths by cause, region of usual residence and age group (both sexes)
+    agency: Philippine Statistics Authority
+    obtained_via: OpenSTAT
+    path: diseases/psa_deaths/region_annual
+    header_mode: names
+    data_start_row: 3
+    columns: [geolocation, cause_of_death, total, under_1, age_1_4, age_5_9, age_10_14, age_15_19,
+              age_20_24, age_25_29, age_30_34, age_35_39, age_40_44, age_45_49, age_50_54, age_55_59,
+              age_60_64, age_65_69, age_70_74, age_75_79, age_80_84, age_85_over, age_not_stated]
+    files:
+      - name: psa_deaths_region_annual_2023.csv
+        header_check: [{row: 0, expect: {0: "Philippines: 2023"}}, {row: 2, expect: {0: "Geolocation", 1: "Cause of Death", 2: "Total Both Sexes", 3: "Under 1", 21: "85 and over", 22: "Not Stated"}}, {row: 3, expect: {0: "Philippines", 1: "Total"}}]
+      - name: psa_deaths_region_annual_2024.csv
+        header_check: [{row: 0, expect: {0: "Philippines: 2024"}}, {row: 2, expect: {0: "Geolocation", 1: "Cause of Death", 2: "Total Both Sexes", 3: "Under 1", 21: "85 and over", 22: "Not Stated"}}, {row: 3, expect: {0: "Philippines", 1: "Total"}}]
+    delimiter: ";"
+    encoding: cp1252
+    bronze_table: "public_health.bronze.diseases_psa_deaths_region_annual_bronze"
+    as_of_date: 2026-10-02                 # download date; CONFIRM
+    load_mode: upsert
+    merge_keys: [region_name, cause_code, year]
+    sharing: open
+    license: CC BY 4.0
+    disease:
+      geo_level: region
+      period_grain: year
+      metrics: [deaths]
+    qc:
+      expected_rows:
+        psa_deaths_region_annual_2023.csv: 2204
+        psa_deaths_region_annual_2024.csv: 2320
+      numeric_columns: [total]
+      control_values:
+        - {label: "2023 Philippines all causes", column: total, expected: 694821, where: "geolocation = 'Philippines' AND upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2023.%'"}
+        - {label: "2024 Philippines all causes", column: total, expected: 701884, where: "geolocation = 'Philippines' AND upper(trim(cause_of_death)) = 'TOTAL' AND _source_file LIKE '%_2024.%'"}
+    notes:
+      - Geolocation includes Philippines and FOREIGN COUNTRY; exclude both from regional totals.
+      - 2023 has 19 geographies, 2024 has 20 (Negros Island Region added).
+      - Only the total column goes to the silver disease table; age columns stay in bronze.
+
+  # ---------------------------------------------------------------------------
+  # 7. PSA deaths: national x year, 2015-2020  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_deaths_national_annual:
+    description: Registered deaths by cause, Philippines, 2015-2020 (2020 preliminary)
+    agency: Philippine Statistics Authority
+    obtained_via: PSA press release attachment (Table 4)
+    path: diseases/psa_deaths/national_annual
+    header_mode: names
+    columns: [cause_of_death, deaths_2015, deaths_2016, deaths_2017, deaths_2018, deaths_2019,
+              deaths_2020_prelim, average_2015_2019]
+    files:
+      - {name: psa_deaths_national_annual_2015_2020.xlsx, sheet: Sheet1, data_start_row: 4}
+    bronze_table: "public_health.bronze.diseases_psa_deaths_national_annual_bronze"
+    header_check:
+      - {row: 0, expect: {0: "Table 4"}}
+      - {row: 1, expect: {0: "Preliminary as of 26 February 2021"}}    # a newer release fails here on purpose: update as_of_date too
+      - {row: 2, expect: {0: "Cause of Death", 1: "2015", 2: "2016", 3: "2017", 4: "2018", 5: "2019", 6: "2020", 7: "Average"}}
+      - {row: 4, expect: {0: "Total"}}
+    as_of_date: 2021-02-26                 # stated in the file
+    load_mode: upsert
+    merge_keys: [cause_code, year]
+    sharing: open
+    disease:
+      geo_level: national
+      period_grain: year
+      metrics: [deaths]
+    qc:
+      expected_rows: 119
+      numeric_columns: [deaths_2015, deaths_2019, deaths_2020_prelim]
+      null_tokens: ["*"]
+      control_values:
+        - {label: "2015 all causes", column: deaths_2015, expected: 560605, where: "trim(cause_of_death) = 'Total'"}
+        - {label: "2019 all causes", column: deaths_2019, expected: 620414, where: "trim(cause_of_death) = 'Total'"}
+    notes:
+      - Use 2015-2019 only. The 2020 column is preliminary; final 2020 is in national_monthly.
+      - average_2015_2019 is derived; do not load it to silver.
+      - "* means not applicable (COVID rows before 2020)."
+
+  # ---------------------------------------------------------------------------
+  # 8. PSA deaths: province and region x year, by sex, 2006-2015  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_deaths_province_annual:
+    description: Deaths by cause, sex and usual residence (region and province), 2006-2015
+    agency: Philippine Statistics Authority
+    obtained_via: PSA Vital Statistics Report tables (Table 2)
+    path: diseases/psa_deaths/province_annual
+    header_mode: names
+    data_start_row: 5
+    columns: [area_name, cause_of_death,
+              male_2006, female_2006, male_2007, female_2007, male_2008, female_2008,
+              male_2009, female_2009, male_2010, female_2010, male_2011, female_2011,
+              male_2012, female_2012, male_2013, female_2013, male_2014, female_2014,
+              male_2015, female_2015]
+    files:
+      - psa_deaths_province_annual_2006_2015.csv
+    delimiter: ","
+    encoding: utf-8
+    bronze_table: "public_health.bronze.diseases_psa_deaths_province_annual_bronze"
+    header_check:
+      - {row: 0, expect: {0: "Table 2. Number of Deaths by Cause"}}
+      - {row: 2, expect: {0: "Cause of Death and Usual Residence", 2: "2006", 4: "2007", 10: "2010", 20: "2015"}}
+      - {row: 3, expect: {2: "Male", 3: "Female", 20: "Male", 21: "Female"}}
+      - {row: 5, expect: {0: "PHILIPPINES"}}
+    as_of_date: 2026-10-04                 # download date; CONFIRM
+    load_mode: upsert
+    merge_keys: [area_name, cause_name, year]
+    sharing: open
+    disease:
+      geo_level: [national, region, province]
+      period_grain: year
+      metrics: [deaths]
+    qc:
+      expected_rows: 9224
+      skip_checks: [B08]                  # cause rows repeat across area blocks by design
+      numeric_columns: [male_2006, female_2015]
+      null_tokens: ["-"]
+      control_values:
+        - {label: "2006 Philippines male", column: male_2006, expected: 258300, where: "trim(area_name) = 'PHILIPPINES'"}
+        - {label: "2015 Philippines female", column: female_2015, expected: 238981, where: "trim(area_name) = 'PHILIPPINES'"}
+    notes:
+      - Stacked blocks. A row with area_name filled is the area total; the cause rows under it have area_name blank. Carry area_name down in silver.
+      - 86 causes with no cause codes. Map names to codes using the 2015 column of national_annual.
+      - "- means zero. Values have spaces and thousands separators."
+      - Old geography: 17 regions, ARMM, Compostela Valley, NCR districts, FOREIGN COUNTRY block.
+      - Use 2006-2014 from this file; 2015 overlaps national_annual (use as a control check).
+
+  # ===========================================================================
+  # DOH FHSIS annual tables
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # 9. FHSIS tuberculosis: municipality x year, 2024 and 2025  (PUBLIC)
+  # ---------------------------------------------------------------------------
+  doh_fhsis_tb:
+    description: FHSIS TB case notification (all forms and drug-resistant), by area
+    agency: Department of Health
+    obtained_via: FHSIS annual report tables
+    path: diseases/doh_fhsis                          # original Excel workbooks, not CSV exports
+    header_mode: names
+    columns: {0: psgc_code, 1: area_name, 2: population, 3: cases_male, 4: cases_female,
+              5: cases_total, 6: case_notification_rate, 7: dr_cases_male, 8: dr_cases_female,
+              9: dr_cases_total, 10: dr_notification_rate,
+              13: presumptive_tb_tested, 14: population_testing_rate}
+    files:
+      - name: doh_fhsis_tb_municipality_annual_2024.xlsx
+        sheet: CNR
+        data_start_row: 7
+        header_check:
+          - {row: 1, expect: {0: "Case Notification Rate"}}
+          - {row: 2, expect: {0: "Philippines, 2024"}}
+          - {row: 4, expect: {0: "PSGC", 1: "Area", 2: "Total Population", 3: "Notified TB, All Forms", 6: "Case Notification Rate", 7: "Drug Resistant", 10: "DRTB"}}
+          - {row: 5, expect: {3: "Male", 4: "Female", 5: "Total", 7: "Male", 8: "Female", 9: "Total"}}
+          - {row: 7, expect: {1: "Philippines"}}
+      - name: doh_fhsis_tb_municipality_annual_2025.xlsx
+        sheet: Annual
+        data_start_row: 6
+        header_check:
+          - {row: 1, expect: {3: "Table 2.F.7.1", 11: "Table 2.F.7.2"}}
+          - {row: 2, expect: {3: "Annual 2025"}}
+          - {row: 4, expect: {0: "PSGC", 1: "Region, Province/City", 2: "Projected Population", 3: "notified TB cases", 7: "drug-resistant", 11: "presumptive"}}
+          - {row: 5, expect: {3: "Male", 4: "Female", 5: "Total", 6: "%", 9: "Total", 10: "%", 13: "Total", 14: "%"}}
+          - {row: 6, expect: {1: "PHILIPPINES"}}
+    bronze_table: "public_health.bronze.diseases_fhsis_tb_bronze"
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    merge_keys: [psgc_code, year]
+    sharing: public
+    source_key_override: doh_fhsis
+    disease:
+      disease_key: tb
+      geo_level: [national, region, province, municipality]
+      period_grain: year
+      metrics: [cases]
+    qc:
+      expected_rows:
+        doh_fhsis_tb_municipality_annual_2024.xlsx: 1745
+        doh_fhsis_tb_municipality_annual_2025.xlsx: 1748
+      numeric_columns: [population, cases_total]
+      null_tokens: ["*"]                  # * = incomplete or no data submitted
+      control_values:
+        - {label: "2024 Philippines TB cases", column: cases_total, expected: 544948, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2024.%'", silver: {year: 2024}}
+        - {label: "2025 Philippines TB cases", column: cases_total, expected: 535254, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_file LIKE '%_2025.%'", silver: {year: 2025}}
+    notes:
+      - 2025 population is projected; 2025 has two extra testing columns (null for 2024).
+      - PSGC code is blank on the 2025 Philippines row; pad codes to 10 digits in silver.
+      - Sheets TB-TPT, TSR-DSTB and TSR-MDRTB of the 2025 workbook are loaded by doh_fhsis_tb_tpt and doh_fhsis_tb_treatment_success.
+      - The Population sheet belongs to the population domain; the query sheets (Annual_tested, TB-TPT query, TSR) repeat the same data and are not loaded.
+
+  # ---------------------------------------------------------------------------
+  # 17. FHSIS TB preventive treatment (TPT) for TB contacts: municipality x year, 2025  (PUBLIC)
+  # ---------------------------------------------------------------------------
+  doh_fhsis_tb_tpt:
+    description: FHSIS Table 2.F.7.3, TB contacts given TB preventive treatment, by age group and sex, by area
+    agency: Department of Health (DOH-Integrated Tuberculosis Information System)
+    obtained_via: FHSIS annual report tables
+    path: diseases/doh_fhsis                          # same workbook as doh_fhsis_tb
+    header_mode: names
+    columns: {0: psgc_code, 1: area_name,
+              2: tpt_0_14_male, 3: tpt_0_14_female, 4: tpt_0_14_total,
+              5: tpt_15_over_male, 6: tpt_15_over_female, 7: tpt_15_over_total,
+              8: tpt_eligible_population,
+              9: tpt_all_male, 10: tpt_all_female, 11: tpt_all_total, 12: tpt_coverage_pct}
+    files:
+      - name: doh_fhsis_tb_municipality_annual_2025.xlsx
+        sheet: TB-TPT
+        data_start_row: 6
+        header_check:
+          - {row: 1, expect: {2: "Table 2.F.7.3"}}
+          - {row: 2, expect: {2: "Annual 2025"}}
+          - {row: 4, expect: {0: "PSGC", 1: "Region, Province/City", 2: "0-14 years old", 5: "15 yrs old and above", 8: "Eligible Population", 9: "All Ages"}}
+          - {row: 5, expect: {2: "Male", 3: "Female", 4: "Total", 9: "Male", 10: "Female", 11: "Total", 12: "%"}}
+          - {row: 6, expect: {1: "PHILIPPINES"}}
+    bronze_table: "public_health.bronze.diseases_fhsis_tb_tpt_bronze"
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    merge_keys: [psgc_code, year]
+    sharing: public
+    source_key_override: doh_fhsis
+    silver_target: "public_health.silver.diseases_tb_programme_silver"   # planned
+    coverage: 2025 annual; Philippines, 18 regions, 116 provinces/HUCs, 1,609 cities and municipalities
+    qc:
+      expected_rows: 1748                 # 1,744 area rows + 4 source/legend lines
+      numeric_columns: [tpt_all_total, tpt_eligible_population, tpt_coverage_pct]
+      null_tokens: ["*"]                  # * = incomplete or no data submitted (none in the 2025 file)
+      row_sum:
+        total: tpt_all_total
+        parts: [tpt_0_14_total, tpt_15_over_total]
+      control_values:
+        - {label: "2025 Philippines contacts given TPT", column: tpt_all_total, expected: 120108, where: "upper(trim(area_name)) = 'PHILIPPINES'",
+           silver: {indicator: tpt_given, drug_resistance: not_applicable, year: 2025}}
+        - {label: "2025 Philippines eligible contacts (FHSIS estimate)", column: tpt_eligible_population, expected: 1498711.2, where: "upper(trim(area_name)) = 'PHILIPPINES'",
+           silver: {indicator: tpt_eligible_contacts, drug_resistance: not_applicable, year: 2025}}   # = 535,254 notified x 4 x 70%; was a silver-only control until 2026-10-19
+        - {label: "2025 Philippines TPT 0-14", column: tpt_0_14_total, expected: 37399, where: "upper(trim(area_name)) = 'PHILIPPINES'"}
+        - {label: "2025 Philippines TPT 15+", column: tpt_15_over_total, expected: 82709, where: "upper(trim(area_name)) = 'PHILIPPINES'"}
+    notes:
+      - "Eligible population is an ESTIMATE printed by FHSIS: notified TB cases x 4 contacts x 70%. Coverage % rests on it; label it as such."
+      - tpt_eligible_population has decimals (1498711.2). Keep as text in bronze; cast to DECIMAL in silver, never to an integer.
+      - 2025 only. 9 area rows are blank (no report); one area shows coverage above 100% (114.3%).
+      - PSGC code is blank on the Philippines row; pad codes to 10 digits in silver. Names can carry trailing spaces.
+      - Column 13 has a blank header (" ") and no data.
+      - The long-format sheet "TB-TPT, query" holds the same data by sex and age with PSGC columns; not loaded.
+
+  # ---------------------------------------------------------------------------
+  # 18. FHSIS TB treatment success rate, drug-susceptible and drug-resistant: municipality x year, 2025  (PUBLIC)
+  # ---------------------------------------------------------------------------
+  doh_fhsis_tb_treatment_success:
+    description: FHSIS Tables 2.F.7.4 (DSTB, all forms) and 2.F.7.5 (RR/MDR-TB), TB cases cured and completed treatment, by age group, by area
+    agency: Department of Health (DOH-Integrated Tuberculosis Information System)
+    obtained_via: FHSIS annual report tables
+    path: diseases/doh_fhsis                          # same workbook as doh_fhsis_tb
+    header_mode: names
+    columns: {0: psgc_code, 1: area_name,
+              2: population_0_14, 3: cohort_cases_0_14,
+              4: success_0_14_male, 5: success_0_14_female, 6: success_0_14_total, 7: success_0_14_pct,
+              8: population_15_over, 9: cohort_cases_15_over,
+              10: success_15_over_male, 11: success_15_over_female, 12: success_15_over_total, 13: success_15_over_pct,
+              14: cohort_cases_age_unknown,
+              15: success_age_unknown_male, 16: success_age_unknown_female, 17: success_age_unknown_total,
+              18: population_all, 19: cohort_cases_all,
+              20: success_all_male, 21: success_all_female, 22: success_all_total, 23: success_all_pct}
+    files:
+      - name: doh_fhsis_tb_municipality_annual_2025.xlsx
+        sheet: TSR-DSTB
+        data_start_row: 6
+        header_check:
+          - {row: 1, expect: {4: "Table 2.F.7.4"}}
+          - {row: 2, expect: {4: "Annual 2025"}}
+          - {row: 4, expect: {0: "PSGC", 1: "Region, Province/City", 2: "Projected Population", 3: "(0-14)", 9: "15 years old and above", 14: "Null/Unknown/Invalid", 18: "all ages", 19: "all ages", 20: "All ages"}}
+          - {row: 5, expect: {4: "Male", 6: "Total", 7: "%", 13: "%", 17: "Total", 20: "Male", 22: "Total", 23: "%"}}
+          - {row: 6, expect: {1: "PHILIPPINES"}}
+      - name: doh_fhsis_tb_municipality_annual_2025.xlsx
+        sheet: TSR-MDRTB
+        data_start_row: 6
+        header_check:
+          - {row: 1, expect: {4: "Table 2.F.7.5"}}
+          - {row: 2, expect: {4: "Annual 2025"}}
+          - {row: 4, expect: {0: "PSGC", 1: "Region, Province/City", 2: "Projected Population", 3: "(0-14)", 9: "15 yrs old and above", 14: "Null/Unknown/Invalid", 18: "all ages", 19: "all ages", 20: "All Ages"}}
+          - {row: 5, expect: {4: "Male", 6: "Total", 7: "%", 13: "%", 17: "Total", 20: "Male", 22: "Total", 23: "%"}}
+          - {row: 6, expect: {1: "PHILIPPINES"}}
+    bronze_table: "public_health.bronze.diseases_fhsis_tb_treatment_success_bronze"
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    merge_keys: [psgc_code, year, drug_resistance]   # drug_resistance comes from _source_sheet in silver
+    sharing: public
+    source_key_override: doh_fhsis
+    silver_target: "public_health.silver.diseases_tb_programme_silver"   # planned
+    coverage: 2025 annual; Philippines, 18 regions, 116 provinces/HUCs, 1,609 cities and municipalities
+    qc:
+      expected_rows: 3496                 # 1,748 per sheet (1,744 area rows + 4 source/legend lines) x 2 sheets
+      numeric_columns: [cohort_cases_all, success_all_total, success_all_pct]
+      null_tokens: ["*"]
+      row_sum:
+        total: success_all_total
+        parts: [success_all_male, success_all_female]
+      control_values:
+        - {label: "2025 Philippines DSTB cohort", column: cohort_cases_all, expected: 414185, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-DSTB'",
+           silver: {indicator: treatment_cohort, drug_resistance: drug_susceptible, year: 2025}}
+        - {label: "2025 Philippines DSTB cured and completed", column: success_all_total, expected: 382547, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-DSTB'",
+           silver: {indicator: treatment_success, drug_resistance: drug_susceptible, year: 2025}}
+        - {label: "2025 Philippines RR/MDR-TB cohort", column: cohort_cases_all, expected: 7721, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-MDRTB'",
+           silver: {indicator: treatment_cohort, drug_resistance: drug_resistant, year: 2025}}
+        - {label: "2025 Philippines RR/MDR-TB cured and completed", column: success_all_total, expected: 5030, where: "upper(trim(area_name)) = 'PHILIPPINES' AND _source_sheet = 'TSR-MDRTB'",
+           silver: {indicator: treatment_success, drug_resistance: drug_resistant, year: 2025}}
+    notes:
+      - "Treatment success = cured + treatment completed, over the cases in the treatment cohort (cohort_cases_*). success_*_pct = success_*_total / cohort_cases_* x 100 (checked: Philippines DSTB 382,547 / 414,185 = 92.36%)."
+      - The cohort is the group of cases whose treatment outcome is reported in 2025, not the 2025 notifications. Never divide by notified cases from doh_fhsis_tb.
+      - success_*_male and success_*_female are cured/completed counts by sex; the cohort is not split by sex.
+      - Age groups 0-14, 15+ and unknown add up to all ages.
+      - Sheet TSR-DSTB = drug-susceptible TB (all forms), TSR-MDRTB = rifampicin-resistant / multidrug-resistant TB. Silver derives drug_resistance from _source_sheet.
+      - 2025 only. 9 area rows are blank (no report). PSGC code is blank on the Philippines row.
+      - The long-format sheet "TSR" holds the same data with numerators and denominators by sex and age; not loaded.
+
+  # ---------------------------------------------------------------------------
+  # 10. FHSIS heart disease and pneumonia 2024: province x year, by age and sex  (PUBLIC)
+  # ---------------------------------------------------------------------------
+  doh_fhsis_morbidity:
+    description: FHSIS morbidity tables (diseases of the heart, pneumonia) by region, province and city
+    agency: Department of Health
+    obtained_via: FHSIS annual report tables (Google Sheets export)
+    path: diseases/doh_fhsis
+    header_mode: names
+    columns: [area_name, population,
+              male_0_9, female_0_9, male_10_19, female_10_19, male_20_59, female_20_59,
+              male_60_over, female_60_over, cases_male, cases_female, cases_total, rate_per_100k]
+    files:
+      - name: doh_fhsis_heart_disease_province_annual_2024.csv
+        data_start_row: 7
+        header_check:
+          - {row: 0, expect: {0: "Diseases of the Heart"}}
+          - {row: 2, expect: {0: "Philippines, 2024"}}
+          - {row: 4, expect: {0: "Region/Province/City", 1: "Population", 2: "0 - 9", 4: "10 - 19", 6: "20 - 59", 8: "60 yrs", 10: "Total", 12: "Total"}}
+          - {row: 6, expect: {2: "Male", 3: "Female", 10: "Male", 11: "Female", 12: "Number", 13: "Rate"}}
+          - {row: 7, expect: {0: "Philippines"}}
+      - name: doh_fhsis_pneumonia_province_annual_2024.csv
+        data_start_row: 8                  # one extra line ("Annual") above the header
+        header_check:
+          - {row: 0, expect: {0: "Pneumonia"}}
+          - {row: 2, expect: {0: "Philippines, 2024"}}
+          - {row: 5, expect: {0: "Region/Province/City", 1: "Population", 2: "0 - 9", 4: "10 - 19", 6: "20 - 59", 8: "60 yrs", 10: "Total", 12: "Total"}}
+          - {row: 7, expect: {2: "Male", 3: "Female", 10: "Male", 11: "Female", 12: "Number", 13: "Rate"}}
+          - {row: 8, expect: {0: "Philippines"}}
+    delimiter: ","
+    encoding: utf-8
+    bronze_table: "public_health.bronze.diseases_fhsis_morbidity_bronze"
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    merge_keys: [disease_key, area_name, year]
+    sharing: public
+    source_key_override: doh_fhsis
+    disease:
+      geo_level: [national, region, province]
+      period_grain: year
+      metrics: [cases]
+    qc:
+      expected_rows:
+        doh_fhsis_heart_disease_province_annual_2024.csv: 143
+        doh_fhsis_pneumonia_province_annual_2024.csv: 143
+      numeric_columns: [population, cases_total]
+      control_values:
+        - {label: "2024 Philippines heart disease cases", column: cases_total, expected: 40839, where: "trim(area_name) = 'Philippines' AND _source_file LIKE '%heart_disease%'"}
+        - {label: "2024 Philippines pneumonia cases", column: cases_total, expected: 361372, where: "trim(area_name) = 'Philippines' AND _source_file LIKE '%pneumonia%'"}
+    notes:
+      - Disease and year come from the file name (heart_disease, pneumonia; 2024).
+      - Rows are national, region, province and highly urbanized city, with no codes. Match by name in silver.
+      - Numbers are text with thousands separators. 0 means no data, * means no report.
+      - Heavy under-reporting; several cities report 0. Use for data readiness, not as true burden.
+      - The two legend lines at the bottom load as rows; drop them in silver.
+
+  # ===========================================================================
+  # Restricted files
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # 11. Hospital pneumonia admissions, patient level  (RESTRICTED)
+  # ---------------------------------------------------------------------------
+  davao_hospital_pneumonia:
+    description: Pneumonia (J18) admissions in one government hospital, Davao region, Nov 2017 to Dec 2025
+    obtained_via: shared de-identified extract
+    path: diseases/restricted/davao_hospital/davao_hospital_pneumonia_admissions_2017_2025.xlsx
+    format: xlsx
+    sheet: Sheet1
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.diseases_davao_hospital_pneumonia_bronze"
+    required_columns: [EncounterID, Patient_Classification, PHIC_Class, LevelofCare, Age, Gender,
+                       AdmissionDate, DischargeDate, DeathDate, ICD, Length_Of_Stay_Day,
+                       Brgy, City, Province, Disposition, Result,
+                       Total_Bill, PhilHealth_Coverage, Guarantee_Letter_Coverage]
+    as_of_date: 2026-10-01
+    load_mode: upsert
+    merge_keys: [EncounterID]
+    sharing: restricted                    # D-47: de-identified hospital extract, academic use, aggregates only, cells < 3 suppressed
+    silver_target: "public_health.silver.diseases_hospital_encounters_silver"
+    deidentify:
+      drop_columns: [EncounterID, Brgy, Height, Weight, Total_Bill, PhilHealth_Coverage, Guarantee_Letter_Coverage]
+    qc:
+      expected_rows: 25924
+      numeric_columns: [Age, Length_Of_Stay_Day]
+    notes:
+      - Bronze keeps barangay, exact timestamps and bill amounts. Restrict access to this table.
+      - Dates load as ISO text (2017-11-26T17:23:00).
+
+  # ---------------------------------------------------------------------------
+  # 12. PhilHealth TB claims 2017-2019  (RESTRICTED, bronze only)
+  # ---------------------------------------------------------------------------
+  philhealth_foi_tb_claims:
+    description: PhilHealth claims for pulmonary tuberculosis by province, hospital level, member category, sex and age
+    agency: PhilHealth
+    obtained_via: eFOI (published response)
+    path: diseases/restricted/philhealth_foi/philhealth_claims_tb_2017_2019.xlsx
+    format: xlsx
+    sheet: Raw
+    header_mode: single
+    skip_rows: 2
+    bronze_table: "public_health.bronze.diseases_philhealth_tb_claims_bronze"
+    header_check:
+      - {row: 0, expect: {0: "PhilHealth Claims for Pulmonary Tuberculosis 2017 to 2019"}}
+    required_columns: ["Admit Year", "Illness 1 Code", "Member Category", "Institution Class", "Institution Province",
+                       "Patient Sex", "Patient Age Group", "Sum of Claims Amount", "Claims Count"]
+    as_of_date: 2026-10-02
+    load_mode: upsert
+    silver_enabled: false
+    sharing: restricted                    # D-47: FOI release, academic use, aggregates only
+    qc:
+      expected_rows: 60678                # 60,675 data rows + 3 'Applied filters' footer rows
+      numeric_columns: [Admit Year, Claims Count]
+      max_non_numeric_rows_per_file: 3    # the footer rows
+      control_totals:
+        group_by: Admit Year
+        sum: Claims Count
+        expected: {2017: 50500, 2018: 49524, 2019: 48662}
+
+  # ===========================================================================
+  # PSA Philippine Statistical Yearbook tables
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # 13. PSA deaths, all causes: region x year, 1992-2023  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_deaths_allcause_region_annual:
+    description: Registered deaths (all causes) and crude death rate per 1,000 by region of usual residence
+    agency: Philippine Statistics Authority
+    obtained_via: Philippine Statistical Yearbook 2025, Table 9.5
+    original_file: 2025_T9_5.csv
+    path: diseases/psa_deaths/region_annual_allcause
+    files:
+      - psa_deaths_allcause_region_annual_1992_2023.csv
+    delimiter: ","
+    encoding: cp1252
+    header_mode: none                      # two stacked blocks; block headers at rows 3-4 and 41-42
+    data_start_row: 0
+    bronze_table: "public_health.bronze.diseases_psa_deaths_allcause_region_annual_bronze"
+    header_check:
+      - {row: 0, expect: {0: "Number of Registered Deaths and Rates by Region"}}
+      - {row: 3, expect: {0: "Year", 1: "Total", 3: "NCR", 19: "Region VI"}}
+      - {row: 4, expect: {1: "Number", 2: "Rate"}}
+      - {row: 41, expect: {0: "Year", 1: "Region VII", 15: "BARMM", 17: "Foreign"}}
+    as_of_date: 2026-10-05                 # download date; CONFIRM
+    load_mode: upsert
+    merge_keys: [region_name, year]
+    sharing: open
+    coverage: 1992-2023 annual, Philippines + 17 regions + Foreign (no Negros Island Region)
+    disease:
+      disease_key: all_causes
+      geo_level: [national, region]
+      period_grain: year
+      metrics: [deaths]
+    qc:
+      expected_rows: 79                   # 64 year rows + block titles, headers, notes and source lines
+      numeric_columns: [col_1]
+      max_non_numeric_rows_per_file: 5    # subtitle and the two block header rows have text in col_1
+      control_values:                     # block 1 (rows < 40) holds the national Total; same numbers as the PSA monthly files
+        - {label: "2020 Philippines all causes", column: col_1, expected: 613936, where: "trim(col_0) = '2020' AND _source_row_num < 40"}
+        - {label: "2023 Philippines all causes", column: col_1, expected: 694821, where: "trim(col_0) = '2023' AND _source_row_num < 40"}
+    notes:
+      - Block 1 rows 6-37 (Total, NCR..Region VI), block 2 rows 44-75 (Region VII..BARMM, Foreign). Region names come from rows 3 and 41; each region has a Number and a Rate column.
+      - "… (cp1252 byte 0x85) = region did not exist yet (MIMAROPA before 2003, Caraga before 1996, BARMM before 1993). Null, not zero."
+      - Regions + Foreign = Total for every year (checked). National 2020-2023 equal the PSA monthly files.
+      - 2021 Region XII / BARMM boundary differs (file notes 4-5). Year "2014 " has a trailing space.
+      - Rates use population projections; recompute rates in gold. Title, notes and source rows load as rows; drop in silver.
+
+  # ---------------------------------------------------------------------------
+  # 14. PSA notifiable diseases: national x year, 2014-2021  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_notifiable_national_annual:
+    description: Selected notifiable diseases, reported cases by cause, Philippines
+    agency: Philippine Statistics Authority (from DOH Philippine Health Statistics)
+    obtained_via: Philippine Statistical Yearbook 2025, Table 9.15
+    original_file: 2025_T9_15.csv
+    path: diseases/psa_notifiable/national_annual
+    files:
+      - psa_notifiable_national_annual_2014_2021.csv
+    delimiter: ","
+    encoding: cp1252
+    header_mode: single
+    skip_rows: 2                           # row 0 = title, row 2 = header (Notifiable Diseases, 2014 .. 2021)
+    required_columns: ["Notifiable Diseases", "2014", "2021"]
+    header_check:
+      - {row: 0, expect: {0: "Notifiable Diseases Reported Cases by Cause"}}
+    bronze_table: "public_health.bronze.diseases_psa_notifiable_national_annual_bronze"
+    as_of_date: 2026-10-05                 # download date; CONFIRM
+    load_mode: upsert
+    merge_keys: [disease_name, year]
+    sharing: open
+    coverage: 2014-2021 annual, national, 22 diseases
+    wide_columns:                          # years are columns; unpivot to (year, cases) in silver
+      name_pattern: "^[0-9]{4}$"
+      value_name: cases
+    disease:
+      geo_level: national
+      period_grain: year
+      metrics: [cases]
+    qc:
+      expected_rows: 23                   # 22 diseases + the source line
+      numeric_columns: ["2014", "2021"]
+      null_tokens: ["...", "…"]
+      max_non_numeric_rows_per_file: 1    # the source line at the bottom
+    notes:
+      - No dengue row. "Acute Hemorrhagic Fever" is not total dengue (40,158 in 2016); do not map it to dengue.
+      - Vaccine-preventable diseases (measles, diphtheria, whooping cough, tetanus, acute flaccid paralysis) feed the vaccination thread.
+      - Leptospirosis is national only; it does not replace the pending FOI.
+      - "Red tide has ... and … (not available). Null, not zero."
+      - Disease names have trailing spaces (Cholera, Neonatal Tetanus); trim in silver.
+
+  # ---------------------------------------------------------------------------
+  # 15. PSA leading causes of morbidity: national x year, 2016-2018 and 2021-2023  (OPEN)
+  # ---------------------------------------------------------------------------
+  psa_morbidity_leading_national_annual:
+    description: Ten leading causes of morbidity, number of cases and rate per 100,000, Philippines
+    agency: Philippine Statistics Authority (from DOH FHSIS)
+    obtained_via: Philippine Statistical Yearbook 2019/2020 Table 9.12 and 2025 Table 9.13
+    path: diseases/psa_morbidity/national_annual
+    files:
+      - psa_morbidity_leading_national_annual_2016_2018.csv     # PSY 2019/2020, Table 9.12
+      - psa_morbidity_leading_national_annual_2021_2023.csv     # PSY 2025, Table 9.13
+    delimiter: ","
+    encoding: utf-8
+    header_mode: none                      # one block per year; block header row holds the year
+    data_start_row: 0
+    bronze_table: "public_health.bronze.diseases_psa_morbidity_leading_national_annual_bronze"
+    header_check:
+      - {row: 0, expect: {0: "Leading Causes of Morbidity"}}
+      - {row: 3, expect: {0: "of Morbidity"}}
+      - {row: 4, expect: {1: "Number of Cases", 3: "Rate"}}
+    as_of_date: 2026-10-05                 # download date; CONFIRM
+    load_mode: upsert
+    merge_keys: [cause_name, year]
+    sharing: open
+    coverage: national, top 10 causes per year, 2016-2018 and 2021-2023 (2019-2020 not covered)
+    disease:
+      geo_level: national
+      period_grain: year
+      metrics: [cases]
+    qc:
+      expected_rows:
+        psa_morbidity_leading_national_annual_2016_2018.csv: 39
+        psa_morbidity_leading_national_annual_2021_2023.csv: 39
+      skip_checks: [B08]                  # "Number of Cases, Rate" sub-header repeats per block
+    notes:
+      - Columns are col_0 = cause, col_1 = cases, col_3 = rate. Year is in col_1 of the block header row ("Disease/Cause of Morbidity", 2016); carry it down in silver.
+      - Top-10 lists change every year, so this is not a continuous series per disease. Use for context.
+      - Names drift ("ALTRI & Pneumonia" 2016-2018 vs separate "Pneumonia" and "Acute Lower Respiratory Tract Infection" from 2021). Map to disease_key in silver.
+      - Rank prefixes ("1. ") appear from 2017; 2017 lists rank 3 before rank 2 and two rank 8s. Strip ranks; order by cases.
+      - The 2024 yearbook Table 9.12 is the same data as 2025 Table 9.13; not ingested.
+
+  # ===========================================================================
+  # Modelled estimates
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # 16. IHME Global Burden of Disease 2023: province x year, 2019-2023  (OPEN, attribution)
+  # ---------------------------------------------------------------------------
+  ihme_gbd:
+    description: IHME GBD 2023 modelled deaths and prevalence by cause, Philippine provinces
+    agency: Institute for Health Metrics and Evaluation (IHME)
+    obtained_via: GBD Results tool (vizhub.healthdata.org/gbd-results), CSV export with IDs
+    url: https://vizhub.healthdata.org/gbd-results/
+    citation: >-
+      Global Burden of Disease Collaborative Network. Global Burden of Disease Study 2023
+      (GBD 2023) Results. Seattle, United States: Institute for Health Metrics and Evaluation
+      (IHME), 2024. Available from https://vizhub.healthdata.org/gbd-results/.
+    path: diseases/ihme_gbd
+    files:
+      - ihme_gbd_neoplasms_province_annual_2019_2023.csv       # Neoplasms + 34 child causes
+      - ihme_gbd_main_causes_province_annual_2019_2023.csv     # 12 causes incl. COVID-19
+    delimiter: ","
+    encoding: utf-8
+    header_mode: single
+    skip_rows: 0
+    required_columns: [measure_id, location_id, cause_id, year, val, upper, lower]
+    bronze_table: "public_health.bronze.diseases_ihme_gbd_bronze"
+    as_of_date: 2026-10-05                 # download date
+    load_mode: upsert
+    merge_keys: [measure_id, location_id, sex_id, age_id, cause_id, metric_id, year]
+    sharing: restricted                    # non-commercial use only; no redistribution of the data
+    license: IHME Free-of-Charge Non-Commercial User Agreement
+    license_url: https://www.healthdata.org/Data-tools-practices/data-practices/ihme-free-charge-non-commercial-user-agreement
+    attribution: "Source: Institute for Health Metrics and Evaluation. Used with permission. All rights reserved."
+    coverage: 2019-2023 annual, 81 provinces + NCR (no national or region rows); Both sexes, All ages, Number
+    disease:
+      geo_level: province
+      period_grain: year
+      metrics: [deaths, prevalence]
+    qc:
+      expected_rows:
+        ihme_gbd_neoplasms_province_annual_2019_2023.csv: 28700
+        ihme_gbd_main_causes_province_annual_2019_2023.csv: 9840
+      numeric_columns: [val, upper, lower]
+    notes:
+      - "Licence: analyses, charts and presentations may be published with the attribution line and citation. The data itself may not be redistributed: do not commit the files to GitHub, do not offer row-level export or download of IHME values, and keep IHME out of any dataset shared outside the team. Link to the IHME tool instead."
+      - Modelled estimates, not counts. Never sum with PSA or FHSIS; keep a separate source_key.
+      - Cause 410 Neoplasms is level 2, parent of the 34 neoplasm causes (level 3). Deaths of the children sum exactly to 410; prevalence of the children overshoots 410 by 0.3-1.1%. Never sum across levels.
+      - Cause 410 is in both files with identical values; silver dedupes on merge_keys.
+      - The cause Other neoplasms is benign (55% of 2023 neoplasm prevalence). Malignant prevalence = 410 - Other neoplasms - Non-melanoma skin cancer.
+      - Use deaths only for Tuberculosis (prevalence includes latent infection), Chronic kidney disease (all stages), Dengue, Lower respiratory infections and COVID-19 (acute; COVID 2019 prevalence shows 213).
+      - Location names are GBD spellings ("Cotabato (North Cotabato)", "Samar (Western Samar)"); location_id is the join key to the geo crosswalk.
+      - Download straight from the tool; never open and save in Excel (an earlier copy had its val column overwritten).
+
+  # ---------------------------------------------------------------------------
+  # 19. PhilHealth claims by hospital, selected illnesses, 2016-2025  (RESTRICTED)
+  # ---------------------------------------------------------------------------
+  philhealth_foi_claims_hospital:
+    description: PhilHealth claims count and amount by admission year, health facility, illness (case-rate package) and claim status
+    agency: PhilHealth
+    obtained_via: eFOI
+    ticket_number: FOI-REQ-2026-6223      # from the FOI request transmittal (eFOI, filed 2026-09-30)
+    request_date: 2026-09-30
+    original_file: FOI_PH-20266223.xlsx
+    path: diseases/restricted/philhealth_foi/philhealth_claims_hospital_annual_2016_2025.xlsx
+    format: xlsx
+    sheet: FOI20266223
+    header_mode: single
+    skip_rows: 0
+    bronze_table: "public_health.bronze.diseases_philhealth_claims_hospital_bronze"
+    required_columns: ["Admit Year", "HF Name", "HF Region", "HF Province", "HF Municipality", "HF Sector",
+                       "Illness Description", "Claim Status", "Claims Count", "Claims Amount"]
+    as_of_date: 2026-10-14                # date the file was received
+    load_mode: upsert
+    merge_keys: [admit_year, facility_name, facility_municipality, illness_description, claim_status]
+    sharing: restricted                   # D-47: FOI release for academic use; aggregates only, cells < 3 suppressed (as stated in the request)
+    silver_target: "public_health.silver.diseases_hospital_claims_silver"   # planned
+    coverage: admission years 2016-2025; 2,294 facilities in 86 province labels; 14 illness packages; 4 claim statuses
+    column_map:
+      Admit Year: admit_year
+      HF Name: facility_name
+      HF Region: facility_region_label
+      HF Province: facility_province
+      HF Municipality: facility_municipality
+      HF Sector: ownership
+      Illness Description: illness_description
+      Claim Status: claim_status
+      Claims Count: claims_count
+      Claims Amount: claims_amount_php
+    qc:
+      expected_rows: 245405
+      numeric_columns: [Admit Year, Claims Count, Claims Amount]
+      control_totals:                     # sum of Claims Count per admission year, all claim statuses; also silver QC S34
+        group_by: Admit Year
+        sum: Claims Count
+        expected: {2016: 1709849, 2017: 1626227, 2018: 1706320, 2019: 2018226, 2020: 804669,
+                   2021: 622815, 2022: 920348, 2023: 1177840, 2024: 1451867, 2025: 1540811}
+    notes:
+      - "Requested vs received: we asked for patient residence (preferred) or the HCI-level fallback. PhilHealth sent the FALLBACK: no patient residence, no accreditation number, no HCI level/class, no month, no ICD-10 codes (case-rate package names only)."
+      - "Conditions requested: dengue (A90-A91, A97), pneumonia (J12-J18), hypertensive diseases (I10-I15), ischaemic heart diseases (I20-I25), cerebrovascular diseases (I60-I69). All 5 are present as case-rate packages; CHRONIC HEART DISEASES, ENCEPHALOPATHY and PRIMARY CARE also appear. TB was not requested."
+      - "We requested amount PAID; the file's Claims Amount is filled for every status, so treat it as amount claimed."
+      - "Claims, not patients or admissions: only PhilHealth-filed confinements; one patient can have more than one claim; non-members paying out of pocket are not in the data."
+      - "Place = the HOSPITAL's location, not the patient's residence. It shows where care is delivered; it cannot measure travel distance."
+      - "Claim Status: PAID, DENIED, RTH (returned to hospital), IN-PROCESS. Utilization = all statuses (claims filed). Money paid = PAID only. Claims Amount is filled for every status, so it is the amount claimed."
+      - "Illness Description = PhilHealth case-rate package names, with severity in the name (PNEUMONIA MODERATE RISK / HIGH RISK, DENGUE FEVER / SEVERE, STROKE INFARCTION / HEMORRHAGIC ...). HYPERTENSIVE EMERGENCYURGENCY is spelled that way in the source. 1,404 rows have no illness (blank); PRIMARY CARE has 40 rows."
+      - "No PSGC and no facility code. Match facilities to facilities_registry_silver by name + municipality in silver; 8 facility names appear in more than one municipality."
+      - "Labels need cleaning: HF Region has leading/trailing spaces and PhilHealth office labels (III-A, III-B), so take the region from the province's PSGC instead; Metro Manila is written with 1 to 3 spaces."
+      - "112 key combinations repeat with different counts or amounts (separate sub-rows of the same hospital, illness and status); 19 rows are exact repeats. Sum them in silver; do not drop rows. Bronze QC B08 shows the 19 as WARN."
+      - "2025 is not final: 7,568 claims still IN-PROCESS (vs 300 to 2,000 in earlier years), and late-2025 admissions may not be filed yet."
+      - "Average claim amount jumps from about 14,600 PHP (2016-2023) to 21,000 (2024) and 29,500 (2025): case rates changed. Do not trend money across 2024 without flagging it."
+      - "ISCHEMIC HEART DISEASE WITH MYOCARDIAL INFARCTION falls from 31,722 claims (2024) to 6,164 (2025): likely moved to another benefit package. Check before trending heart claims into 2025."
+      - "2020-2021 claims drop by more than half (COVID period); mark them, do not read them as less disease."
+
+# =============================================================================
+# Shared lookups used by silver (not by the bronze loader)
+# =============================================================================
+psa_cause_codes:
+  "1-005": tb                # respiratory tuberculosis
+  "1-006": tb_other          # other tuberculosis (decide once whether tb includes this)
+  "1-052": diabetes
+  "1-066": hypertension
+  "1-067": ischaemic_heart
+  "1-069": stroke
+  "1-074": pneumonia

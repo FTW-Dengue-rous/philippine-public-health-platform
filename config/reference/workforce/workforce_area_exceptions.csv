@@ -1,0 +1,90 @@
+_source_key,year_from,year_to,match_role,area_label_norm,parent_label_norm,psgc_code,area_key,named_key_level,named_key_parent_psgc,child_region_codes,is_superseded_area,reason,note
+doh_fhsis_demographic,2018,2023,area,MAGUINDANAO,,,hist:maguindanao,province,1900000000,,true,no_psgc_code,split into Maguindanao del Norte and del Sur in 2022; no current code
+doh_fhsis_demographic,2018,2025,area,PHILIPPINES,,,ph,country,,,false,no_psgc_code,
+doh_fhsis_demographic,2018,2018,area,MT PROVINCE,C A R,1404400000,,,,,false,name_variant,Mountain Province
+doh_fhsis_demographic,2018,2023,area,PROVINCE OF DINAGAT,CARAGA,1608500000,,,,,false,name_variant,Dinagat Islands
+doh_fhsis_demographic,2018,2018,area,ILOCOS NOTE,REGION 1,0102800000,,,,,false,name_variant,typo in the 2018 file
+doh_fhsis_demographic,2018,2022,area,OZAMIS CITY,REGION 10,1004210000,,,,,false,name_variant,City of Ozamiz
+doh_fhsis_demographic,2018,2022,area,COMPOSTELA VALLEY,REGION 11,1108200000,,,,,false,old_name,renamed Davao de Oro in 2019
+doh_fhsis_demographic,2018,2022,area,GEN SANTOS CITY,REGION 12,1230800000,,,,,false,name_variant,City of General Santos
+doh_fhsis_demographic,2018,2023,area,NORTH COTABATO,REGION 12,1204700000,,,,,false,old_name,"the province, not City of Cotabato"
+doh_fhsis_demographic,2018,2023,area,MINDORO OCCIDENTAL,REGION 4B,1705100000,,,,,false,name_variant,Occidental Mindoro
+doh_fhsis_demographic,2018,2023,area,MINDORO ORIENTAL,REGION 4B,1705200000,,,,,false,name_variant,Oriental Mindoro
+doh_fhsis_demographic,2018,2022,area,LEGASPI CITY,REGION 5,0500506000,,,,,false,name_variant,City of Legazpi
+doh_fhsis_demographic,2018,2023,area,NORTHERN LEYTE,REGION 8,0803700000,,,,,false,old_name,"the province, not the municipality of Leyte"
+doh_fhsis_demographic,2018,2023,area,WESTERN SAMAR,REGION 8,0806000000,,,,,false,old_name,Samar
+doh_fhsis_demographic,2019,2020,area,LEGASPI CITY,BICOL,0500506000,,,,,false,name_variant,City of Legazpi
+doh_fhsis_demographic,2019,2023,area,MT PROVINCE,CAR,1404400000,,,,,false,name_variant,Mountain Province
+doh_fhsis_demographic,2019,2020,area,COMPOSTELA VALLEY,DAVAO,1108200000,,,,,false,old_name,renamed Davao de Oro in 2019
+doh_fhsis_demographic,2019,2020,area,NORTHERN LEYTE,EASTERN VISAYAS,0803700000,,,,,false,old_name,"the province, not the municipality of Leyte"
+doh_fhsis_demographic,2019,2020,area,WESTERN SAMAR,EASTERN VISAYAS,0806000000,,,,,false,old_name,Samar
+doh_fhsis_demographic,2019,2020,area,MINDORO OCCIDENTAL,MIMAROPA,1705100000,,,,,false,name_variant,Occidental Mindoro
+doh_fhsis_demographic,2019,2020,area,MINDORO ORIENTAL,MIMAROPA,1705200000,,,,,false,name_variant,Oriental Mindoro
+doh_fhsis_demographic,2019,2020,area,OZAMIS CITY,NORTHERN MINDANAO,1004210000,,,,,false,name_variant,City of Ozamiz
+doh_fhsis_demographic,2019,2020,area,GEN SANTOS CITY,SOCCSKSARGEN,1230800000,,,,,false,name_variant,City of General Santos
+doh_fhsis_demographic,2019,2020,area,NORTH COTABATO,SOCCSKSARGEN,1204700000,,,,,false,old_name,"the province, not City of Cotabato"
+doh_fhsis_demographic,2023,2024,area,SGA,,1999900000,,,,,false,name_variant,"BARMM Special Geographic Area; a child of BARMM, not a region. Same code as the 2025 file"
+doh_fhsis_demographic,2025,2025,area,BACUNGAN,,0907226000,,,,,false,old_name,Former name of Leon T. Postigo (Zamboanga del Norte)
+doh_fhsis_demographic,2025,2025,area,CARMEN CLUSTER,,1999901000,,,,,false,old_name,Kapalawan. SGA cluster name used before the 2024 plebiscite that created the 8 SGA municipalities; printed code accepted
+doh_fhsis_demographic,2025,2025,area,KABACAN CLUSTER,,1999902000,,,,,false,old_name,Old Kaabakan (proposed as Northern Kabacan). SGA cluster name used before the 2024 plebiscite that created the 8 SGA municipalities; printed code accepted
+doh_fhsis_demographic,2025,2025,area,MIDSAYAP CLUSTER I,,1999903000,,,,,false,old_name,Kadayangan. SGA cluster name used before the 2024 plebiscite that created the 8 SGA municipalities; printed code accepted
+doh_fhsis_demographic,2025,2025,area,MIDSAYAP CLUSTER II,,1999904000,,,,,false,old_name,Nabalawag (proposed as Kabalukan). SGA cluster name used before the 2024 plebiscite that created the 8 SGA municipalities; printed code accepted
+doh_fhsis_demographic,2025,2025,area,PIGCAWAYAN CLUSTER,,1999905000,,,,,false,old_name,Pahamuddin. SGA cluster name used before the 2024 plebiscite that created the 8 SGA municipalities; printed code accepted
+doh_fhsis_demographic,2025,2025,area,PIKIT CLUSTER I,,1999906000,,,,,false,old_name,Malidegao (proposed as Malmar). SGA cluster name used before the 2024 plebiscite that created the 8 SGA municipalities; printed code accepted
+doh_fhsis_demographic,2025,2025,area,PIKIT CLUSTER II,,1999907000,,,,,false,old_name,Ligawasan. SGA cluster name used before the 2024 plebiscite that created the 8 SGA municipalities; printed code accepted
+doh_fhsis_demographic,2025,2025,area,PIKIT CLUSTER III,,1999908000,,,,,false,old_name,"Tugunan; the 2022 bill lists Aleosan barangays, DOH labels it a Pikit cluster. SGA cluster name used before the 2024 plebiscite that created the 8 SGA municipalities; printed code accepted"
+doh_fhsis_demographic,2025,2025,area,PIO V CORPUZ,,0504116000,,,,,false,name_variant,Geography spells it Pio V. Corpus (Masbate)
+doh_fhsis_demographic,2025,2025,area,SAN ANDRESS,,1705912000,,,,,false,name_variant,Misspelling of San Andres (Romblon)
+doh_fhsis_demographic,2018,2018,region,A R M M,,1900000000,,,,19,false,region_renamed,ARMM until 2018; BARMM in the comparison geography
+doh_fhsis_demographic,2018,2018,region,ARMM,,1900000000,,,,19,false,region_renamed,ARMM until 2018; BARMM in the comparison geography
+doh_fhsis_demographic,2018,2018,region,C A R,,1400000000,,,,14,false,region_label,
+doh_fhsis_demographic,2018,2024,region,CARAGA,,1600000000,,,,16,false,region_label,
+doh_fhsis_demographic,2018,2018,region,N C R,,1300000000,,,,13,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 1,,0100000000,,,,01,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 10,,1000000000,,,,10,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 11,,1100000000,,,,11,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 12,,1200000000,,,,12;19,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 2,,0200000000,,,,02,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 3,,0300000000,,,,03,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 4A,,0400000000,,,,04,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 4B,,1700000000,,,,17,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 5,,0500000000,,,,05,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 6,,0600000000,,,,06;18,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 7,,0700000000,,,,07;18,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 8,,0800000000,,,,08,false,region_label,
+doh_fhsis_demographic,2018,2024,region,REGION 9,,0900000000,,,,09,false,region_label,
+doh_fhsis_demographic,2019,2024,region,BARMM,,1900000000,,,,19,false,region_label,
+doh_fhsis_demographic,2019,2020,region,BICOL,,0500000000,,,,05,false,region_label,
+doh_fhsis_demographic,2019,2020,region,CAGAYAN VALLEY,,0200000000,,,,02,false,region_label,
+doh_fhsis_demographic,2019,2020,region,CALABARZON,,0400000000,,,,04,false,region_label,
+doh_fhsis_demographic,2019,2024,region,CAR,,1400000000,,,,14,false,region_label,
+doh_fhsis_demographic,2019,2020,region,CENTRAL LUZON,,0300000000,,,,03,false,region_label,
+doh_fhsis_demographic,2019,2020,region,CENTRAL VISAYAS,,0700000000,,,,07;18,false,region_label,
+doh_fhsis_demographic,2019,2020,region,DAVAO,,1100000000,,,,11,false,region_label,
+doh_fhsis_demographic,2019,2020,region,EASTERN VISAYAS,,0800000000,,,,08,false,region_label,
+doh_fhsis_demographic,2019,2020,region,ILOCOS,,0100000000,,,,01,false,region_label,
+doh_fhsis_demographic,2019,2020,region,METRO MANILA,,1300000000,,,,13,false,region_label,
+doh_fhsis_demographic,2019,2020,region,MIMAROPA,,1700000000,,,,17,false,region_label,
+doh_fhsis_demographic,2019,2020,region,NORTHERN MINDANAO,,1000000000,,,,10,false,region_label,
+doh_fhsis_demographic,2019,2020,region,SOCCSKSARGEN,,1200000000,,,,12;19,false,region_label,
+doh_fhsis_demographic,2019,2020,region,WESTERN VISAYAS,,0600000000,,,,06;18,false,region_label,
+doh_fhsis_demographic,2019,2020,region,ZAMBOANGA PENINSULA,,0900000000,,,,09,false,region_label,
+doh_fhsis_demographic,2021,2024,region,NCR,,1300000000,,,,13,false,region_label,
+psa_gov_practitioners,2012,2023,area,PHILIPPINES,,,ph,country,,,false,no_psgc_code,
+psa_gov_practitioners,2012,2023,region,BARMM,,1900000000,,,,19,false,region_label,
+psa_gov_practitioners,2012,2023,region,CAR,,1400000000,,,,14,false,region_label,
+psa_gov_practitioners,2012,2023,region,CARAGA,,1600000000,,,,16,false,region_label,
+psa_gov_practitioners,2012,2023,region,I,,0100000000,,,,01,false,region_label,
+psa_gov_practitioners,2012,2023,region,II,,0200000000,,,,02,false,region_label,
+psa_gov_practitioners,2012,2023,region,III,,0300000000,,,,03,false,region_label,
+psa_gov_practitioners,2012,2023,region,IV A,,0400000000,,,,04,false,region_label,
+psa_gov_practitioners,2012,2023,region,IX,,0900000000,,,,09,false,region_label,
+psa_gov_practitioners,2012,2023,region,MIMAROPA,,1700000000,,,,17,false,region_label,
+psa_gov_practitioners,2012,2023,region,NCR,,1300000000,,,,13,false,region_label,
+psa_gov_practitioners,2012,2023,region,V,,0500000000,,,,05,false,region_label,
+psa_gov_practitioners,2012,2023,region,VI,,0600000000,,,,06;18,false,region_label,
+psa_gov_practitioners,2012,2023,region,VII,,0700000000,,,,07;18,false,region_label,
+psa_gov_practitioners,2012,2023,region,VIII,,0800000000,,,,08,false,region_label,
+psa_gov_practitioners,2012,2023,region,X,,1000000000,,,,10,false,region_label,
+psa_gov_practitioners,2012,2023,region,XI,,1100000000,,,,11,false,region_label,
+psa_gov_practitioners,2012,2023,region,XII,,1200000000,,,,12;19,false,region_label,

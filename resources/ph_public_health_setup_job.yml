@@ -1,0 +1,64 @@
+# Setup job. The pipeline job runs it as its first task (Run Job task `setup`), so a fresh or
+# reset workspace works on the first pipeline run. It can also be run on its own.
+#
+#   setup_schemas -> setup_quality            -> setup_quality_registry
+#                 -> setup_ingestion_metadata ->
+#
+# What each task creates
+#   setup_schemas             the catalog schemas bronze, silver, gold and quality
+#                             (schema_setup.sql). Gold has no setup file of its own since
+#                             2026-10-20: this task is what creates public_health.gold.
+#   setup_quality             the quality tables and views (quality_setup.sql): qc_results,
+#                             run_log, table_stats, profile, quarantine, build_log, build_inputs,
+#                             row_disposition, check_registry and the v_* views
+#   setup_ingestion_metadata  bronze.ingestion_metadata, the shared load log the loaders append to
+#   setup_quality_registry    quality_registry_seed.sql: insert-only, so a rerun adds new codes
+#                             and never overwrites a row someone edited
+#
+# All scripts are idempotent (CREATE ... IF NOT EXISTS, insert-only seed), so a rerun is safe
+# and changes no data.
+# Skipped: quality_migrate_bronze_qc.sql (one-time migration, run by hand),
+#          silver_setup.sql / gold_setup.sql (empty; schema_setup.sql creates both schemas).
+# Not in any job: builders/ (run by hand to regenerate the reference CSVs, see builders/README.md).
+# Environment: SQL tasks on the warehouse only; no Python environment needed.
+
+resources:
+  jobs:
+    ph_public_health_setup:
+      name: ph-public-health-setup
+      max_concurrent_runs: 1
+      tags:
+        project: ph-public-health
+        team: ftw-dengue-rous
+
+      tasks:
+        - task_key: setup_schemas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/00_setup/schema_setup.sql
+
+        - task_key: setup_quality
+          depends_on:
+            - task_key: setup_schemas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/00_setup/quality_setup.sql
+
+        - task_key: setup_ingestion_metadata # shared ingestion log, bronze loaders append
+          depends_on:
+            - task_key: setup_schemas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/00_setup/ingestion_metadata.sql
+
+        - task_key: setup_quality_registry
+          depends_on:
+            - task_key: setup_quality
+            - task_key: setup_ingestion_metadata
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/05_quality/sql/quality_registry_seed.sql

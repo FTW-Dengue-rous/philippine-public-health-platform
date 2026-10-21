@@ -1,0 +1,53 @@
+sources:
+  psgc_population:
+    source_name: PSA PSGC
+    source_system: PSA PSGC
+    source_endpoint: PSGC API
+    version: Q2_2024
+
+    bronze_table: public_health.bronze.geography_bronze
+    geography_silver_table: public_health.silver.geography_silver
+
+    metadata_table: public_health.bronze.ingestion_metadata
+    qc_results_table: public_health.quality.qc_results
+
+    qc:
+      required_columns:
+        - psgc_code
+        - area_name
+        - geographic_level
+        - source_version
+        - populations_json
+        - source_system
+        - source_endpoint
+        - batch_id
+        - content_checksum
+        - raw_path
+        - ingested_at
+
+      # B10 is expected to WARN: some nested population values are text that does not cast to a
+      # whole number as it stands (thousands separators, a leading bracketed note such as
+      # "(excluding CITY OF ANGELES) 1,234", or "-"). population_silver parses them
+      # (VALID / VALID_WITH_NOTE / MISSING) and silver QC S52 / S53 check the result. The
+      # current count is B10 fail_count in quality.qc_results (reviewed 2026-10-19).
+      #
+      # No skip_checks (removed 2026-10-21): psgc_population_bronze_qc.py runs only B00, B01,
+      # B04, B05, B07, B10, B13, B15 and B16; the file and sheet checks do not exist in it.
+      # Since D-53 the script rejects override codes it does not know, so listing them here
+      # failed B00 (found on the first run in a new workspace).
+
+    # Settings read by psgc_population_silver_qc.py (2026-10-19). Kept apart from the bronze
+    # `qc` block above so bronze QC never sees them.
+    silver_qc:
+      # S54: every geography area must have a row for each census year. The years of the census
+      # releases this PSGC payload carries (POPCEN 2015, CPH 2020, POPCEN 2024). S54b FAILs when
+      # population_silver holds a year not listed here, so a new census year cannot be skipped.
+      census_years: [2015, 2020, 2024]
+      # S56: national census totals as published by PSA for each release.
+      # confirmed: false records a difference as WARN; set true after a run agrees (then FAIL).
+      control_totals:
+        description: national population, sum of the region rows (a region with no row that year takes the sum of its cities and municipalities)
+        source: PSA census releases (POPCEN 2015, 2020 CPH, POPCEN 2024)
+        tolerance_pct: 0.1
+        confirmed: false
+        expected: {2015: 100981437, 2020: 109035343, 2024: 112729484}

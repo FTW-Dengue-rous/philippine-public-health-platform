@@ -1,0 +1,3 @@
+_source_key,years,parent_label,label,problem,candidates
+doh_fhsis_demographic,2025-2025,,Surigao del Norte,row 1498: printed code 1606701000 is 'Alegria' in geography,override (wrong code) or NAME_VARIANTS_2025 (other spelling)
+doh_fhsis_demographic,2025-2025,,Alegria,row 1499: printed code 1606700000 is 'Surigao del Norte' in geography,override (wrong code) or NAME_VARIANTS_2025 (other spelling)

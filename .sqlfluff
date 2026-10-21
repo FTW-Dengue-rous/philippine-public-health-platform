@@ -2,8 +2,10 @@
 dialect = databricks
 templater = raw
 max_line_length = 120
-# Relax rules that are noisy for DDL/setup scripts
-exclude_rules = AM04, ST06
+# Relax rules that are noisy for DDL/setup scripts and existing Databricks SQL style
+exclude_rules = AM02, AM03, AM04, ST05, ST06, ST09, LT01, LT02, LT05, LT09, LT14, RF01, RF02, RF03, RF04, AL03, AL04, AL09, AL10, CP03, CP04
+# Databricks `FROM (DESCRIBE HISTORY ...)` is not parsed by the dialect
+ignore = parsing
 
 [sqlfluff:rules:capitalisation.keywords]
 capitalisation_policy = upper

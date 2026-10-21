@@ -1,0 +1,63 @@
+# Databricks Asset Bundle — Philippine Public Health Platform
+# Deploys the pipeline job (resources/*.yml) and the src/ + config/ code to the workspace.
+#
+# Local use (any teammate):  databricks bundle deploy -t dev
+# CI/CD use: .github/workflows/cd.yml  (dev branch -> dev, main -> prod)
+
+bundle:
+  name: ph_public_health
+
+include:
+  - resources/*.yml
+
+variables:
+  warehouse_id:
+    description: SQL warehouse that runs the .sql tasks (setup + silver domain scripts)
+    lookup:
+      warehouse: "Serverless Starter Warehouse"
+
+# Only ship what the job needs. Everything else stays in Git only.
+sync:
+  exclude:
+    - archive/**
+    - dashboard/**
+    - data/**
+    - docs/**
+    - presentation/**
+    - tests/**
+    - src/01_ingestion/**          # ingestion runs outside this bundle/job
+    - "**/README.md"
+
+targets:
+  # dev: personal / integration copy.
+  # mode: development -> job names get a "[dev <user>]" prefix, schedules are paused,
+  # each deployer (teammate or CI service principal) gets their own copy.
+  dev:
+    mode: development
+    default: true
+
+  # prod: the one "official" copy, deployed only by CI from main.
+  prod:
+    mode: production
+    workspace:
+      host: https://dbc-f35d1246-e7fd.cloud.databricks.com/
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    run_as:
+      service_principal_name: 56e63750-69f1-4af9-80c6-f85bc6f1c506  # TODO: the SP's Application ID (UUID)
+    permissions:
+      - user_name: jghsantiago91@gmail.com
+        level: CAN_MANAGE
+      - user_name: jemmalyn.santiago@ftwfoundation.org
+        level: CAN_MANAGE
+      - user_name: virna.pomendia@ftwfoundation.org
+        level: CAN_RUN
+      - user_name: shiena.arico@ftwfoundation.org
+        level: CAN_MANAGE
+      - user_name: via.cabuyao@ftwfoundation.org
+        level: CAN_RUN
+      - user_name: cristina.villota@ftwfoundation.org
+        level: CAN_RUN
+      - user_name: margarette.legaspi@ftwfoundation.org
+        level: CAN_RUN
+      # - user_name: teammate@example.com
+      #   level: CAN_RUN
