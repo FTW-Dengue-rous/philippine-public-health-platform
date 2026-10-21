@@ -38,10 +38,9 @@
 #   S57  one population snapshot, same PSGC release as geography Silver     WARN
 #   S58  change between census years above 30% (province / city / mun)      WARN
 #   S59  population years = the configured census years (added 2026-10-19) FAIL
-#   strict_registry is False for now (same as the other silver QC scripts), so
-#   these codes do not need to be registered yet. They are in Step 1 of
-#   quality_registry_seed.sql; when silver QC is final, run the seed and pass
-#   --strict_registry true (or change the default below).
+#   These codes are in Step 1 of quality_registry_seed.sql. Since 2026-10-21 the script
+#   runs with --strict_registry true by default (O-17), like every other QC script through
+#   the dq_utils default: a code missing from quality.check_registry stops the run.
 #
 # Fixed 2026-10-12: VALID_WITH_NOTE (added to the Silver notebook on
 # 2026-10-11) is an approved parse status. Before, S09 counted those rows
@@ -74,6 +73,11 @@
 #     first Philippine census (1903). S59 is the exact check on the census years.
 #   * Kept in code: AREA_LEVELS (PSGC vocabulary; geography reads the same list from
 #     sources_geography.yaml) and MAX_CHANGE_PCT (part of S58's meaning).
+#
+# Strict registry 2026-10-21 (O-17)
+#   * --strict_registry default false -> true. The qc_registry task passed in the final
+#     runs, so every code used here is registered. Pass --strict_registry false only for
+#     local tests.
 # =============================================================================
 
 import argparse
@@ -903,10 +907,10 @@ def parse_args():
     )
     parser.add_argument(
         "--strict_registry",
-        default="false",
+        default="true",
         choices=["true", "false"],
-        help="false until silver QC is final; true needs every code in quality.check_registry "
-        "(quality_registry_seed.sql)",
+        help="true (default since 2026-10-21, O-17): every code must be in "
+        "quality.check_registry (quality_registry_seed.sql). false: local tests only",
     )
     parser.add_argument("--job_run_id", default=None)
     parser.add_argument("--code_version", default=None)

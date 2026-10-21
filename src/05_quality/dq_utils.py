@@ -77,17 +77,23 @@
 #
 #
 # Check registry:
-#   strict_registry=False by default.
+#   strict_registry=True by default since 2026-10-21 (decision O-17).
+#   quality_registry_seed.sql (setup job) holds every check code, and the qc_registry task
+#   (quality_registry_check.sql, last task of the pipeline job) passed in the final runs.
 #
 #   Registered code:
 #     check name, type, severity and threshold come from quality.check_registry.
+#     A code registered for another layer raises ValueError.
 #
-#   Unregistered code:
+#   Unregistered code (strict, the default):
+#     record() and quarantine() raise KeyError, and the QC script stops.
+#     If check_registry cannot be read, DQRun raises at start.
+#     To add a check: add the code to the script, the check catalog and Step 1b of
+#     quality_registry_seed.sql in the same change.
+#
+#   Unregistered code (strict_registry=False, for local tests only):
 #     pass check_name and check_type in the QC script.
 #     The code is reported as unregistered at the end of the run.
-#
-#   After quality_registry_seed.sql is finalized, use strict_registry=True
-#   to reject unknown check codes.
 #
 #
 # Status calculation:
@@ -122,9 +128,14 @@
 # Timestamps (executed_at, started_at, ended_at, profiled_at, captured_at, quarantined_at):
 #   timezone-aware UTC (2026-10-19; before, naive UTC). Same stored values on Databricks.
 #
-# Databricks Jobs: #   Pass {{job.run_id}} as job_run_id.
+# Databricks Jobs:
+#   Pass {{job.run_id}} as job_run_id.
 #
-# Requires: #   pyspark / Databricks runtime
+# Requires:
+#   pyspark / Databricks runtime
+#
+# Changes:
+#   2026-10-21  strict_registry default False -> True (O-17); registry notes updated
 # =============================================================================
 
 import time
@@ -197,7 +208,7 @@ class DQRun:
         code_version=None,
         dq_schema=DQ_SCHEMA,
         spark=None,
-        strict_registry=False,
+        strict_registry=True,
     ):
         if layer not in LAYER_PREFIX:
             raise ValueError(f"layer must be one of {list(LAYER_PREFIX)}, got {layer!r}")
