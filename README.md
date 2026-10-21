@@ -113,7 +113,7 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 | Workforce (FHSIS, PSA, PSMO) | Yes | Yes | Yes | Yes |
 | Socioeconomic (poverty, expenditure) | Yes | Yes | Yes | Yes |
 
-Yes = implemented and verified on Databricks. The final evidence session has recorded successful runs 1 and 2; run 3 and reconciliation remain pending. See the [final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md), [quality results](docs/04-pipeline/quality/quality-results.md), and [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
+Yes = implemented and verified on Databricks. The final evidence session records three successful runs on unchanged inputs. Exact deployment provenance, geography and boundary task-output capture, and final reconciliation evidence remain outstanding; do not describe the records as proof of an exact source revision or complete recovery validation. See the [final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md), [quality results](docs/04-pipeline/quality/quality-results.md), and [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
 
 The dashboard has eight pages. Confirm the published dashboard definition and serving schema with its owner before deployment, then save a successful refresh check before presenting it as live. See the [dashboard guide](docs/05-dashboard/dashboard-guide.md) for pages, filters, and freshness checks.
 

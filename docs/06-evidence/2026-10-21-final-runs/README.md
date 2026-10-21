@@ -47,7 +47,7 @@ Method and queries: [evidence guide](../README.md), sections 2 and 3, and [`evid
 
 - Record the Git commit SHA and bundle deployment ID for each evidence run.
 - Capture the `bronze_geography` and `bronze_admin_boundaries` task outputs that show `unchanged`, with zero inserts and updates.
-- Run and record run 3 before making a three-run idempotency claim.
+- Run and record final reconciliation queries A-D, including the gold mart checks still listed as uncaptured in [quality results](../../04-pipeline/quality/quality-results.md).
 - After enabling `strict_registry=True`, capture one complete run on that deployment. It validates the current configuration; it must not be retroactively counted as one of these comparable runs if code or configuration changed.
 
 ## 5. History of updates

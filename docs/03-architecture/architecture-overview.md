@@ -31,7 +31,7 @@ The platform is a medallion lakehouse on Databricks.
 - **Gold** models them as a star schema with marts.
 - The **quality** schema records every check, build and input.
 
-One job runs it all. It stops on the first failure.
+The deployed bundle pipeline job runs it all and stops on the first failure. A legacy manually created pipeline job also exists in the team workspace; it is not the source of truth and must not run concurrently with the bundle job. See [KI-14 and KI-15](../08-governance/known-issues-and-backlog.md).
 
 ## 2. Architecture diagram
 
@@ -136,7 +136,7 @@ Detail: `src/04_gold/README.md` and [gold docs](../04-pipeline/gold/README.md).
 
 ## 6. Orchestration
 
-One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public_health_job.yml` and deployed with Asset Bundles. A second job, `ph-public-health-setup` (`resources/ph_public_health_setup_job.yml`), creates the schemas, the quality tables and the load log. It runs `src/00_setup/schema_setup.sql` and `src/00_setup/quality_setup.sql`. The pipeline runs it as its first task.
+The authoritative pipeline is the bundle-deployed Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public_health_job.yml`. A second bundle job, `ph-public-health-setup` (`resources/ph_public_health_setup_job.yml`), creates the schemas, quality tables, and load log. It runs `src/00_setup/schema_setup.sql` and `src/00_setup/quality_setup.sql`; the pipeline invokes it as its first task. A legacy manually created pipeline job is still present in the workspace but is not authoritative; do not run it alongside the bundle job (KI-14 and KI-15).
 
 | Stage | Tasks | Waits for |
 |---|---|---|

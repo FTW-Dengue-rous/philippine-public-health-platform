@@ -4,7 +4,7 @@ Owner: LUNASaan Documentation Team
 
 Proof that the pipeline runs, checks itself and gives the same result twice. Each run record holds the job run, the query results and screenshots, with the run date in the name. The methods are described elsewhere; this folder holds the results.
 
-Status date: 2026-10-21. This checkout records final runs 1 and 2. Run 3, exact deployment provenance, and geography/boundary task-output capture remain required before making the full three-run idempotency claim.
+Status date: 2026-10-21. This checkout records final runs 1, 2, and 3. Exact deployment provenance, geography/boundary task-output capture, and final reconciliation evidence remain required before presenting the records as proof of an exact source revision or complete end-to-end recovery validation.
 
 ---
 
@@ -104,7 +104,7 @@ Notes on reading them:
 
 | Date | Record | Status | What it shows |
 |---|---|---|---|
-| 2026-10-21 | [Final runs](2026-10-21-final-runs/README.md) | Evidence, in progress | Two recorded runs on unchanged inputs; run 3 and deployment provenance remain required |
+| 2026-10-21 | [Final runs](2026-10-21-final-runs/README.md) | Evidence, partially complete | Three recorded runs on unchanged inputs; deployment provenance, geography/boundary task output, and reconciliation evidence remain required |
 
 **Final runs, 2026-10-21:**
 
@@ -112,7 +112,7 @@ Notes on reading them:
 |---|---|---|
 | 1 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-1/run-1.md), job run `186099985728312`. Bronze: nothing reloaded (I3). Gold built in `public_health.gold`. Gold QC 118 checks: 111 PASS, 7 WARN, 0 FAIL. WARNs: G12 on 5 tables (content changed since the run before the gold pass), G13 (Kalayaan, Makati, Pikit: boundary changes between censuses), G07 claims (27 region cells suppressed). Silver QC: 0 FAIL. Bronze: 3 expected WARNs |
 | 2 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-2/run-2.md), job run `26759964775689`. Bronze loaded nothing; all 28 tables same row count; G12 PASS "same as previous" on all 9 gold tables; gold QC 118 checks: 116 PASS, 2 WARN (G13, G07), 0 FAIL |
-| 3 | — | Pending: capture job output, evidence queries, exact commit SHA, and bundle deployment ID |
+| 3 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-3/run-3.md), job run `996544156339205`. Bronze loaded nothing; all 28 tables had the same row counts; G12 passed for all 9 gold tables; gold QC had 0 FAIL. Exact commit SHA, bundle deployment ID, and geography/boundary task output were not captured. |
 
 ## 6. History of updates
 

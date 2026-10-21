@@ -20,7 +20,8 @@ Status date: 2026-10-21.
 | 2026-10-20 | Workforce rebuild (Zamboanga Sibugay override) and cross-domain QC | Silver | 0 FAIL |
 | 2026-10-21 | Final evidence run 1 | All, including gold QC | Succeeded; 0 FAIL; 7 expected gold WARNs |
 | 2026-10-21 | Final evidence run 2 | All, including gold QC | Succeeded; 0 FAIL; 2 standing gold WARNs; G12 PASS for all 9 gold tables |
-| Pending | Final evidence run 3 and reconciliation | All, including gold QC | — |
+| 2026-10-21 | Final evidence run 3 | All, including gold QC | Succeeded; 0 FAIL; G12 PASS for all 9 gold tables; bronze loaded nothing; same row counts |
+| Pending | Final reconciliation and mart-specific capture | Silver and gold | — |
 
 The full runs of 2026-10-16/17 used the job and gold of those dates. Gold was in `test_gold2` and had no `gold_qc.py` yet. `qc_results` holds their per-check results. The team wrote their layer pages before the post-capstone revisions.
 
@@ -92,9 +93,9 @@ One S29 WARN fewer than 2026-10-19: the Zamboanga Sibugay row override (D-58) re
 
 All build gates returned 0 on every table. This historical test build is not the evidence source for current static findings; use the recorded final-run evidence for those results. `gold_qc.py` did not exist yet.
 
-### 4.2 Final build: runs 1 and 2 recorded; run 3 pending
+### 4.2 Final build: runs 1–3 recorded; reconciliation and mart-specific capture pending
 
-The final job ran twice on unchanged inputs on 2026-10-21. The records are in the [final evidence session](../../06-evidence/2026-10-21-final-runs/README.md). A third run and reconciliation are still required before claiming complete idempotency evidence.
+The final job ran three times on unchanged inputs on 2026-10-21. The records are in the [final evidence session](../../06-evidence/2026-10-21-final-runs/README.md). The records demonstrate repeatability on those inputs; final reconciliation, mart-specific checks, exact deployment provenance, and geography/boundary task-output capture remain required before claiming complete idempotency or recovery evidence.
 
 | Item | Expected | Result |
 |---|---|---|
@@ -102,17 +103,17 @@ The final job ran twice on unchanged inputs on 2026-10-21. The records are in th
 | Gold QC run 1 | 0 FAIL; G12 can WARN once after a content change; G13 and G07 can WARN | Recorded: 118 checks, 111 PASS, 7 expected WARN, 0 FAIL. See [run 1](../../06-evidence/2026-10-21-final-runs/run-1/run-1.md) |
 | Gold QC run 2 | 0 FAIL; G12 PASS "same as previous" | Recorded: 118 checks, 116 PASS, 2 standing WARN, 0 FAIL; G12 PASS for all 9 gold tables. See [run 2](../../06-evidence/2026-10-21-final-runs/run-2/run-2.md) |
 | Row counts across runs 1 and 2 | Same count for every table (query I1) | Recorded: `same_count` true for all 28 tables in run 2 |
-| Gold QC run 3 and final comparison | 0 FAIL; **every G12 row PASS "same as previous"** (query I2) | Pending |
+| Gold QC run 3 and final comparison | 0 FAIL; **every G12 row PASS "same as previous"** (query I2) | Recorded: run 3 succeeded; G12 PASS for all 9 gold tables; all 28 tables retained the same row count |
 | Gold 11 check 1 | All 17 HUCs `matched` | Pending |
 | Gold 22 check 1 | No `ihme_province_coverage_not_confirmed` | Pending |
 | Gold 23 check 3 | No row | Pending |
 | Gold 24 check 1 (`schema_name = 'gold'`) | No QC missing, no stale table | Pending |
 | `gold_o13_evidence.sql` Q1–Q6 | Read for D-56 | Pending |
-| Bronze does not reload (query I3) | Every source "loaded 0, failed 0" in runs 2 and 3 | Runs 1, 2 and 3: all 40 sources |
+| Bronze does not reload (query I3) | Every source "loaded 0, failed 0" in runs 2 and 3 | Recorded: all 40 sources loaded 0 and failed 0 in runs 1, 2 and 3 |
 
 The mart checks (gold 11, 22, 23, 24) and `gold_o13_evidence.sql` were not captured in the final runs. Run them once after run 3 if time allows.
 
-Record the run-3 result here with its date and `validation_id`, then link the final comparison and reconciliation evidence.
+Add the final reconciliation and mart-check outputs when captured. Do not backfill a `validation_id`, Git SHA, or deployment ID unless it is recoverable from the original execution record.
 
 ## 5. Evidence to capture
 
