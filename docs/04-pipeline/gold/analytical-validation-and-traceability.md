@@ -1,5 +1,8 @@
 # Gold — analytical validation and traceability
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 This page shows how gold proves its numbers. It covers:
 
 - the gates inside every build;
@@ -7,7 +10,7 @@ This page shows how gold proves its numbers. It covers:
 - the checks that prove a rerun gives the same result;
 - how to trace a dashboard number back to its source cell.
 
-Status date: 2026-10-20. Back to the [gold overview](README.md). Every check code across layers: [quality check catalog](../quality/quality-check-catalog.md). Results of the recorded runs: [quality results and evidence](../quality/quality-results-and-evidence.md).
+Status date: 2026-10-20. Back to the [gold overview](README.md). Every check code across layers: [quality check catalog](../quality/quality-check-catalog.md). Results of the recorded runs: [quality results and evidence](../quality/quality-results.md).
 
 ---
 
@@ -120,13 +123,15 @@ fingerprint = "rows=<n>;hash=<sum over rows of xxhash64(to_json(all columns exce
 
 The fingerprint leaves out `_gold_build_id`, the only column that changes on a rebuild. The keys are hashes of natural keys, so they stay the same.
 
-**Procedure for the evidence runs** (capture plan: [evidence](../../06-evidence/README.md), section 2).
+**Procedure for the evidence runs** (capture plan: [evidence](../../06-evidence/README.md), section 2; results: [final runs of 2026-10-21](../../06-evidence/2026-10-21-final-runs/README.md)).
 
 1. Run the full job three times with no new data and no code change between runs.
 2. Run 1: G12 is PASS with "first fingerprint", or WARN if content changed since an earlier run.
 3. Runs 2 and 3: every G12 row should be PASS with "same as previous". Query I2 of the evidence page puts the three runs side by side.
 
 **Expected once after 2026-10-20.** The weekly `date_key` values changed with the new period bases (D-44, D-46), so the first run after that rebuild shows G12 WARN on `dim_date` and `fact_disease_metric`. Runs 2 and 3 should PASS.
+
+**Result (2026-10-21).** Final run 1 showed G12 WARN on 5 tables (`dim_data_source`, `dim_date`, `fact_disease_metric`, `fact_workforce_capacity`, `fact_area_indicator`): content changed since the gold QC run before the gold pass. Final run 2 showed G12 PASS "same as previous" on all 9 tables.
 
 A G12 WARN's detail lists the input tables and versions, so a reader can tell "content changed because an input changed" from "content changed with the same inputs" (the second would be a real idempotency failure).
 
@@ -232,7 +237,7 @@ ORDER BY started_at DESC;
 |---|---|
 | Views have no build record | Readiness does not cover marts; G09 checks only that they are readable and not empty |
 | Builds read inputs at their current version | `build_inputs` records the version. The build does not pin it (`VERSION AS OF`, R4) |
-| G codes are not in `check_registry` yet | `strict_registry` is off for gold QC (O-17) |
+| Strict registry since 2026-10-21 (`dq_utils.py` default); G00–G13 are in the seed | An unknown G code stops gold QC. The first strict run is the next job run (O-17) |
 | No drift check | G12 compares with the previous run only; no trend over runs |
 | Restricted cells | QC cannot compare suppressed cells with silver one by one. It compares region totals instead |
 
@@ -245,3 +250,4 @@ ORDER BY started_at DESC;
 | 2026-10-18 | `gold_qc.py` written (G01–G13), D-48 |
 | 2026-10-19 | G05 ignores OPTIMIZE and VACUUM; gold 23 check 3 |
 | 2026-10-20 | Gold 02 weekly gate added (D-44, D-46). Null keys stay null in gold 04 and 12 so their gates can fire. `build_log.parameters` records the settings. Page written |
+| 2026-10-21 | G12 result of the final runs; strict registry on (O-17) |

@@ -1,8 +1,11 @@
 # Reproducibility: running without Databricks
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 The team builds and runs LUNASaan? on Databricks, but the pipeline depends on a short list of **capabilities**, not on Databricks. This page lists them, gives the Databricks implementation and an open-source one for each, and names the few places in the code that are tied to Databricks. With these capabilities, every layer can be rebuilt from the landing files.
 
-Status date: 2026-10-20. Platform facts live here; layer pages link to this page instead of repeating them.
+Status date: 2026-10-21. Platform facts live here; layer pages link to this page instead of repeating them.
 
 ---
 
@@ -65,12 +68,12 @@ Surrogate keys are `xxhash64` values; another hash gives other key values, which
 
 1. Install Java, Spark, Delta Lake and the libraries; configure the Spark session with the Delta extension and catalog.
 2. Create the catalog and the schemas `bronze`, `silver`, `gold`, `quality`.
-3. Run the setup scripts in `src/00_setup/` (the setup job runs the same): the schemas, `ingestion_metadata.sql` and `quality_setup.sql`. They only create what is missing.
+3. Run the setup scripts in `src/00_setup/` (the setup job runs the same): the schemas, `ingestion_metadata.sql`, `quality_setup.sql` and `quality_registry_seed.sql`. They only create or add what is missing. The QC scripts run with `strict_registry=True`, so the registry seed must run before any QC.
 4. Land the files under `landing_root` with the folder and file names in the YAML entries ([bronze overview](../04-pipeline/bronze/README.md)). Copy the reference CSVs from `config/reference/<domain>/` to `<landing_root>/reference/<domain>/`.
 5. **Bronze:** `python src/02_bronze/run_bronze.py`. It runs the six domains (geography first) and their bronze QC, and stops on a FAIL. The PSGC and HDX loaders read API pages already saved in landing; re-pulling them needs network access to the APIs (`src/01_ingestion`).
 6. **Gate:** `python src/05_quality/bronze/bronze_gate.py --domains <domain>` before each domain's silver.
 7. **Silver:** geography, admin boundaries and population first, each followed by its QC; then for each domain: the `00_reference` step, the build files in number order, the domain QC. Then `silver_cross_domain_qc.py`. Run order per domain: [`src/03_silver/README.md`](../../src/03_silver/README.md).
-8. **Gold:** `src/04_gold` in number order (`gold_01` → `gold_24`: `dimension/`, `fact/`, `mart/`), then `gold_qc.py`. Gold has no setup file; step 3 creates the `gold` schema.
+8. **Gold:** `src/04_gold` in number order (`gold_01` → `gold_24`: `dimension/`, `fact/`, `mart/`), then `gold_qc.py`, then `src/05_quality/sql/quality_registry_check.sql`. Gold has no setup file; step 3 creates the `gold` schema.
 9. **Dashboard:** connect your BI tool to the gold marts and default views.
 
 Steps 5–8 are what the Databricks job does: run them as one workflow that stops on the first failure.
@@ -89,3 +92,4 @@ Steps 5–8 are what the Databricks job does: run them as one workflow that stop
 |---|---|
 | 2026-10-18 | Written as `platform-requirements.md` |
 | 2026-10-20 | Moved to `07-operations/reproducibility.md`; updated for geography inside `run_bronze.py`, the preload gate, gold `gold_01`–`gold_24`, pinned environments, `read_files()` and timestamps |
+| 2026-10-21 | Registry seed in the setup step (strict registry); registry check after gold QC |

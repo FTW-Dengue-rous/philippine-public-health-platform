@@ -1,8 +1,11 @@
 # Quality control framework
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 This page sets the rules for every quality check. It covers where checks run, what stops the pipeline, how a check gets its status, where results go, and how to add or change a check. The [check catalog](quality-check-catalog.md) lists each check. The [lineage and quality contract](lineage-and-quality-contract.md) fixes the identifiers and lineage behind them.
 
-Status date: 2026-10-20. Back to the [quality overview](README.md).
+Status date: 2026-10-21. Back to the [quality overview](README.md).
 
 ---
 
@@ -41,6 +44,7 @@ flowchart LR
 | Silver QC | `<domain>_silver_qc.py`, then `silver_cross_domain_qc.py` | Any FAIL | The job stops before gold |
 | Gold build gates | Inside each gold build file | Any gate > 0, including a silver input whose latest QC has a FAIL | The published gold table |
 | Gold QC | `gold_qc.py` | Any FAIL | Anything that depends on it (dashboard refresh) |
+| Registry check | `qc_registry` task (`quality_registry_check.sql`), last task of the job | A code a script recorded that `check_registry` lacks, or holds under another layer | Nothing: data and QC results are already written |
 
 A WARN never stops the chain. QC records it and lists it in `v_open_issues`. A person reviews it.
 
@@ -99,7 +103,7 @@ All in `public_health.quality`, append-only:
 | `quarantine` | Silver QC (not for restricted sources) | Set-aside rows as JSON, replaced per check scope on each run |
 | `build_log`, `build_inputs` | Every silver and gold build | One row per build; one row per input it read |
 | `row_disposition` | Every silver build | One row per bronze row read but not loaded, with a reason |
-| `check_registry` | `quality_registry_seed.sql` | Code, name, type, default severity and threshold |
+| `check_registry` | `quality_registry_seed.sql` (setup job, every run) | Code, name, type, default severity and threshold. With `strict_registry=True` (default since 2026-10-21) a QC script stops on a code not listed here |
 
 `ingestion_metadata` (in `bronze`) is the load log: one row per file or sheet per bronze run, with status `processed`, `failed` or `skipped_duplicate`.
 
@@ -174,7 +178,7 @@ A WARN that is not listed is a finding: explain it on the layer page, or add it 
 
 | Limitation | Treatment |
 |---|---|
-| `check_registry` is not fully seeded; `strict_registry=False` except population QC | O-17, to-do 7 |
+| Strict registry on since 2026-10-21 (`dq_utils.py` default); the first strict run is the next job run | O-17 (closed) |
 | No drift checks (row counts, key sums against the previous run) except gold G12 | Backlog |
 | No automatic rerun-equality check in silver | Gold G12 covers the published model; backlog for silver |
 | Each silver QC script holds its own lineage expectations | Shared `silver_tables.yaml` in the backlog (to-do 15) |
@@ -190,3 +194,4 @@ A WARN that is not listed is a finding: explain it on the layer page, or add it 
 | 2026-10-19 | Bronze re-queue and preload gate added (D-50, D-51). Overrides validated (D-53). Rule 2a: no typed numbers in silver QC |
 | 2026-10-20 | Page written (silver chat) |
 | 2026-10-20 | Merged with the gold pass: kinds of check, gold settings (D-62), gold expected WARNs |
+| 2026-10-21 | Registry check step in the gate chain; strict registry on (O-17) |

@@ -1,5 +1,8 @@
 # Silver — population
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Census population for every PSGC area, used by gold as the denominator for rates (cases, beds or health workers per population). It comes from the same PSGC payload as the geography table, so its codes always match the spine.
 
 Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), section 4.1. Back to the [silver overview](README.md).
@@ -62,6 +65,7 @@ Every check of this domain, with its rule and severity: [silver quality checks](
 
 - Use `population` only where the status is `VALID` or `VALID_WITH_NOTE`. A missing value is null, never 0.
 - Census years are 2015, 2020 and 2024. A rate for another year needs a stated rule for which census year is its denominator; gold states it in [metric definitions](../gold/metric-definitions.md).
+- Gold does not use a generic “closest year” fallback. Its cross-domain rates require a population year within two years of the count year; otherwise the rate is null. Sulu remains null where the 2024 denominator is unavailable.
 - A province total in 2024 leaves out its highly urbanized cities, like the PSGC itself.
 
 ## Limitations

@@ -1,5 +1,8 @@
 # Gold — metric definitions
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Every number gold computes, with its formula, denominator, unit, null rule and source. Silver holds counts; **gold computes every rate, share, rank and flag**. If a dashboard figure is not on this page, it is a count copied from a fact.
 
 Status date: 2026-10-20. Back to the [gold overview](README.md).

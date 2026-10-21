@@ -57,7 +57,7 @@ For each run, save into `run-N/` of the session folder:
 
 After run 3, fill the comparison in the session `README.md` from queries I1, I2 and I3: row counts per table, the G12 status per gold table, and what each bronze loader did, across the three runs.
 
-Then run the reconciliation queries A–D once and save them in `reconciliation/` with the run date. Record the three runs in the [change log](../08-governance/change-log.md) and the results in [quality results and evidence](../04-pipeline/quality/quality-results-and-evidence.md).
+Then run the reconciliation queries A–D once and save them in `reconciliation/` with the run date. Record the three runs in the [change log](../08-governance/change-log.md) and the results in [quality results](../04-pipeline/quality/quality-results.md).
 
 ### Idempotency passes when
 
@@ -104,15 +104,15 @@ Notes on reading them:
 | Date | Record | Status | What it shows |
 |---|---|---|---|
 | 2026-10-18 | [First full run in this workspace](2026-10-18-new-workspace-run.md) | History | Setup, bronze, silver and gold ran end to end; bronze and silver QC 0 FAIL. No gold QC yet; idempotency not tested |
-| 2026-10-21 | [Final runs](2026-10-21-final-runs/README.md) | Evidence, in progress | Three runs on the same inputs: QC in every layer, incremental bronze, idempotency |
+| 2026-10-21 | [Final runs](2026-10-21-final-runs/README.md) | Evidence, complete | Three runs on the same inputs: QC in every layer, incremental bronze, idempotency |
 
 **Final runs, 2026-10-21:**
 
 | Run | Date | Result |
 |---|---|---|
 | 1 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-1/run-1.md), job run `186099985728312`. Bronze: nothing reloaded (I3). Gold built in `public_health.gold`. Gold QC 118 checks: 111 PASS, 7 WARN, 0 FAIL. WARNs: G12 on 5 tables (content changed since the run before the gold pass), G13 (Kalayaan, Makati, Pikit: boundary changes between censuses), G07 claims (27 region cells suppressed). Silver QC: 0 FAIL. Bronze: 3 expected WARNs |
-| 2 | — | Pending |
-| 3 | — | Pending |
+| 2 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-2/run-2.md), job run `26759964775689`. Bronze loaded nothing; all 28 tables same row count; G12 PASS "same as previous" on all 9 gold tables; gold QC 118 checks: 116 PASS, 2 WARN (G13, G07), 0 FAIL |
+| 3 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-3/run-3.md), job run `996544156339205`. Bronze loaded nothing; all 28 tables same row count; G12 PASS "same as previous" on all 9 gold tables; gold QC 118 checks: 116 PASS, 2 WARN, 0 FAIL; `qc_registry` passed |
 
 ## 6. History of updates
 

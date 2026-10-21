@@ -1,5 +1,8 @@
 # Silver layer
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Bronze keeps every file exactly as it arrived. Silver turns those files into clean, comparable tables: every row means one thing (one disease count for one area and period, one facility, one population figure for one area and year), and every area is named the same way, by its PSGC code from one shared geography table. Nothing is guessed. A label that matches no rule is set aside with a reason, never dropped and never forced.
 
 Every silver row still points to the bronze file, sheet and row it came from, and every build records which files, loads and reference tables it read. Rates, rankings and the choice of preferred source are left to gold. Silver only makes the inputs trustworthy and comparable.
@@ -100,7 +103,7 @@ Three tables come from FOI releases or a hospital extract: `diseases_hospital_en
 | Domain QC | The published table: keys, lineage, freshness, reconciliation, controls, accepted values, codes in geography, domain rules | `quality.qc_results` |
 | Cross-domain QC | Quarantine share per table (gate), future years, ratios per population, source age, FHSIS vs census population | `quality.qc_results` |
 
-Any FAIL stops the job before gold. WARNs are kept for a person to read; the expected ones are listed on each domain page. Every silver check in detail: [silver quality checks](silver-quality-checks.md). Codes of all layers: [quality check catalog](../quality/quality-check-catalog.md). Results of the recorded runs: [quality results and evidence](../quality/quality-results-and-evidence.md).
+Any FAIL stops the job before gold. WARNs are kept for a person to read; the expected ones are listed on each domain page. Every silver check in detail: [silver quality checks](silver-quality-checks.md). Codes of all layers: [quality check catalog](../quality/quality-check-catalog.md). Results of the recorded runs: [quality results and evidence](../quality/quality-results.md).
 
 ## Scope
 

@@ -4,7 +4,7 @@ This page shows how each source flows from landing to the dashboard: source → 
 
 Last updated: 2026-10-21
 
-The table-level map below is the design. **The exact lineage of the latest run is recorded in `public_health.quality.build_log` and `build_inputs` (defined in the [lineage and quality contract](../04-pipeline/quality/lineage-and-quality-contract.md), v1.3).** Use the queries in [section 5](#5-trace-lineage-from-the-quality-tables) when you need certainty. These tables are not yet implemented in this workspace; see the build-status note at the start of [section 5](#5-trace-lineage-from-the-quality-tables).
+The table-level map below is the design. **The exact lineage of the latest run is recorded in `public_health.quality.build_log` and `build_inputs` (defined in the [lineage and quality contract](../04-pipeline/quality/lineage-and-quality-contract.md), v1.3).** Use the queries in [section 5](#5-trace-lineage-from-the-quality-tables) when you need certainty. The final runs of 2026-10-21 wrote them in this workspace ([final runs](../06-evidence/2026-10-21-final-runs/README.md)).
 
 ---
 
@@ -109,7 +109,7 @@ The exact source list of `diseases_metric_silver` is in `build_inputs` (query 5.
 
 ## 5. Trace lineage from the quality tables
 
-The `build_log`, `build_inputs`, and `v_latest_build` tables and views are defined in the [lineage and quality contract](../04-pipeline/quality/lineage-and-quality-contract.md) (v1.3) but are not yet implemented in this workspace. The queries below will work once the gold pass creates them. Until then, trace lineage manually from the silver row's `_source_key`, `_source_file`, and `_source_row_num` columns back to bronze.
+The `build_log`, `build_inputs`, and `v_latest_build` tables and views are defined in the [lineage and quality contract](../04-pipeline/quality/lineage-and-quality-contract.md) (v1.3). `quality_setup.sql` creates them, and every silver and gold build writes them; the final runs of 2026-10-21 recorded every silver and gold table ([final runs](../06-evidence/2026-10-21-final-runs/README.md)). Geography, boundaries and population silver are MERGE builds without a `build_log` row: trace them from their own lineage columns.
 
 ### 5.1 What did the latest build of a table read?
 
@@ -168,3 +168,4 @@ The full eight-step walk is in the [lineage and quality contract](../04-pipeline
 |---|---|
 | 2026-10-19 | Page written from the silver overview, gold README and job definition |
 | 2026-10-21 | History brought up to date: the workspace build-status caveats in the intro and section 5 (lineage tables not yet implemented here; gold not built in this workspace) were added 2026-10-20 but not recorded; intro pointer corrected to the section-5 note, where the note actually lives — no note was added at the end of section 1 |
+| 2026-10-21 | Build-status caveats removed: the final runs wrote `build_log` and `build_inputs` in this workspace |
