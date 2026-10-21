@@ -33,7 +33,7 @@ Never fix a failure by editing a silver or gold table by hand, deleting quality 
 |---|---|---|
 | `<table> was NOT published. gates failed: ...` | A build gate is not 0 | `SELECT * FROM <table>__gates WHERE failures <> 0`; the gate name says what to fix |
 | `Reference check failed: ...` in a `00_reference` step | A reviewed CSV disagrees with geography, or was built from another snapshot or workbook | Rerun the builder, review, copy the CSV to the Volume, rerun `00_reference` ([reference maps](../04-pipeline/silver/reference-maps.md)) |
-| `UNRESOLVED_COLUMN ... m.source_sheet` | `bronze.ingestion_metadata` in this workspace predates the file-load columns | `ingestion_metadata_fix.sql` Part 1, rerun the loader, Part 2 ([runbook](runbook.md), incident 3) |
+| `UNRESOLVED_COLUMN ... m.source_sheet` | `bronze.ingestion_metadata` in this workspace predates the file-load columns | `ingestion_metadata_fix.sql` (run in the workspace; not kept in the repo) Part 1, rerun the loader, Part 2 ([runbook](runbook.md), incident 3) |
 | S00 FAIL "build ... did not record `<key>`" | The table was built before 2026-10-19, without the recorded settings QC reads (rule 2a) | Rerun that table's build file (workforce: `01` first), then its QC |
 | S16 / S33 / S63 / S83 FAIL | Bronze, a reference table or the geography snapshot changed after the build | Rebuild the domain's silver in full, then QC. After any `00_reference` rerun, rerun **every** build of that domain ([runbook](runbook.md), incident 5) |
 | S09 FAIL | Bronze changed since the build, or rows are unaccounted for | Rebuild; if it persists, compare `row_disposition` with bronze ([reconciliation](../04-pipeline/silver/reconciliation.md)) |

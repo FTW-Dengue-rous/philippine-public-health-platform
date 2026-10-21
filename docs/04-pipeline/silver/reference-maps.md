@@ -5,7 +5,7 @@ Last updated: 2026-10-21
 
 Sources name the same place, disease or hospital in many ways. Reference maps are reviewed CSVs that translate what a source says (a label, a cause name, a hospital id, a row) into what the platform means: a PSGC code at a level, a `disease_key`, a `facility_key`. Silver never matches by guessing. A label is resolved by a rule, by a reviewed decision, or it is set aside with a reason.
 
-The reference for the files is in the repo: `builders/README.md` (one section per builder) and `config/reference/README.md` (one row per CSV). Back to the [silver overview](README.md).
+The reference for the files is in the repo: `builders/readme.md` (one section per builder) and `config/reference/readme.md` (one row per CSV). Back to the [silver overview](README.md).
 
 ## How a map is made
 
@@ -60,7 +60,7 @@ Every domain resolves an area in the same order; the first that applies wins:
 3. **Reviewed exception:** a label the rules can't resolve, with its decision.
 4. **Name rule:** normalised name, plus level, plus parent region. Exactly one candidate is accepted.
 
-Zero candidates, or more than one, is not a match. The label goes to the builder's unresolved list, and the build stops until it has a decision.
+Zero candidates, or more than one, is not a match. What happens next differs by domain: the workforce builder stops until it has a decision. The diseases builder keeps unresolved hospital-encounter city labels with a blank area key for review. The facilities builder quarantines rejected rows.
 
 ## Review status
 

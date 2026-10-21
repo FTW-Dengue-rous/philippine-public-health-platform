@@ -25,7 +25,7 @@ Decisions: [decision log](decision-log.md). Assumptions: [assumptions](../01-con
 | KI-08 | `hdx_dengue` (latest 2021) and `psa_deaths_national_annual` (latest 2020) flagged by S98 | One expected WARN on every cross-domain run | Both stopped publishing: add them to `HISTORICAL_SOURCES` with a comment, or keep as an explained WARN | — |
 | KI-09 | `quality_migrate_bronze_qc.sql` run not confirmed; the `batch_id` column comment in `quality_setup.sql` predates the contract | Old results may still sit in `bronze.qc_results`; a misleading comment | Confirm, drop the old table, fix the comment | 7a |
 | KI-10 | The bundle job `[dev jemmalyn_santiago] ph-public-health-pipeline` (job id `587047839768584`) ran the final runs of 2026-10-21 ([final runs](../06-evidence/2026-10-21-final-runs/README.md)). The commit it ran is still to record | The deployed job may differ from the repo after a later merge | Record the commit with the final runs; redeploy after each merge to `dev` (CD does this); optional `dashboard_refresh` task | 10 |
-| KI-11 | A teammate workspace's `ingestion_metadata` fix (runbook incident 3) not confirmed as run | Silver builds fail there with `UNRESOLVED_COLUMN` | Run `ingestion_metadata_fix.sql` in that workspace | — |
+| KI-11 | A teammate workspace's `ingestion_metadata` fix (runbook incident 3) not confirmed as run | Silver builds fail there with `UNRESOLVED_COLUMN` | Run `ingestion_metadata_fix.sql` (run in the workspace; not kept in the repo) in that workspace | — |
 | KI-12 | eFOI 2026-5476 (bed sheets 2016–2017, named OHSRS 2023 hospitals) received 2026-10-16 but not ingested | Occupancy starts in 2018; no named hospital utilization | Data freeze before submission. Decide whether to land it after submission | 12 |
 | KI-13 | DOH OHSRS regional release (annual consolidated, 2016–2025, government / private by region): inpatient average length of stay (ALOS) and outpatient re-visits; received 2026-10-20, not ingested | No length of stay in the pipeline; the dengue peak view compares cases with beds, not bed-days | Data freeze before submission. Region grain only, so it does not join the province / municipality marts. Main use: bed-day demand for stretch 2 | 36 |
 | KI-14 | Two pipeline jobs execute the same scripts: a manually created 66-task job (553440510410749) and a DABs-deployed 72-task bundle job (835555203376044) | Concurrent-run risk and drift between the two | Consolidate to one job. The bundle job is the source of truth (D-49) | 14 |
@@ -134,7 +134,7 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | 2026-10-19 | Silver: D-44 / D-46 week convention; population QC fixes and S59; rule 2a in every silver build and QC file; full rebuild kept (D-57); proposal values agreed (D-56) |
 | 2026-10-20 | Silver closed: workforce override for Zamboanga Sibugay (D-58); cross-domain QC 68 checks, 0 FAIL, 10 WARN. Runs stay manual (D-59) |
 | 2026-10-21 | CI checks on `dev` fixed; they pass |
-| 2026-10-21 | Final runs 1–3 of the bundle job: 0 FAIL; runs 2 and 3 show G12 PASS on all 9 gold tables, bronze loaded nothing, same row counts (idempotency proven; [final runs](../06-evidence/2026-10-21-final-runs/README.md)) |
+| 2026-10-21 | Final runs 1–3 of the bundle job: 0 FAIL; runs 2 and 3 show G12 PASS on all 9 gold tables, bronze loaded nothing, same row counts (reruns repeat the same result; [final runs](../06-evidence/2026-10-21-final-runs/README.md)) |
 | 2026-10-21 | `qc_registry` job task added and passed; `strict_registry=True` is the default in every QC script (item 7, KI-03, O-17) |
 | 2026-10-21 | Full run in a new, empty workspace (run `908246813677292`): every layer built from the landing files, 0 FAIL, row counts equal to the final runs ([new-workspace run](../06-evidence/2026-10-21-empty-workspace-run/README.md); KI-19 and item 39 closed). The first attempt found the `sources_population.yaml` `skip_checks` error (runbook incident 8) |
 
@@ -154,3 +154,4 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | 2026-10-21 | KI-19 and item 39: empty-workspace rebuild not yet evidenced |
 | 2026-10-21 | KI-19 and item 39 closed: new-workspace run recorded |
 | 2026-10-21 | KI-19 kept as closed; KI-20 and item 40 added: rebuild outside Databricks documented, not yet run |
+| 2026-10-21 | "idempotency proven" replaced with "reruns repeat the same result" in section 4 |

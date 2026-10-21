@@ -1,6 +1,7 @@
 # Architecture decisions
 
 Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
 
 The technical choices that shape the pipeline, with the reason and the trade-off for each. Each record links to the full decision log by ID (`D-NN`).
 

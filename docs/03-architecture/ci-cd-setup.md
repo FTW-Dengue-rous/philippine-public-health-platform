@@ -1,6 +1,9 @@
 # CI/CD setup
 
 Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
+Current CI/CD behaviour is in [CI/CD and testing](../07-operations/ci-cd-and-testing.md); this page keeps the setup history.
 
 How code moves from a branch to a running Databricks job: the checks on every pull request, how the job is deployed, and what is not automated yet.
 

@@ -64,7 +64,7 @@ A previous-scope question, outside the active scope and retained as a stretch go
 
 * **BQ2** — If a selected historical dengue outbreak recurred against the latest available hospital capacity, which regions or provinces would face the greatest estimated bed shortfalls under different assumptions? (dengue surge stress test; previous scope)
 
-BQ1 breaks down into pillars: Need (N1-N4), Supply (S1-S3), Access (A1-A4), Workforce (W1-W2), Equity (E1-E2), Priority (P1-P2), plus supporting (SUP1-SUP6) and conditional (CON1-CON3) analyses.
+BQ1 breaks down into pillars: Need (N1-N4), Supply (S1-S3), Access (A1-A4), Workforce (W1-W2), Equity (E1-E2), Priority (P1-P2), plus supporting and conditional analyses (see [scope](docs/01-context/scope.md)).
 
 **Built in gold and shown on the dashboard (BQ1):**
 
@@ -74,7 +74,7 @@ BQ1 breaks down into pillars: Need (N1-N4), Supply (S1-S3), Access (A1-A4), Work
 * **Workforce (W1–W2)** — Public doctors, nurses and midwives relative to population (the LGU-employed vs DOH-deployed split, W2, is query-only).
 * **Equity (E1–E2)** — Poverty vs service supply, beds and access; government bed share by poverty band (income-class analysis, E2, is query-only).
 * **Priority (P1–P2)** — Areas combining high disease burden with low supply, poor access or disadvantage; ranking stability under different weights.
-* **Case study (CASE)** — TB notifications vs public workforce supply; kidney care (dialysis claims vs stations).
+* **Case study (CASE)** — TB notifications vs public workforce supply; kidney care (dialysis claims vs stations). Built in gold (`mart_tb_case_study`, `mart_kidney_case_study`); the dashboard page is a draft, so these are query-only for now.
 
 See [business questions](docs/01-context/problem-and-business-context.md#analytical-questions) for the full framework with grain, sources, status, and caveats per question.
 
@@ -135,7 +135,7 @@ To reproduce each figure, run [`headline_figures.sql`](docs/06-evidence/headline
 
 * **Gated layers** — bronze and silver QC stop the job on a FAIL-level check; a preload gate stops a domain's silver when one of its bronze sources is not cleared; silver builds validate keys, duplicates and lineage before publishing.
 * **Traceable** — every silver row carries lineage columns; every build records its inputs in `quality.build_log` and `quality.build_inputs`; rows that are dropped, quarantined or merged are recorded with a reason in `quality.row_disposition`.
-* **Repeatable** — in the final runs, unchanged files were not reloaded, all 28 silver and gold tables kept the same row counts, and the G12 fingerprints of all 9 gold model tables matched in runs 2 and 3.
+* **Repeatable** — reruns on unchanged inputs give the same result: bronze reloaded no file, all 28 silver and gold tables kept the same row counts, and all 9 gold model tables kept the same content (G12) in runs 2 and 3. Not tested: loading new or changed files, recovery from a failed run, and content equality of marts and views.
 * **Honest about gaps** — nulls stay null. Every excluded area or row carries a reason.
 * **Gold QC** — checks published gold tables (G00–G13: row counts, primary keys, grain uniqueness, foreign keys, published-table integrity, freshness against inputs, control totals, value consistency, default views, selection contract, measure ranges, idempotency fingerprint, census plausibility). Any FAIL fails the job. The last task, `qc_registry`, checks that every recorded check code is registered; QC scripts reject unregistered codes (`strict_registry=True`). See the [quality framework](docs/04-pipeline/quality/quality-control-framework.md) and the [check catalog](docs/04-pipeline/quality/quality-check-catalog.md).
 
@@ -200,3 +200,9 @@ Source data retains the license of its provider.
 * **PSA, DOH** — public statistics as published.
 
 Restricted data (FOI releases, bed occupancy) is for internal use only and must not be redistributed. See [Data governance](docs/08-governance/data-governance.md) for per-source terms.
+
+## History of updates
+
+| Date | Change |
+|---|---|
+| 2026-10-21 | Case study line notes marts are built but dashboard page is a draft. Rerun claims limited to recorded tests. Undefined question IDs replaced with scope link. |

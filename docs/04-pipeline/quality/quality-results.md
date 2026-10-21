@@ -57,7 +57,7 @@ Notebook runs on 2026-10-19 ([bronze quality checks](../bronze/bronze-quality-ch
 | Script | Result |
 |---|---|
 | `diseases_silver_qc.py` | 143 checks, 0 FAIL, 7 WARN |
-| `silver_rev_d44_verify.sql` steps 1–4 | Passed (the D-44 / D-46 week convention after the rebuild) |
+| `silver_rev_d44_verify.sql` (run in the workspace; not kept in the repo) steps 1–4 | Passed (the D-44 / D-46 week convention after the rebuild) |
 | `psgc_population_silver_qc.py` | 19 checks, 0 FAIL, 5 WARN; S59 PASS (2015, 2020, 2024) |
 | `silver_cross_domain_qc.py` | `e56cdd87-64bd-4686-9f32-74ff95622ed6`: 0 FAIL, 11 WARN |
 
@@ -90,7 +90,7 @@ One S29 WARN fewer than 2026-10-19: the Zamboanga Sibugay row override (D-58) re
 
 ### 4.1 Test build, 2026-10-14 (`test_gold2`)
 
-All build gates returned 0 on every table. Row counts and mart figures from that build are in the [table catalog](../gold/table-catalog.md) and the [findings report](../gold/findings-report.md). `gold_qc.py` did not exist yet.
+All build gates returned 0 on every table. Row counts from that test build are not kept; this section is history only. Current counts are in [run 1](../../06-evidence/2026-10-21-final-runs/run-1/run-1.md), section 7. `gold_qc.py` did not exist yet.
 
 ### 4.2 Final build: final runs of 2026-10-21
 
@@ -106,7 +106,7 @@ The final job ran three times on the same inputs. Records and screenshots: [fina
 | Gold 22 check 1 | No `ihme_province_coverage_not_confirmed` | Pending |
 | Gold 23 check 3 | No row | Pending |
 | Gold 24 check 1 (`schema_name = 'gold'`) | No QC missing, no stale table | Pending |
-| `gold_o13_evidence.sql` Q1–Q6 | Read for D-56 | Pending |
+| `gold_o13_evidence.sql` (run in the workspace; not kept in the repo) Q1–Q6 | Read for D-56 | Pending |
 | Bronze does not reload (query I3) | Every source "loaded 0, failed 0" in runs 2 and 3 | Runs 1, 2 and 3: all 40 sources |
 
 The mart checks (gold 11, 22, 23, 24) and `gold_o13_evidence.sql` were not captured in the final runs. Run them once against the final gold build if time allows.
@@ -165,3 +165,4 @@ SELECT * FROM public_health.quality.v_run_errors ORDER BY started_at DESC;
 | 2026-10-19 | Bronze notebook runs; silver rebuild and QC |
 | 2026-10-20 | Workforce rebuild and cross-domain QC. Page written; gold section ready for the final runs |
 | 2026-10-21 | Final runs 1, 2 and 3 recorded (section 1, 4.2) |
+| 2026-10-21 | Section 4.1: test-build row-count reference replaced with link to run-1 section 7 |

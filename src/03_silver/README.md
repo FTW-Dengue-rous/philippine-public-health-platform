@@ -1,5 +1,8 @@
 # Silver layer (`src/03_silver`)
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 The silver layer turns the raw bronze files into clean, typed tables. One row means one thing, and every area carries a PSGC code from one shared geography table. Sources stay side by side; nothing is guessed. A label that matches no rule is held back with a reason. Rates, rankings and the choice of preferred source are left to gold.
 
 Use this guide to rebuild the layer, understand what each row represents, and know which rules gold must not redo. The shorter overview, one page per domain and the reconciliation method are in [`docs/04-pipeline/silver/`](../../docs/04-pipeline/silver/README.md).

@@ -141,7 +141,7 @@ The 17 HUCs outside NCR and their provinces: Baguio (Benguet), Angeles (Pampanga
 | `supply_heavy` | 0.35 | 0.35 | 0.20 | 0.10 | Sensitivity test: service supply counts more |
 | `equity_heavy` | 0.20 | 0.20 | 0.20 | 0.40 | Sensitivity test: poverty counts more |
 
-Check: each set has 4 rows summing to 1. Agreed by the team 2026-10-19 (D-56). Evidence that the ranking does not hinge on the weights: `gold_o13_evidence.sql` Q1–Q2.
+Check: each set has 4 rows summing to 1. Agreed by the team 2026-10-19 (D-56). Evidence that the ranking does not hinge on the weights: `gold_o13_evidence.sql` (run in the workspace; not kept in the repo) Q1–Q2.
 
 ## 9. Settings (step [0] of each table file)
 

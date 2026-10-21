@@ -1,5 +1,8 @@
 # Silver: facilities
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 > **Historical implementation note.** The current, authoritative facilities documentation is [the Silver facilities guide](../../../docs/04-pipeline/silver/facilities.md). This file is retained for implementation history; its dated status statements must not be used as current deployment evidence.
 
 This page covers the facilities silver tables: facility identity and registry, published counts by area and year, anonymous bed occupancy records, OSM facility points, and the reference inputs they depend on. It follows `facilities-silver-plan.md` v2.1 (2026-10-12) and the headers of the SQL and Python files.

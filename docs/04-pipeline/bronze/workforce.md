@@ -77,7 +77,7 @@ Workforce Silver uses the three Bronze sources, geographical name/PSGC mapping a
 
 Important source limitations carried forward:
 
-- FHSIS and PSA reflect **government/public** workforce reporting; they do not represent the complete private-sector workforce.
+- The whole workforce dataset covers **LGU-hired and DOH-hired** workers only, for every profession — not just doctors. This applies to both FHSIS and PSA. PSA does not carry the LGU/DOH employer split, but its government-practitioner counts are still public-sector (LGU + DOH) workers. Neither represents the entire Philippine healthcare workforce and both exclude private-sector workers. A missing count means not reported, not zero. These counts alone do not prove an overall workforce shortage.
 - FHSIS 2018 uses male/female breakdowns; later reports emphasize LGU/DOH hiring. The YAML notes incomplete 2019 employment splits—prefer published totals when splits are unreliable.
 - Source `*`, blank and zero have context-dependent meanings. **Do not silently convert missing reports to zero headcount.**
 - BHW source ratios change denominator conventions (population versus households); comparative rates need a single explicit basis downstream.
