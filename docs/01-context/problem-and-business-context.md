@@ -128,6 +128,6 @@ Motto: **Tamang Datos. Tamang Lugar. Tamang Tugon.** The right data, for the rig
 | 2026-10-20 | Criterion 4: three evidence runs |
 | 2026-10-20 | N1 and S2 added to the question table with their gold objects; evidence-readiness row and a build-status note added; criterion 6 (reproduction from the documentation) added; status-date row merged into the page metadata; criterion 6 provenance noted |
 | 2026-10-20 | Question-map workbook reference removed — `capstone_gold_question_map.xlsx` is not in the repo; the in-page question table is now the authoritative question map |
-| 2026-10-20 | Build-status note qualified: `public_health.gold`, `build_log` and `build_inputs` are not yet implemented in this workspace (aligns with the data lineage map); status-check date restored to the heading; 2026-10-12 rewording date restored to the access-questions heading |
+| 2026-10-20 | Build-status wording was qualified for repository-only review: live `public_health.gold`, `build_log`, and `build_inputs` records are not contained in the checkout; status-check date restored to the heading; 2026-10-12 rewording date restored to the access-questions heading |
 | 2026-10-21 | Criterion 4 met: three final runs of 2026-10-21 |
 | 2026-10-21 | Build-status note updated: `public_health.gold`, `build_log` and `build_inputs` written by the final runs |
