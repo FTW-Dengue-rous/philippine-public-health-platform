@@ -3,7 +3,7 @@
 Owner: LUNASaan Documentation Team
 Last updated: 2026-10-21
 
-Record of the dashboard definition that reads the gold layer built by the [final runs](../2026-10-21-final-runs/README.md).
+Record of the dashboard definition that reads the gold layer built by the [final runs](../06-evidence/2026-10-21-final-runs/README.md). For pages, filters, freshness and interpretation, see the full [dashboard guide](../../dashboard/dashboard-guide.md); this page only records the switch to `public_health.gold`.
 
 | Item | Value |
 |---|---|
@@ -22,3 +22,4 @@ One per page, named `p<n>_<yyyy-mm-dd>.png`: `p0` National Overview, `p1` Need, 
 | Date | Change |
 |---|---|
 | 2026-10-21 | Record written: dashboard definition switched to `public_health.gold`; page screenshots still to capture |
+| 2026-10-21 | Final-runs link fixed (`../06-evidence/...`); pointer added to the full guide in `dashboard/dashboard-guide.md` |
