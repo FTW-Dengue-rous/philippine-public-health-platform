@@ -78,6 +78,16 @@ Surrogate keys are `xxhash64` values; another hash gives other key values, which
 
 Steps 5–8 are what the Databricks job does: run them as one workflow that stops on the first failure.
 
+**Evidence status (2026-10-21).**
+
+| What | Status | Evidence |
+|---|---|---|
+| Rebuild from empty tables on Databricks | Proven | [New-workspace run](../06-evidence/2026-10-21-new-workspace/README.md): landing files to gold QC, 0 FAIL, row counts equal to the final runs |
+| Reruns give the same result | Proven | [Final runs](../06-evidence/2026-10-21-final-runs/README.md): bronze loads nothing, same row counts, G12 same content |
+| Rebuild without Databricks (this page) | Documented, not run | Sections 1–4 come from a review of the code. No open-source rebuild is recorded yet (KI-20, backlog 40) |
+
+The two Databricks runs still support the open-source path: they show that the landing files, the YAML and the documented run order are enough to rebuild every layer, and that the result depends only on the inputs. What they don't show is that the Databricks-only calls in sections 2 and 3 are the complete list.
+
 ## 5. Data that can't be downloaded
 
 - **Restricted sources** came through FOI requests or from a hospital: DOH dengue and TB FOI files, the HFSRB hospital beds and occupancy release, PhilHealth claims, the Davao pneumonia admissions. IHME GBD is treated as restricted under its licence.
@@ -93,3 +103,4 @@ Steps 5–8 are what the Databricks job does: run them as one workflow that stop
 | 2026-10-18 | Written as `platform-requirements.md` |
 | 2026-10-20 | Moved to `07-operations/reproducibility.md`; updated for geography inside `run_bronze.py`, the preload gate, gold `gold_01`–`gold_24`, pinned environments, `read_files()` and timestamps |
 | 2026-10-21 | Registry seed in the setup step (strict registry); registry check after gold QC |
+| 2026-10-21 | Evidence status: what is proven on Databricks and what is only documented for other platforms (KI-20) |

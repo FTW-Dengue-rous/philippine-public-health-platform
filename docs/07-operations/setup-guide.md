@@ -63,7 +63,7 @@ Runs are started by hand (D-59): whoever lands new data starts the job.
 databricks bundle run ph_public_health_pipeline -t dev
 ```
 
-Or press **Run now** on the job in the workspace. The job runs setup → bronze (+ bronze QC) → preload gate → silver (+ silver QC) → cross-domain QC → gold → gold QC → registry check (`qc_registry`), and stops on the first failed gate or FAIL check. A first run on an empty workspace loads every file; later runs load only new or changed files.
+Or press **Run now** on the job in the workspace. The job runs setup → bronze (+ bronze QC) → preload gate → silver (+ silver QC) → cross-domain QC → gold → gold QC → registry check (`qc_registry`), and stops on the first failed gate or FAIL check. A first run on an empty workspace loads every file; later runs load only new or changed files. A recorded first run from empty tables took about 1h 30m of task time: [new-workspace run](../06-evidence/2026-10-21-new-workspace/README.md).
 
 ## 5. Check the run
 
@@ -101,3 +101,4 @@ Start with the [runbook](runbook.md): it says how to read the message, where to 
 |---|---|
 | 2026-10-20 | Page written |
 | 2026-10-21 | Setup job seeds `check_registry`; `qc_registry` in the run order |
+| 2026-10-21 | Link to the recorded new-workspace run |
