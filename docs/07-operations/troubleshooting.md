@@ -5,7 +5,7 @@ Last updated: 2026-10-21
 
 Symptoms we have met, their usual cause and the fix. For the general procedure (read the message, look at the evidence, fix at the source, rerun downward), see the [runbook](runbook.md). Each layer's quality page has a longer "when a check fails" table: [bronze](../04-pipeline/bronze/bronze-quality-checks.md), [silver](../04-pipeline/silver/silver-quality-checks.md).
 
-Status date: 2026-10-20.
+Status date: 2026-10-21.
 
 Never fix a failure by editing a silver or gold table by hand, deleting quality rows, or loosening a check without a written reason.
 
@@ -57,6 +57,14 @@ Never fix a failure by editing a silver or gold table by hand, deleting quality 
 | G12 WARN | Gold content changed since the previous QC run | Expected after a data or rule change (detail says whether the inputs changed). On two runs with the same inputs it's a finding |
 | G06 FAIL | A gold table was built before one of its inputs was rebuilt | Rerun gold in number order after the silver rebuild |
 
+## 3a. Quality registry
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| A QC task stops with `KeyError: <code> is not an active code in public_health.quality.check_registry` | Strict registry (default since 2026-10-21): the script records a code the registry lacks | Add the code to Step 1b of `quality_registry_seed.sql`, the [check catalog](../04-pipeline/quality/quality-check-catalog.md) and the script in one PR; deploy; rerun the job (the setup job reseeds) |
+| A QC task stops with `ValueError: <code> is a <layer> check; this run is <layer>` | The registry holds the code under another layer | Fix the layer in Step 1b of the seed; rerun |
+| `qc_registry` task fails: `check_registry is missing or has the wrong layer for: ...` | Same causes, found after the run; data and QC results are already written | Fix the codes it names in Step 1b of the seed; the next run checks again |
+
 ## 4. Job and workspace
 
 | Symptom | Likely cause | Fix |
@@ -64,10 +72,11 @@ Never fix a failure by editing a silver or gold table by hand, deleting quality 
 | A second run waits in the queue | `max_concurrent_runs: 1` | Expected; the PSGC and HDX loaders allow one writer |
 | Fresh load marked STALE right after loading | Naive timestamps read in another timezone | Timezone-aware UTC is in place since D-54; check custom scripts use it too |
 | `bundle deploy` fails on a variable | `warehouse_id` not set | Set it in `databricks.yml` or pass `--var` |
-| CI fails on `dev` | Known; fixed after submission | See [CI/CD setup](../03-architecture/ci-cd-setup.md), section 6 |
+| CI fails on `dev` | A lint, test, SQL-lint, secrets or hygiene job failed (CI passes on `dev` since 2026-10-21) | Run the local checks in [CI/CD and testing](ci-cd-and-testing.md) and fix what they report |
 
 ## 5. History of updates
 
 | Date | Change |
 |---|---|
 | 2026-10-20 | Page written from the runbook incidents and the layer quality pages |
+| 2026-10-21 | Quality registry section (strict registry, `qc_registry`); CI row updated |
