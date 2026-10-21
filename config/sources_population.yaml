@@ -30,15 +30,11 @@ sources:
       # "(excluding CITY OF ANGELES) 1,234", or "-"). population_silver parses them
       # (VALID / VALID_WITH_NOTE / MISSING) and silver QC S52 / S53 check the result. The
       # current count is B10 fail_count in quality.qc_results (reviewed 2026-10-19).
-      skip_checks:
-        - B02
-        - B03
-        - B06
-        - B08
-        - B09
-        - B11
-        - B12
-        - B14
+      #
+      # No skip_checks (removed 2026-10-21): psgc_population_bronze_qc.py runs only B00, B01,
+      # B04, B05, B07, B10, B13, B15 and B16; the file and sheet checks do not exist in it.
+      # Since D-53 the script rejects override codes it does not know, so listing them here
+      # failed B00 (found on the first run in a new workspace).
 
     # Settings read by psgc_population_silver_qc.py (2026-10-19). Kept apart from the bronze
     # `qc` block above so bronze QC never sees them.
