@@ -1,5 +1,7 @@
 # Silver: diseases
 
+> **Historical implementation note.** The current, authoritative diseases documentation is [the Silver diseases guide](../../../docs/04-pipeline/silver/diseases.md). This file is retained for implementation history; its dated status statements must not be used as current deployment evidence.
+
 This page covers the diseases domain in silver: six built tables, four reference tables, the rules that decide which bronze rows are kept, and what has been run so far. The design source is `diseases-silver-plan.md` (v1.7, 2026-10-09). Facts dated 2026-10-11 or later on this page are newer than the plan and override it.
 
 ## Status
@@ -23,7 +25,7 @@ Nothing on this page has the status "Verified".
 
 ## Sources
 
-Bronze QC for all 16 diseases sources ran on Databricks on 2026-10-07 with 0 FAIL. Silver v1 reads nine of the bronze tables. Details of each source are in `sources_diseases.yaml` and [bronze.md](bronze.md).
+Bronze QC for all 16 diseases sources ran on Databricks on 2026-10-07 with 0 FAIL. Silver v1 reads nine of the bronze tables. Details of each source are in `sources_diseases.yaml` and [the Bronze diseases guide](../../../docs/04-pipeline/bronze/diseases.md).
 
 | Bronze table (`_source_key`) | What it holds | Notes |
 |---|---|---|
@@ -39,7 +41,7 @@ Bronze QC for all 16 diseases sources ran on Databricks on 2026-10-07 with 0 FAI
 | `diseases_fhsis_tb_tpt_bronze`, `diseases_fhsis_tb_treatment_success_bronze` (`doh_fhsis`, YAML entries 17 and 18) | TB preventive treatment (sheet TB-TPT) and treatment success, drug-susceptible and RR/MDR (TSR-DSTB, TSR-MDRTB), by area, 2025 | Public. Same 2025 workbook as `doh_fhsis_tb`. Rows carry their own PSGC code |
 | `diseases_philhealth_claims_hospital_bronze` (`philhealth_foi_claims_hospital`, entry 19) | PhilHealth claims count and amount by admission year, hospital, case-rate package and claim status, 2016 to 2025, 245,405 rows | RESTRICTED (eFOI FOI-REQ-2026-6223, academic use, aggregate only). No PSGC and no facility code |
 | `public_health.silver.facilities_registry_silver` | Facility registry (facilities domain) | Read by `06` to give claims hospitals a `facility_key`. Run facilities silver `01` first |
-| `public_health.silver.geography_silver` | PSGC codes, names and levels | Reference input for the area map builder and for QC checks S49 and S50. See [silver-geography-population.md](silver-geography-population.md) |
+| `public_health.silver.geography_silver` | PSGC codes, names and levels | Reference input for the area map builder and for QC checks S49 and S50. See [the Silver geography guide](../../../docs/04-pipeline/silver/geography.md) |
 
 Seven other diseases bronze tables have no v3 question and are not in silver v1 (plan section 12).
 
@@ -294,7 +296,7 @@ Gold is data model v2 (`gold_v2/`, schema `public_health.test_gold2`): 5 dimensi
 | `source_priority` | seeded from plan section 7 (preferred source per measure, level and grain) |
 | `mart_area_burden_indicator`, `mart_tb_case_study`, `mart_kidney_case_study` | through the tables above (the v1 marts still read v1 names and need a rewrite to v2) |
 
-What gold must do and must not redo (gold design is in [gold-model.md](gold-model.md) and `gold_v2/README.md`):
+What gold must do and must not redo (gold design is in [the Gold overview](../../../docs/04-pipeline/gold/README.md) and `gold_v2/README.md`):
 
 - **Gold computes rates.** Silver holds counts only. Rates use the population domain.
 - **Do not re-classify, de-duplicate or re-map.** Duplicates (F1, F2), non-data rows and unresolved areas are already handled. Use `disease_key` and `area_key` as given.

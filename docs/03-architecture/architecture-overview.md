@@ -1,4 +1,6 @@
 # Architecture overview
+
+Owner: LUNASaan Documentation Team
 Last updated: 2026-10-20
 
 This page shows how the platform works. It covers the layers, where data lives, how the job runs and where checks happen. Read it before any layer page.
@@ -144,7 +146,7 @@ One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public
 | 3. Silver | Geography first; then facilities, diseases, workforce, socioeconomic: `00_reference` → builds → domain QC | the domain gate and geography silver QC |
 | 4. Cross-domain QC | `qc_silver_cross_domain` | every silver QC task |
 | 5. Gold | `gold_01` → dimensions → facts → marts (task key = file name, files in `src/04_gold/{dimension,fact,mart}`); the setup job creates the `gold` schema | cross-domain QC |
-| 6. Gold QC | `qc_gold` (G00–G13), then `qc_registry` validates the check registry against recorded results | `gold_24`, then `qc_gold` |
+| 6. Gold QC | `qc_gold` (G00–G13), then `qc_registry` validates the registry against recorded results | `gold_24`, then `qc_gold` |
 
 **Dependency rule:** a task waits for the tables it reads *and* for the QC of those tables. A FAIL stops everything downstream.
 

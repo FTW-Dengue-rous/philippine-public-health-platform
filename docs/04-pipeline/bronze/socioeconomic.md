@@ -212,4 +212,4 @@ python src/05_quality/bronze/socioeconomic_bronze_qc.py --source_keys psa_povert
 | 1.0 | 2026-10-12 | Consolidated source implementation and verified Bronze QC, counts, metadata and Delta histories. |
 | 1.1 | 2026-10-12 | Aligned to the team's ten-section template; consolidated duplicate evidence and retained superseded ingestion history in one note. Documentation-only change; no ingestion rerun. |
 
-**Related:** `docs/lineage-qc-contract_v1.3.md` · [Socioeconomic Silver](../silver/socioeconomic.md) · `config/sources_socioeconomic.yaml` · `src/02_bronze/socioeconomic_bronze.py` · `src/05_quality/bronze/socioeconomic_bronze_qc.py`.
+**Related:** [Lineage and quality contract](../quality/lineage-and-quality-contract.md) · [Socioeconomic Silver](../silver/socioeconomic.md) · `config/sources_socioeconomic.yaml` · `src/02_bronze/socioeconomic_bronze.py` · `src/05_quality/bronze/socioeconomic_bronze_qc.py`.

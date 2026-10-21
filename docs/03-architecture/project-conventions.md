@@ -1,4 +1,6 @@
 # Project conventions
+Owner: LUNASaan Documentation Team
+
 Last updated: 2026-10-20
 
 The naming, layout and coding rules every file in this repository follows. Follow them for new work; fix old work when you touch it.

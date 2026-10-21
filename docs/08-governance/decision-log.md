@@ -1,5 +1,7 @@
 # Decision log
 
+Owner: LUNASaan Documentation Team
+
 Every major choice of the project, with an ID, a date and a reason. Business and technical decisions are both here, plus the questions still open. [Architecture decisions](../03-architecture/architecture-decisions.md) (AD-xx) summarise the technical ones and link back by ID; when the two disagree, this log wins.
 
 Rules:

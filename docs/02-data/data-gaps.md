@@ -20,7 +20,7 @@ Limits on how to *read* the data are in [limitations and recommendations](../01-
 | G-06 | Travel time or road network | Real access distance | Straight-line distance | Road network routing (OSM) |
 | G-07 | Monthly or weekly data for TB, pneumonia, heart disease | Seasonality and peaks outside dengue | Yearly views only | FHSIS monthly reports or FOI |
 | G-08 | 2024 regional all-cause death total not confirmed | N1 (cause-of-death shares by area) | PSA deaths file used as delivered; regional totals not independently confirmed | Confirm the 2024 PSA deaths file has complete regional totals |
-| G-09 | Validated facility coordinates for distance analysis | CON1 (distance to care) | Registry (NHFR + HFSRB) has no coordinates. OSM healthsite coordinates exist in bronze but `facilities_osm_point_silver` is not built, so no geocoded facility source is available. Distances use area centroids, not facility locations | Build OSM healthsite silver from the HDX GeoJSON; validate coordinates against the registry |
+| G-09 | Validated facility coordinates for distance analysis | CON1 (distance to care) | Registry (NHFR + HFSRB) has no coordinates. The bundle job built `facilities_osm_point_silver` from HDX Healthsites (16,030 published rows; 2 rows quarantined). These crowd-sourced points support straight-line distance and map context only; they do not validate, replace, or count the regulated facility registries. | Validate OSM points against the registry before using them for facility-level conclusions; retain the straight-line-distance limitation. |
 
 ## 2. Gaps in coverage
 
@@ -63,7 +63,7 @@ Limits on how to *read* the data are in [limitations and recommendations](../01-
 | COVID datasets | Could overestimate facility need; stretch only |
 | Candidates found 2026-10-07 (FHSIS hypertension, NCD programme tables, PSA SDG tables, WHO vaccine-preventable disease cases) | Not decided; outside v3 questions |
 | Patient-level clinical data | Out of scope: all sources are aggregated or facility-level. The one restricted release with daily counts (Davao hospital pneumonia) stays in silver and is not redistributed ([scope](../01-context/scope.md)) |
-| HDX healthsites (`facilities_hdx_healthsites_bronze`, 16,032 rows) | Bronze loaded; `facilities_osm_point_silver` deferred — the silver transformation that extracts coordinates is not built in this workspace |
+| HDX healthsites (`facilities_hdx_healthsites_bronze`, 16,032 rows) | Bronze loaded; `facilities_osm_point_silver` built by the bundle job: 16,030 published rows and 2 quarantined rows. It is a map/distance reference, never a facility count. |
 
 ## 5. Priority to close
 
@@ -81,5 +81,5 @@ The data granularity the team asks publishers for is in [limitations and recomme
 | Date | Change |
 |---|---|
 | 2026-10-19 | Page written from the silver and gold limits, decision log and FOI notes |
-| 2026-10-21 | Integration pass: added G-08 (2024 regional deaths), G-09 (facility coordinates), G-22 (S2 cohort), G-23 (BHS municipality), G-24 (PSA national series to 2015); labelled BQ2 as previous scope in G-01; added patient-level clinical data and OSM silver deferral to section 4; added Owner/Last updated metadata and link to question framework. Corrected: `facilities_osm_point_silver` is not built (a supplied draft claimed it was built 2026-10-18) |
+| 2026-10-21 | Integration pass: added G-08 (2024 regional deaths), G-09 (facility coordinates), G-22 (S2 cohort), G-23 (BHS municipality), and G-24 (PSA national series to 2015); labelled BQ2 as previous scope in G-01; added patient-level clinical data and clarified that the completed OSM silver build is a map/distance reference rather than a registry count. |
 | 2026-10-20 | Links point to the limitations and recommendations page (the old "Assumptions and limitations" page was split) |

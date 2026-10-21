@@ -1,5 +1,7 @@
 # CI/CD setup
 
+Owner: LUNASaan Documentation Team
+
 How code moves from a branch to a running Databricks job: the checks on every pull request, how the job is deployed, and what is not automated yet.
 
 Status date: 2026-10-21. Items marked **confirm** need a check against `.github/workflows/` and `databricks.yml` in the repository.

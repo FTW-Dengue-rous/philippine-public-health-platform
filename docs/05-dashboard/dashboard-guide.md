@@ -1,3 +1,7 @@
 # Dashboard guide
 
-The maintained dashboard guide is [dashboard/dashboard-guide.md](../../dashboard/dashboard-guide.md). It covers the eight pages, data sources, interpretation limits, freshness checks, and troubleshooting in one authoritative location.
+Owner: LUNASaan Documentation Team
+
+Last updated: 2026-10-21
+
+Coverage: Per page: question answered, visuals, filters, query or dataset, definitions, refresh

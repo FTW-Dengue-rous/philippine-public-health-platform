@@ -1,6 +1,10 @@
 # Final runs (2026-10-21)
 
-Three full runs of the final pipeline job on the same inputs. They are the evidence that the pipeline is complete, passes its own QC, and is idempotent: bronze does not reload, and silver and gold rebuild to the same content.
+Owner: LUNASaan Documentation Team
+
+Last updated: 2026-10-21
+
+This branch records two full runs of the pipeline job on unchanged inputs. They show that the pipeline passes its recorded QC and that the second rerun reproduced the recorded Gold content. A third run is required before claiming three-run idempotency.
 
 Status date: 2026-10-21. All three runs done; every idempotency check passed.
 
@@ -16,7 +20,7 @@ Method and queries: [evidence guide](../README.md), sections 2 and 3, and [`evid
 | 2 | `26759964775689` | Jemma | 2026-10-21 10:16 – 11:16 | Succeeded. 0 FAIL; G12 PASS on all 9 gold tables; bronze loaded nothing; same row counts; `qc_registry` passed | [run-2](run-2/run-2.md) |
 | 3 | `996544156339205` | Jemma | 2026-10-21 11:28 – 12:32 | Succeeded. 0 FAIL; G12 PASS on all 9 gold tables; bronze loaded nothing; same row counts; `qc_registry` passed | [run-3](run-3/run-3.md) |
 
-All three runs used the bundle job `[dev jemmalyn_santiago] ph-public-health-pipeline` (job id `587047839768584`), deployed from `dev`.
+**Provenance captured:** both records identify the Databricks job, job run ID, timestamps, and evidence-query outputs. **Provenance not captured:** the immutable Git commit SHA and bundle deployment ID. Do not describe these records as proof of an exact source revision until those identifiers are recorded.
 
 **Code.** Runs 2 and 3 ran the same deployment. Between runs 1 and 2, only QC metadata changed: the job YAML (new last task `qc_registry`), setup YAML comments, the registry seed and the new `quality_registry_check.sql`. No build or QC script changed, so the data rules are the same in all three runs. Strict registry (`strict_registry=True`) was merged into `dev` after run 3, so none of these runs used it.
 
@@ -39,11 +43,17 @@ All three runs used the bundle job `[dev jemmalyn_santiago] ph-public-health-pip
 
 **Conclusion:** on the same inputs and code, the pipeline loads nothing new in bronze and rebuilds silver and gold to the same row counts and the same gold content. QC has 0 FAIL in every layer across all three runs. The I1, I2 and I3 screenshots are in `run-3/`.
 
-## 4. History of updates
+## 4. Evidence still required
+
+- Record the Git commit SHA and bundle deployment ID for each evidence run.
+- Capture the `bronze_geography` and `bronze_admin_boundaries` task outputs that show `unchanged`, with zero inserts and updates.
+- Run and record run 3 before making a three-run idempotency claim.
+- After enabling `strict_registry=True`, capture one complete run on that deployment. It validates the current configuration; it must not be retroactively counted as one of these comparable runs if code or configuration changed.
+
+## 5. History of updates
 
 | Date | Change |
 |---|---|
 | 2026-10-21 | Folder created; run 1 recorded; run `26759964775689` (10:16) listed as candidate run 2 |
 | 2026-10-21 | Run 2 recorded: it meets the conditions and counts as run 2. Every idempotency check passed |
-| 2026-10-21 | Run 3 recorded; comparison complete: every idempotency check passed |
-| 2026-10-21 | Page tidied after run 3: planning text (run-2 options, "before run 3" rules) replaced by how the runs were kept comparable; code note states the deployment and that strict registry came after run 3 |
+| 2026-10-21 | Added explicit provenance and remaining-evidence requirements; the records do not claim evidence that was not captured. |
