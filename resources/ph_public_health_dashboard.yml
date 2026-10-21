@@ -1,6 +1,7 @@
 # AI/BI (Lakeview) dashboard on the gold marts and default views (public_health.gold).
 # Deployed by the bundle from dashboard/Philippine Public Health Platform.lvdash.json:
-# 8 pages (0. National Overview to 7. About the data) and 46 datasets, every one reading
+# 8 pages (0. National Overview to 7. About the data; 5 and 6 are drafts excluded from the
+# published view, so viewers see 6) and 46 datasets, every one reading
 # public_health.gold (switched from public_health.test_gold2 on 2026-10-21; backup,
 # "for redesign" and duplicate pages and 18 unused datasets removed the same day).
 #

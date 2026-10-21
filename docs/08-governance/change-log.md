@@ -10,6 +10,7 @@ Status date: 2026-10-21. Add a row for every full run and every change that alte
 
 | Date | Run | Result | Evidence |
 |---|---|---|---|
+| 2026-10-21 | Full run in a new, empty workspace (job `182700471913312`, run `908246813677292`), repaired once after the `sources_population.yaml` fix | Every source loaded, 0 failed; all 28 silver and gold tables built; G12 first fingerprint on 9 of 9; 0 FAIL in every layer; gold QC 118 checks, 116 PASS, 2 WARN (G13, G07); row counts equal to the final runs | [New-workspace run](../06-evidence/2026-10-21-empty-workspace-run/README.md) |
 | 2026-10-21 | Final runs 1–3 of the bundle job on the same inputs (runs `186099985728312`, `26759964775689`, `996544156339205`) | Run 1: 0 FAIL; gold QC 118 checks, 7 WARN (G12 on 5 tables once, G13, G07). Run 2: 0 FAIL; G12 PASS on all 9 gold tables; bronze loaded nothing; same row counts for 28 tables; `qc_registry` passed. Run 3: the same as run 2 (G12 PASS on 9 of 9; 28 of 28 tables same count; 40 of 40 sources not reloaded) | [Final runs](../06-evidence/2026-10-21-final-runs/README.md); [quality results](../04-pipeline/quality/quality-results.md), section 4.2 |
 | 2026-10-20 | Workforce rebuild (`00` → `03`) with the Zamboanga Sibugay override. Then `workforce_silver_qc.py` and `silver_cross_domain_qc.py` | Headcount 28,080, denominator 3,024. Workforce QC 0 FAIL. Cross-domain 68 checks, 0 FAIL, 10 WARN (`14f27bc1-8c3f-48dd-aa5c-8a6faddd2ed4`) | [Silver quality checks](../04-pipeline/silver/silver-quality-checks.md), section 14 |
 | 2026-10-19 | Silver rebuild with the rule 2a and D-44 revisions, every domain and QC | Cross-domain 68 checks, 0 FAIL, 11 WARN (`e56cdd87-64bd-4686-9f32-74ff95622ed6`). Diseases QC 143 checks, 0 FAIL, 7 WARN. Population QC 19 checks, 0 FAIL, 5 WARN. `silver_rev_d44_verify.sql` steps 1–4 passed | Silver quality checks, section 14 |
@@ -58,3 +59,4 @@ Status date: 2026-10-21. Add a row for every full run and every change that alte
 | 2026-10-20 | Gold revision, job YAML and gold/quality docs rows added |
 | 2026-10-21 | CI fix row added |
 | 2026-10-21 | Final runs row (replaces the 2026-10-20 "to record" row); registry and strict-mode rows |
+| 2026-10-21 | New-workspace run row |
