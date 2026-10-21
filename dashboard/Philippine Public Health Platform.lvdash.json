@@ -1,11 +1,11 @@
-{
+﻿{
   "datasets": [
     {
       "name": "p1_top_death_causes",
       "displayName": "P1 Top causes of registered deaths 2023–2024 (PSA)",
       "queryLines": [
         "-- Top 10 causes of registered deaths, Philippines, 2023 vs 2024.\n",
-        "-- Source: public_health.test_gold2.v_disease_metric_totals\n",
+        "-- Source: public_health.gold.v_disease_metric_totals\n",
         "--   source_dataset = 'psa_deaths_region_annual', geographic_level = 'country'\n",
         "--   (one country roll-up row per cause per year; is_complete_year = true for both years).\n",
         "-- Level: PSA tabulation-list causes only.\n",
@@ -109,14 +109,14 @@
         "  y.year"
       ],
       "catalog": "public_health",
-      "schema": "test_gold2"
+      "schema": "gold"
     },
     {
       "name": "p1_ihme_burden",
       "displayName": "P1 IHME modelled burden by province (latest year)",
       "queryLines": [
         "-- Modelled burden (IHME GBD) per province and NCR, latest available year (2023).\n",
-        "-- Source: public_health.test_gold2.v_disease_metric_totals, source_dataset = 'ihme_gbd'.\n",
+        "-- Source: public_health.gold.v_disease_metric_totals, source_dataset = 'ihme_gbd'.\n",
         "--   is_preferred_source = true keeps province rows + the NCR region row and excludes\n",
         "--   superseded 'historical_province' rows, so provinces are never double-counted.\n",
         "--   geographic_level IN ('province', 'region'): the only preferred region rows are NCR.\n",
@@ -164,14 +164,14 @@
         "  v.value DESC"
       ],
       "catalog": "public_health",
-      "schema": "test_gold2"
+      "schema": "gold"
     },
     {
       "name": "p1_dengue_seasonality",
       "displayName": "P1 Dengue seasonality by month (DOH FOI)",
       "queryLines": [
         "-- Dengue cases by month, Philippines, 2021–2025.\n",
-        "-- Source: public_health.test_gold2.v_disease_metric_totals, source_dataset = 'doh_foi_dengue'.\n",
+        "-- Source: public_health.gold.v_disease_metric_totals, source_dataset = 'doh_foi_dengue'.\n",
         "--   Only region-level monthly rows exist in this source (no country row), so the national\n",
         "--   total is the sum over all regions — nothing is invented.\n",
         "--   period_label format 'YYYY-Mnn' (calendar month) → month number parsed from position 7-8.\n",
@@ -210,14 +210,14 @@
         "  month_num"
       ],
       "catalog": "public_health",
-      "schema": "test_gold2"
+      "schema": "gold"
     },
     {
       "name": "p1_philhealth_claims",
       "displayName": "P1 PhilHealth claims paid by province (latest full year)",
       "queryLines": [
         "-- PhilHealth claims paid by province, latest full year (2025).\n",
-        "-- Source: public_health.test_gold2.v_disease_metric_totals,\n",
+        "-- Source: public_health.gold.v_disease_metric_totals,\n",
         "--   source_dataset = 'philhealth_foi_claims_hospital', metric_name = 'claims_paid'.\n",
         "--   coverage_basis = 'facility_location_province_excl_huc': claims are attributed to the\n",
         "--   hospital's province (highly urbanized cities are separate PhilHealth areas), NOT the\n",
@@ -269,7 +269,7 @@
         "  v.value DESC"
       ],
       "catalog": "public_health",
-      "schema": "test_gold2"
+      "schema": "gold"
     },
     {
       "name": "kpi_need",
@@ -413,7 +413,7 @@
         "      ON p.tile = c.tile"
       ],
       "catalog": "public_health",
-      "schema": "test_gold2"
+      "schema": "gold"
     },
     {
       "name": "kpi_access",
@@ -424,7 +424,7 @@
         "  'Localities with no hospital recorded' AS label,\n",
         "  count(*) AS value\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_locality_service_presence\n",
+        "  public_health.gold.mart_locality_service_presence\n",
         "WHERE\n",
         "  NOT has_hospital_recorded\n",
         "UNION ALL\n",
@@ -433,7 +433,7 @@
         "  'Residents in them (census 2024)',\n",
         "  sum(population)\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_locality_service_presence\n",
+        "  public_health.gold.mart_locality_service_presence\n",
         "WHERE\n",
         "  NOT has_hospital_recorded\n",
         "UNION ALL\n",
@@ -442,7 +442,7 @@
         "  'Localities with no licensed primary care recorded',\n",
         "  count(*)\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_locality_service_presence\n",
+        "  public_health.gold.mart_locality_service_presence\n",
         "WHERE\n",
         "  NOT has_licensed_primary_care_recorded\n",
         "UNION ALL\n",
@@ -451,7 +451,7 @@
         "  'Residents in them (census 2024)',\n",
         "  sum(population)\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_locality_service_presence\n",
+        "  public_health.gold.mart_locality_service_presence\n",
         "WHERE\n",
         "  NOT has_licensed_primary_care_recorded"
       ]
@@ -468,7 +468,7 @@
         "  population_per_hospital_bed,\n",
         "  population_per_licensed_primary_care\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_locality_service_presence\n",
+        "  public_health.gold.mart_locality_service_presence\n",
         "WHERE\n",
         "  hospitals_recorded > 0\n",
         "ORDER BY\n",
@@ -486,7 +486,7 @@
         "    disease_name,\n",
         "    sum(value) AS claims_paid\n",
         "  FROM\n",
-        "    public_health.test_gold2.v_disease_metric_totals\n",
+        "    public_health.gold.v_disease_metric_totals\n",
         "  WHERE\n",
         "    metric_name = 'claims_paid'\n",
         "    AND coverage_basis = 'facility_location_province_excl_huc'\n",
@@ -501,7 +501,7 @@
         "    area_key,\n",
         "    value AS population\n",
         "  FROM\n",
-        "    public_health.test_gold2.v_area_indicator_latest\n",
+        "    public_health.gold.v_area_indicator_latest\n",
         "  WHERE\n",
         "    indicator_name = 'population'\n",
         "    AND indicator_category = 'census'\n",
@@ -517,7 +517,7 @@
         "  c\n",
         "    JOIN p\n",
         "      ON p.area_key = c.area_key\n",
-        "    JOIN public_health.test_gold2.dim_geography AS g\n",
+        "    JOIN public_health.gold.dim_geography AS g\n",
         "      ON g.area_key = c.area_key\n",
         "WHERE\n",
         "  p.population > 0"
@@ -550,8 +550,8 @@
         "    ELSE 'Hospital recorded'\n",
         "  END AS status\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_locality_service_presence AS l\n",
-        "    JOIN public_health.test_gold2.dim_geography AS g\n",
+        "  public_health.gold.mart_locality_service_presence AS l\n",
+        "    JOIN public_health.gold.dim_geography AS g\n",
         "      ON g.area_key = l.area_key\n",
         "WHERE\n",
         "  g.center_lat IS NOT NULL"
@@ -569,7 +569,7 @@
         "      ELSE FLOOR(nearest_hospital_locality_km / 10) * 10\n",
         "    END AS bin_floor\n",
         "  FROM\n",
-        "    public_health.test_gold2.fact_area_access\n",
+        "    public_health.gold.fact_area_access\n",
         "  WHERE\n",
         "    nearest_hospital_locality_km IS NOT NULL\n",
         "  UNION ALL\n",
@@ -580,7 +580,7 @@
         "      ELSE FLOOR(nearest_level3_locality_km / 10) * 10\n",
         "    END\n",
         "  FROM\n",
-        "    public_health.test_gold2.fact_area_access\n",
+        "    public_health.gold.fact_area_access\n",
         "  WHERE\n",
         "    nearest_level3_locality_km IS NOT NULL\n",
         ")\n",
@@ -619,7 +619,7 @@
         "    s.lvl AS hospital_level,\n",
         "    s.beds_lvl\n",
         "  FROM\n",
-        "    public_health.test_gold2.mart_area_service_profile\n",
+        "    public_health.gold.mart_area_service_profile\n",
         "    LATERAL VIEW\n",
         "      stack(3, 'Level 1', beds_level1, 'Level 2', beds_level2, 'Level 3', beds_level3) s\n",
         "      AS lvl, beds_lvl\n",
@@ -732,7 +732,7 @@
         "    1\n",
         "  ) AS government_bed_share_pct\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_area_service_profile\n",
+        "  public_health.gold.mart_area_service_profile\n",
         "WHERE\n",
         "  poverty_band IS NOT NULL\n",
         "  AND population > 0\n",
@@ -762,7 +762,7 @@
         "    END\n",
         "  ) AS rank_equity_heavy\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_area_priority\n",
+        "  public_health.gold.mart_area_priority\n",
         "WHERE\n",
         "  burden_indicator_key = 'tb_all_forms:cases:doh_fhsis'\n",
         "  AND eligibility_config = 'complete_only'\n",
@@ -789,7 +789,7 @@
         "  indicators_available,\n",
         "  missing_indicators\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_area_priority\n",
+        "  public_health.gold.mart_area_priority\n",
         "WHERE\n",
         "  burden_indicator_key = 'tb_all_forms:cases:doh_fhsis'\n",
         "  AND weight_set = 'equal'\n",
@@ -819,7 +819,7 @@
         "  round(100.0 * count_if(NOT value_available) / count(*), 1) AS pct_missing,\n",
         "  array_join(array_sort(collect_set(exclusion_reason)), '; ') AS reasons\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_area_evidence\n",
+        "  public_health.gold.mart_area_evidence\n",
         "GROUP BY\n",
         "  1,\n",
         "  2\n",
@@ -839,7 +839,7 @@
         "  beds_per_10k,\n",
         "  population\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_area_service_profile\n",
+        "  public_health.gold.mart_area_service_profile\n",
         "WHERE\n",
         "  poverty_incidence_pct IS NOT NULL\n",
         "  AND beds_per_10k IS NOT NULL\n",
@@ -855,7 +855,7 @@
         "    area_key,\n",
         "    sum(value) AS claims_paid\n",
         "  FROM\n",
-        "    public_health.test_gold2.v_disease_metric_totals\n",
+        "    public_health.gold.v_disease_metric_totals\n",
         "  WHERE\n",
         "    metric_name = 'claims_paid'\n",
         "    AND coverage_basis = 'facility_location_province_excl_huc'\n",
@@ -872,7 +872,7 @@
         "  k.population,\n",
         "  round(c.claims_paid / k.population * 100000, 1) AS dialysis_claims_per_100k\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_kidney_case_study AS k\n",
+        "  public_health.gold.mart_kidney_case_study AS k\n",
         "    JOIN c\n",
         "      ON c.area_key = k.kidney_unit_key\n",
         "WHERE\n",
@@ -890,10 +890,10 @@
         "  t.month,\n",
         "  f.value AS cases\n",
         "FROM\n",
-        "  public_health.test_gold2.v_disease_metric_totals AS f\n",
-        "    JOIN public_health.test_gold2.dim_geography AS g\n",
+        "  public_health.gold.v_disease_metric_totals AS f\n",
+        "    JOIN public_health.gold.dim_geography AS g\n",
         "      ON g.area_key = f.area_key\n",
-        "    JOIN public_health.test_gold2.dim_date AS t\n",
+        "    JOIN public_health.gold.dim_date AS t\n",
         "      ON t.date_key = f.date_key\n",
         "WHERE\n",
         "  f.source_dataset = 'doh_foi_dengue'\n",
@@ -923,7 +923,7 @@
         "      t.*,\n",
         "      ntile(5) OVER (ORDER BY tb_notifications_per_100k_2025, area_key) AS tb_rate_fifth\n",
         "    FROM\n",
-        "      public_health.test_gold2.mart_tb_case_study AS t\n",
+        "      public_health.gold.mart_tb_case_study AS t\n",
         "    WHERE\n",
         "      comparison_eligible\n",
         "  ) AS r\n",
@@ -946,7 +946,7 @@
         "  tpt_coverage_pct,\n",
         "  ds_treatment_success_rate_pct\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_tb_case_study\n",
+        "  public_health.gold.mart_tb_case_study\n",
         "WHERE\n",
         "  comparison_eligible\n",
         "ORDER BY\n",
@@ -974,7 +974,7 @@
         "  occupancy_value_status,\n",
         "  repeat_high_burden\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_dengue_peak_capacity\n",
+        "  public_health.gold.mart_dengue_peak_capacity\n",
         "WHERE\n",
         "  source_dataset = 'hdx_dengue'\n",
         "  AND comparison_eligible\n",
@@ -994,7 +994,7 @@
         "  license,\n",
         "  used_in\n",
         "FROM\n",
-        "  public_health.test_gold2.dim_data_source"
+        "  public_health.gold.dim_data_source"
       ]
     },
     {
@@ -1008,10 +1008,10 @@
         "  v.bor_reporting_record_count,\n",
         "  v.value_status\n",
         "FROM\n",
-        "  public_health.test_gold2.v_facility_capacity_totals AS v\n",
-        "    JOIN public_health.test_gold2.dim_geography AS g\n",
+        "  public_health.gold.v_facility_capacity_totals AS v\n",
+        "    JOIN public_health.gold.dim_geography AS g\n",
         "      ON g.area_key = v.area_key\n",
-        "    JOIN public_health.test_gold2.dim_date AS t\n",
+        "    JOIN public_health.gold.dim_date AS t\n",
         "      ON t.date_key = v.date_key\n",
         "WHERE\n",
         "  v.capacity_basis = 'occupancy_report'\n",
@@ -1025,7 +1025,6 @@
         "SELECT\n",
         "  table_name,\n",
         "  layer,\n",
-        "  model,\n",
         "  row_count,\n",
         "  qc_status,\n",
         "  qc_pass,\n",
@@ -1034,9 +1033,9 @@
         "  is_fresh,\n",
         "  finished_at\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_evidence_readiness\n",
+        "  public_health.gold.mart_evidence_readiness\n",
         "WHERE\n",
-        "  schema_name IN ('silver', 'test_gold2')"
+        "  schema_name IN ('silver', 'gold')"
       ]
     },
     {
@@ -1045,19 +1044,19 @@
       "queryLines": [
         "SELECT\n",
         "  'gold_tables' AS tile,\n",
-        "  'Gold tables built (test_gold2)' AS label,\n",
+        "  'Gold tables built' AS label,\n",
         "  count(*) AS value\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_evidence_readiness\n",
+        "  public_health.gold.mart_evidence_readiness\n",
         "WHERE\n",
-        "  schema_name = 'test_gold2'\n",
+        "  schema_name = 'gold'\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'fresh_tables',\n",
         "  'Fresh in latest build',\n",
         "  count(*)\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_evidence_readiness\n",
+        "  public_health.gold.mart_evidence_readiness\n",
         "WHERE\n",
         "  is_fresh\n",
         "UNION ALL\n",
@@ -1066,7 +1065,7 @@
         "  'Silver tables with QC FAIL',\n",
         "  count(*)\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_evidence_readiness\n",
+        "  public_health.gold.mart_evidence_readiness\n",
         "WHERE\n",
         "  schema_name = 'silver'\n",
         "  AND qc_status = 'FAIL'"
@@ -1083,7 +1082,7 @@
         "  population,\n",
         "  dialysis_facilities\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_kidney_case_study\n",
+        "  public_health.gold.mart_kidney_case_study\n",
         "WHERE\n",
         "  comparison_eligible"
       ]
@@ -1097,7 +1096,7 @@
         "  coalesce(exclusion_reason, 'comparable') AS status,\n",
         "  count(*) AS units\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_kidney_case_study\n",
+        "  public_health.gold.mart_kidney_case_study\n",
         "GROUP BY\n",
         "  unit_basis,\n",
         "  2\n",
@@ -1113,7 +1112,7 @@
         "  SELECT\n",
         "    sum(value) AS all_causes\n",
         "  FROM\n",
-        "    public_health.test_gold2.v_disease_metric_totals\n",
+        "    public_health.gold.v_disease_metric_totals\n",
         "  WHERE\n",
         "    source_dataset = 'psa_deaths_region_annual'\n",
         "    AND metric_name = 'deaths'\n",
@@ -1130,7 +1129,7 @@
         "    disease_code,\n",
         "    sum(value) AS deaths\n",
         "  FROM\n",
-        "    public_health.test_gold2.v_disease_metric_totals\n",
+        "    public_health.gold.v_disease_metric_totals\n",
         "  WHERE\n",
         "    source_dataset = 'psa_deaths_region_annual'\n",
         "    AND metric_name = 'deaths'\n",
@@ -1212,7 +1211,7 @@
         "  quintile,\n",
         "  exclusion_reason\n",
         "FROM\n",
-        "  public_health.test_gold2.mart_area_burden_indicator\n",
+        "  public_health.gold.mart_area_burden_indicator\n",
         "WHERE\n",
         "  source_dataset = 'ihme_gbd'"
       ],
@@ -1233,7 +1232,7 @@
       "name": "ov_facility_level",
       "displayName": "OV Hospitals and beds by level (registry)",
       "config": {
-        "source": "public_health.test_gold2.dim_facility",
+        "source": "public_health.gold.dim_facility",
         "measures": [
           {
             "name": "hospitals",
@@ -1262,7 +1261,7 @@
       "name": "ov_population",
       "displayName": "OV Population tiles (2024 census)",
       "config": {
-        "source": "SELECT 'total_population_2024' AS tile, SUM(population) AS value, NULL AS year, NULL AS source_key\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE population IS NOT NULL\nUNION ALL\nSELECT 'provinces_null_population', COUNT(*), NULL, NULL\nFROM public_health.test_gold2.mart_base_planning_unit\nWHERE unit_level = 'province' AND population IS NULL\nUNION ALL\nSELECT 'national_all_cause_deaths', MAX(v.value), MAX(v.year), MAX(v.source_dataset)\nFROM public_health.test_gold2.v_disease_metric_totals v\nWHERE v.source_dataset = 'psa_deaths_region_annual'\n  AND v.metric_name = 'deaths'\n  AND v.disease_code = 'all_causes'\n  AND v.geographic_level = 'country'\n  AND v.value_status = 'ok'\n  AND v.year = (\n    SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n    WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n      AND disease_code = 'all_causes' AND geographic_level = 'country' AND value_status = 'ok'\n  )",
+        "source": "SELECT 'total_population_2024' AS tile, SUM(population) AS value, NULL AS year, NULL AS source_key\nFROM public_health.gold.mart_locality_service_presence\nWHERE population IS NOT NULL\nUNION ALL\nSELECT 'provinces_null_population', COUNT(*), NULL, NULL\nFROM public_health.gold.mart_base_planning_unit\nWHERE unit_level = 'province' AND population IS NULL\nUNION ALL\nSELECT 'national_all_cause_deaths', MAX(v.value), MAX(v.year), MAX(v.source_dataset)\nFROM public_health.gold.v_disease_metric_totals v\nWHERE v.source_dataset = 'psa_deaths_region_annual'\n  AND v.metric_name = 'deaths'\n  AND v.disease_code = 'all_causes'\n  AND v.geographic_level = 'country'\n  AND v.value_status = 'ok'\n  AND v.year = (\n    SELECT MAX(year) FROM public_health.gold.v_disease_metric_totals\n    WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n      AND disease_code = 'all_causes' AND geographic_level = 'country' AND value_status = 'ok'\n  )",
         "measures": [
           {
             "name": "value",
@@ -1293,7 +1292,7 @@
       "name": "ov_workforce_10k",
       "displayName": "OV Doctors and nurses per 10k",
       "config": {
-        "source": "WITH latest AS (\n  SELECT MAX(d.year) AS yr\n  FROM public_health.test_gold2.fact_workforce_capacity f\n  JOIN public_health.test_gold2.dim_date d ON d.date_key = f.date_key\n  WHERE f.source_role = 'preferred' AND f.analysis_eligible\n),\nw AS (\n  SELECT g.planning_unit_key,\n         CASE\n           WHEN LOWER(f.profession_name) LIKE '%doctor%' THEN 'Doctors'\n           WHEN LOWER(f.profession_name) LIKE '%nurse%' THEN 'Nurses'\n         END AS profession_label,\n         SUM(f.headcount_total) AS headcount\n  FROM public_health.test_gold2.fact_workforce_capacity f\n  JOIN public_health.test_gold2.dim_date d ON d.date_key = f.date_key\n  JOIN public_health.test_gold2.dim_geography g ON g.area_key = f.area_key\n  CROSS JOIN latest l\n  WHERE f.source_role = 'preferred' AND f.analysis_eligible AND d.year = l.yr\n    AND (LOWER(f.profession_name) LIKE '%doctor%' OR LOWER(f.profession_name) LIKE '%nurse%')\n  GROUP BY g.planning_unit_key, 2\n),\nprov AS (\n  SELECT p.area_name, w.profession_label, w.headcount, p.population\n  FROM w\n  JOIN public_health.test_gold2.mart_base_planning_unit p\n    ON p.planning_unit_key = w.planning_unit_key AND p.population > 0\n),\nnat AS (\n  SELECT 'NATIONAL' AS area_name, profession_label, SUM(headcount) AS headcount, SUM(population) AS population\n  FROM prov GROUP BY profession_label\n)\nSELECT area_name, profession_label, headcount, population FROM prov\nUNION ALL\nSELECT area_name, profession_label, headcount, population FROM nat",
+        "source": "WITH latest AS (\n  SELECT MAX(d.year) AS yr\n  FROM public_health.gold.fact_workforce_capacity f\n  JOIN public_health.gold.dim_date d ON d.date_key = f.date_key\n  WHERE f.source_role = 'preferred' AND f.analysis_eligible\n),\nw AS (\n  SELECT g.planning_unit_key,\n         CASE\n           WHEN LOWER(f.profession_name) LIKE '%doctor%' THEN 'Doctors'\n           WHEN LOWER(f.profession_name) LIKE '%nurse%' THEN 'Nurses'\n         END AS profession_label,\n         SUM(f.headcount_total) AS headcount\n  FROM public_health.gold.fact_workforce_capacity f\n  JOIN public_health.gold.dim_date d ON d.date_key = f.date_key\n  JOIN public_health.gold.dim_geography g ON g.area_key = f.area_key\n  CROSS JOIN latest l\n  WHERE f.source_role = 'preferred' AND f.analysis_eligible AND d.year = l.yr\n    AND (LOWER(f.profession_name) LIKE '%doctor%' OR LOWER(f.profession_name) LIKE '%nurse%')\n  GROUP BY g.planning_unit_key, 2\n),\nprov AS (\n  SELECT p.area_name, w.profession_label, w.headcount, p.population\n  FROM w\n  JOIN public_health.gold.mart_base_planning_unit p\n    ON p.planning_unit_key = w.planning_unit_key AND p.population > 0\n),\nnat AS (\n  SELECT 'NATIONAL' AS area_name, profession_label, SUM(headcount) AS headcount, SUM(population) AS population\n  FROM prov GROUP BY profession_label\n)\nSELECT area_name, profession_label, headcount, population FROM prov\nUNION ALL\nSELECT area_name, profession_label, headcount, population FROM nat",
         "measures": [
           {
             "name": "headcount",
@@ -1339,7 +1338,7 @@
       "name": "ov_top_cause",
       "displayName": "OV Top cause of death (latest)",
       "config": {
-        "source": "WITH base AS (\n  SELECT disease_name, SUM(value) AS deaths\n  FROM public_health.test_gold2.v_disease_metric_totals\n  WHERE source_dataset = 'psa_deaths_region_annual'\n    AND metric_name = 'deaths'\n    AND geographic_level = 'country'\n    AND value_status = 'ok'\n    AND disease_code <> 'all_causes'\n    AND disease_code NOT IN (\n      'psa_1_001', 'psa_1_026', 'psa_1_048', 'psa_1_051', 'psa_1_055',\n      'psa_1_058', 'psa_1_062', 'psa_1_063', 'psa_1_064', 'psa_1_072',\n      'psa_1_078', 'psa_1_082', 'psa_1_083', 'psa_1_084', 'psa_1_087',\n      'psa_1_092', 'psa_1_093', 'psa_1_094', 'psa_1_095'\n    )\n    AND disease_code NOT RLIKE '^psa_1_[0-9]{3}[a-z]$'\n    AND disease_code NOT IN (\n      'psa_covid19_vaccine_adverse_effects', 'psa_covid19_virus_identified',\n      'psa_covid19_virus_not_identified', 'psa_mis_covid19', 'psa_post_covid19_condition'\n    )\n    AND year = (\n      SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n      WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n        AND geographic_level = 'country' AND value_status = 'ok' AND disease_code = 'all_causes'\n    )\n  GROUP BY disease_name\n)\nSELECT v.disease_name, v.deaths,\n       (SELECT value FROM public_health.test_gold2.v_disease_metric_totals\n        WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n          AND disease_code = 'all_causes' AND geographic_level = 'country' AND value_status = 'ok'\n          AND year = (\n            SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n            WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n              AND disease_code = 'all_causes' AND geographic_level = 'country' AND value_status = 'ok'\n          )) AS deaths_all_causes,\n       ROW_NUMBER() OVER (ORDER BY v.deaths DESC) = 1 AS is_top_cause,\n       w.year, w.source_dataset AS source_key\nFROM base v\nJOIN (\n  SELECT disease_name, MAX(year) AS year, MAX(source_dataset) AS source_dataset\n  FROM public_health.test_gold2.v_disease_metric_totals\n  WHERE source_dataset = 'psa_deaths_region_annual'\n    AND metric_name = 'deaths' AND geographic_level = 'country'\n    AND value_status = 'ok' AND disease_code <> 'all_causes'\n    AND disease_code NOT IN (\n      'psa_1_001', 'psa_1_026', 'psa_1_048', 'psa_1_051', 'psa_1_055',\n      'psa_1_058', 'psa_1_062', 'psa_1_063', 'psa_1_064', 'psa_1_072',\n      'psa_1_078', 'psa_1_082', 'psa_1_083', 'psa_1_084', 'psa_1_087',\n      'psa_1_092', 'psa_1_093', 'psa_1_094', 'psa_1_095'\n    )\n    AND disease_code NOT RLIKE '^psa_1_[0-9]{3}[a-z]$'\n    AND disease_code NOT IN (\n      'psa_covid19_vaccine_adverse_effects', 'psa_covid19_virus_identified',\n      'psa_covid19_virus_not_identified', 'psa_mis_covid19', 'psa_post_covid19_condition'\n    )\n    AND year = (\n      SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n      WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n        AND geographic_level = 'country' AND value_status = 'ok' AND disease_code = 'all_causes'\n    )\n  GROUP BY disease_name\n) w ON w.disease_name = v.disease_name",
+        "source": "WITH base AS (\n  SELECT disease_name, SUM(value) AS deaths\n  FROM public_health.gold.v_disease_metric_totals\n  WHERE source_dataset = 'psa_deaths_region_annual'\n    AND metric_name = 'deaths'\n    AND geographic_level = 'country'\n    AND value_status = 'ok'\n    AND disease_code <> 'all_causes'\n    AND disease_code NOT IN (\n      'psa_1_001', 'psa_1_026', 'psa_1_048', 'psa_1_051', 'psa_1_055',\n      'psa_1_058', 'psa_1_062', 'psa_1_063', 'psa_1_064', 'psa_1_072',\n      'psa_1_078', 'psa_1_082', 'psa_1_083', 'psa_1_084', 'psa_1_087',\n      'psa_1_092', 'psa_1_093', 'psa_1_094', 'psa_1_095'\n    )\n    AND disease_code NOT RLIKE '^psa_1_[0-9]{3}[a-z]$'\n    AND disease_code NOT IN (\n      'psa_covid19_vaccine_adverse_effects', 'psa_covid19_virus_identified',\n      'psa_covid19_virus_not_identified', 'psa_mis_covid19', 'psa_post_covid19_condition'\n    )\n    AND year = (\n      SELECT MAX(year) FROM public_health.gold.v_disease_metric_totals\n      WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n        AND geographic_level = 'country' AND value_status = 'ok' AND disease_code = 'all_causes'\n    )\n  GROUP BY disease_name\n)\nSELECT v.disease_name, v.deaths,\n       (SELECT value FROM public_health.gold.v_disease_metric_totals\n        WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n          AND disease_code = 'all_causes' AND geographic_level = 'country' AND value_status = 'ok'\n          AND year = (\n            SELECT MAX(year) FROM public_health.gold.v_disease_metric_totals\n            WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n              AND disease_code = 'all_causes' AND geographic_level = 'country' AND value_status = 'ok'\n          )) AS deaths_all_causes,\n       ROW_NUMBER() OVER (ORDER BY v.deaths DESC) = 1 AS is_top_cause,\n       w.year, w.source_dataset AS source_key\nFROM base v\nJOIN (\n  SELECT disease_name, MAX(year) AS year, MAX(source_dataset) AS source_dataset\n  FROM public_health.gold.v_disease_metric_totals\n  WHERE source_dataset = 'psa_deaths_region_annual'\n    AND metric_name = 'deaths' AND geographic_level = 'country'\n    AND value_status = 'ok' AND disease_code <> 'all_causes'\n    AND disease_code NOT IN (\n      'psa_1_001', 'psa_1_026', 'psa_1_048', 'psa_1_051', 'psa_1_055',\n      'psa_1_058', 'psa_1_062', 'psa_1_063', 'psa_1_064', 'psa_1_072',\n      'psa_1_078', 'psa_1_082', 'psa_1_083', 'psa_1_084', 'psa_1_087',\n      'psa_1_092', 'psa_1_093', 'psa_1_094', 'psa_1_095'\n    )\n    AND disease_code NOT RLIKE '^psa_1_[0-9]{3}[a-z]$'\n    AND disease_code NOT IN (\n      'psa_covid19_vaccine_adverse_effects', 'psa_covid19_virus_identified',\n      'psa_covid19_virus_not_identified', 'psa_mis_covid19', 'psa_post_covid19_condition'\n    )\n    AND year = (\n      SELECT MAX(year) FROM public_health.gold.v_disease_metric_totals\n      WHERE source_dataset = 'psa_deaths_region_annual' AND metric_name = 'deaths'\n        AND geographic_level = 'country' AND value_status = 'ok' AND disease_code = 'all_causes'\n    )\n  GROUP BY disease_name\n) w ON w.disease_name = v.disease_name",
         "measures": [
           {
             "name": "deaths",
@@ -1385,7 +1384,7 @@
       "name": "ov_poverty",
       "displayName": "OV Poverty incidence (latest)",
       "config": {
-        "source": "SELECT p.area_key, g.area_name, p.geo_level, TRY_CAST(p.year AS INT) AS year, p.poverty_incidence_pct\nFROM public_health.silver.socioeconomic_poverty_silver p\nLEFT JOIN public_health.test_gold2.dim_geography g ON CAST(g.area_key AS STRING) = p.area_key\nWHERE p.comparison_eligible = true\n  AND p.poverty_incidence_pct IS NOT NULL\n  AND TRY_CAST(p.year AS INT) IS NOT NULL\n  AND TRY_CAST(p.year AS INT) = (\n    SELECT MAX(TRY_CAST(year AS INT))\n    FROM public_health.silver.socioeconomic_poverty_silver\n    WHERE comparison_eligible = true AND TRY_CAST(year AS INT) IS NOT NULL\n  )",
+        "source": "SELECT p.area_key, g.area_name, p.geo_level, TRY_CAST(p.year AS INT) AS year, p.poverty_incidence_pct\nFROM public_health.silver.socioeconomic_poverty_silver p\nLEFT JOIN public_health.gold.dim_geography g ON CAST(g.area_key AS STRING) = p.area_key\nWHERE p.comparison_eligible = true\n  AND p.poverty_incidence_pct IS NOT NULL\n  AND TRY_CAST(p.year AS INT) IS NOT NULL\n  AND TRY_CAST(p.year AS INT) = (\n    SELECT MAX(TRY_CAST(year AS INT))\n    FROM public_health.silver.socioeconomic_poverty_silver\n    WHERE comparison_eligible = true AND TRY_CAST(year AS INT) IS NOT NULL\n  )",
         "measures": [
           {
             "name": "poverty_incidence_pct",
@@ -1422,7 +1421,7 @@
       "name": "ov_no_hospital",
       "displayName": "OV Localities with no hospital",
       "config": {
-        "source": "SELECT 'localities_no_hospital' AS tile, COUNT(*) AS value\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE NOT has_hospital_recorded\nUNION ALL\nSELECT 'population_no_hospital', SUM(population)\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE NOT has_hospital_recorded AND population IS NOT NULL\nUNION ALL\nSELECT 'population_total', SUM(population)\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE population IS NOT NULL\nUNION ALL\nSELECT 'population_share_no_hospital_pct', ROUND(100.0 * SUM(CASE WHEN NOT has_hospital_recorded THEN population END) / SUM(population), 1)\nFROM public_health.test_gold2.mart_locality_service_presence\nWHERE population IS NOT NULL",
+        "source": "SELECT 'localities_no_hospital' AS tile, COUNT(*) AS value\nFROM public_health.gold.mart_locality_service_presence\nWHERE NOT has_hospital_recorded\nUNION ALL\nSELECT 'population_no_hospital', SUM(population)\nFROM public_health.gold.mart_locality_service_presence\nWHERE NOT has_hospital_recorded AND population IS NOT NULL\nUNION ALL\nSELECT 'population_total', SUM(population)\nFROM public_health.gold.mart_locality_service_presence\nWHERE population IS NOT NULL\nUNION ALL\nSELECT 'population_share_no_hospital_pct', ROUND(100.0 * SUM(CASE WHEN NOT has_hospital_recorded THEN population END) / SUM(population), 1)\nFROM public_health.gold.mart_locality_service_presence\nWHERE population IS NOT NULL",
         "measures": [
           {
             "name": "value",
@@ -1443,7 +1442,7 @@
       "name": "ov_beds_per_10k",
       "displayName": "OV Beds per 10k by province",
       "config": {
-        "source": "public_health.test_gold2.mart_area_service_profile",
+        "source": "public_health.gold.mart_area_service_profile",
         "measures": [
           {
             "name": "beds_total",
@@ -1488,7 +1487,7 @@
       "name": "ov_priority",
       "displayName": "OV Priority provinces (TB, latest)",
       "config": {
-        "source": "WITH t AS (\n  SELECT area_name, MAX(tb_notifications_per_100k_2025) AS disease_rate_per_100k\n  FROM public_health.test_gold2.mart_tb_case_study\n  WHERE comparison_eligible AND tb_notifications_per_100k_2025 IS NOT NULL\n  GROUP BY area_name\n),\ns AS (\n  SELECT area_name, beds_per_10k, poverty_incidence_pct\n  FROM public_health.test_gold2.mart_area_service_profile\n  WHERE unit_level = 'province' AND beds_per_10k IS NOT NULL AND population > 0\n),\nj AS (\n  SELECT t.area_name, t.disease_rate_per_100k, s.beds_per_10k, s.poverty_incidence_pct\n  FROM t JOIN s ON s.area_name = t.area_name\n),\nr AS (\n  SELECT j.*,\n    ROUND(PERCENTILE(disease_rate_per_100k, 0.5) OVER (), 1) AS median_disease_rate,\n    ROW_NUMBER() OVER (ORDER BY disease_rate_per_100k DESC, area_name) AS rank_disease,\n    ROW_NUMBER() OVER (ORDER BY beds_per_10k ASC, area_name) AS rank_beds_inverse,\n    ROW_NUMBER() OVER (ORDER BY poverty_incidence_pct DESC, area_name) AS rank_poverty,\n    (disease_rate_per_100k > PERCENTILE(disease_rate_per_100k, 0.5) OVER ()\n      AND beds_per_10k < 10) AS is_priority\n  FROM j\n)\nSELECT area_name, disease_rate_per_100k, beds_per_10k, poverty_incidence_pct,\n       rank_disease, rank_beds_inverse, rank_poverty,\n       rank_disease + rank_beds_inverse + rank_poverty AS gap_score,\n       median_disease_rate, is_priority,\n       rank_disease <= 10 AS in_top10_tb\nFROM r",
+        "source": "WITH t AS (\n  SELECT area_name, MAX(tb_notifications_per_100k_2025) AS disease_rate_per_100k\n  FROM public_health.gold.mart_tb_case_study\n  WHERE comparison_eligible AND tb_notifications_per_100k_2025 IS NOT NULL\n  GROUP BY area_name\n),\ns AS (\n  SELECT area_name, beds_per_10k, poverty_incidence_pct\n  FROM public_health.gold.mart_area_service_profile\n  WHERE unit_level = 'province' AND beds_per_10k IS NOT NULL AND population > 0\n),\nj AS (\n  SELECT t.area_name, t.disease_rate_per_100k, s.beds_per_10k, s.poverty_incidence_pct\n  FROM t JOIN s ON s.area_name = t.area_name\n),\nr AS (\n  SELECT j.*,\n    ROUND(PERCENTILE(disease_rate_per_100k, 0.5) OVER (), 1) AS median_disease_rate,\n    ROW_NUMBER() OVER (ORDER BY disease_rate_per_100k DESC, area_name) AS rank_disease,\n    ROW_NUMBER() OVER (ORDER BY beds_per_10k ASC, area_name) AS rank_beds_inverse,\n    ROW_NUMBER() OVER (ORDER BY poverty_incidence_pct DESC, area_name) AS rank_poverty,\n    (disease_rate_per_100k > PERCENTILE(disease_rate_per_100k, 0.5) OVER ()\n      AND beds_per_10k < 10) AS is_priority\n  FROM j\n)\nSELECT area_name, disease_rate_per_100k, beds_per_10k, poverty_incidence_pct,\n       rank_disease, rank_beds_inverse, rank_poverty,\n       rank_disease + rank_beds_inverse + rank_poverty AS gap_score,\n       median_disease_rate, is_priority,\n       rank_disease <= 10 AS in_top10_tb\nFROM r",
         "measures": [
           {
             "name": "disease_rate_per_100k",
@@ -1567,7 +1566,7 @@
       "name": "ov_beds_map",
       "displayName": "OV Beds by province with centroids (symbol map)",
       "config": {
-        "source": "WITH cen AS (\n  SELECT psgc_code, MAX(center_lat) AS center_lat, MAX(center_lon) AS center_lon\n  FROM public_health.silver.admin_boundaries_silver\n  WHERE center_lat IS NOT NULL AND center_lon IS NOT NULL\n  GROUP BY psgc_code\n)\nSELECT\n  s.area_name AS province_name,\n  s.beds AS authorized_beds,\n  s.beds_per_10k,\n  s.population AS population_2024,\n  CASE WHEN s.beds_per_10k < 10 THEN 'Below benchmark' ELSE 'At or above benchmark' END AS below_benchmark,\n  b.center_lat,\n  b.center_lon\nFROM public_health.test_gold2.mart_area_service_profile s\nLEFT JOIN cen b\n  ON b.psgc_code = REPLACE(s.area_code, 'psgc:', '')\nWHERE s.unit_level = 'province'\n  AND s.beds_per_10k IS NOT NULL\n  AND s.population > 0",
+        "source": "WITH cen AS (\n  SELECT psgc_code, MAX(center_lat) AS center_lat, MAX(center_lon) AS center_lon\n  FROM public_health.silver.admin_boundaries_silver\n  WHERE center_lat IS NOT NULL AND center_lon IS NOT NULL\n  GROUP BY psgc_code\n)\nSELECT\n  s.area_name AS province_name,\n  s.beds AS authorized_beds,\n  s.beds_per_10k,\n  s.population AS population_2024,\n  CASE WHEN s.beds_per_10k < 10 THEN 'Below benchmark' ELSE 'At or above benchmark' END AS below_benchmark,\n  b.center_lat,\n  b.center_lon\nFROM public_health.gold.mart_area_service_profile s\nLEFT JOIN cen b\n  ON b.psgc_code = REPLACE(s.area_code, 'psgc:', '')\nWHERE s.unit_level = 'province'\n  AND s.beds_per_10k IS NOT NULL\n  AND s.population > 0",
         "measures": [
           {
             "name": "beds_per_10k",
@@ -1623,7 +1622,7 @@
       "name": "ov_dengue_kpi",
       "displayName": "OV TB notifications tile (FHSIS, latest)",
       "config": {
-        "source": "WITH c AS (\n  SELECT v.year, v.source_dataset AS source_name, SUM(v.value) AS cases\n  FROM public_health.test_gold2.v_disease_metric_totals v\n  WHERE v.source_dataset = 'doh_fhsis'\n    AND v.metric_name = 'cases'\n    AND v.disease_code = 'tb_all_forms'\n    AND v.geographic_level = 'country'\n    AND v.value_status = 'ok'\n    AND v.year = (\n      SELECT MAX(year) FROM public_health.test_gold2.v_disease_metric_totals\n      WHERE source_dataset = 'doh_fhsis' AND metric_name = 'cases'\n        AND disease_code = 'tb_all_forms' AND geographic_level = 'country' AND value_status = 'ok'\n    )\n  GROUP BY 1, 2\n),\np AS (\n  SELECT SUM(value) AS population\n  FROM public_health.test_gold2.v_area_indicator_latest\n  WHERE indicator_name = 'population' AND indicator_category = 'census' AND is_latest_period\n)\nSELECT 'tb_notifications' AS tile, c.year, c.source_name, c.cases,\n       ROUND(c.cases * 100000.0 / p.population, 1) AS per_100k\nFROM c CROSS JOIN p",
+        "source": "WITH c AS (\n  SELECT v.year, v.source_dataset AS source_name, SUM(v.value) AS cases\n  FROM public_health.gold.v_disease_metric_totals v\n  WHERE v.source_dataset = 'doh_fhsis'\n    AND v.metric_name = 'cases'\n    AND v.disease_code = 'tb_all_forms'\n    AND v.geographic_level = 'country'\n    AND v.value_status = 'ok'\n    AND v.year = (\n      SELECT MAX(year) FROM public_health.gold.v_disease_metric_totals\n      WHERE source_dataset = 'doh_fhsis' AND metric_name = 'cases'\n        AND disease_code = 'tb_all_forms' AND geographic_level = 'country' AND value_status = 'ok'\n    )\n  GROUP BY 1, 2\n),\np AS (\n  SELECT SUM(value) AS population\n  FROM public_health.gold.v_area_indicator_latest\n  WHERE indicator_name = 'population' AND indicator_category = 'census' AND is_latest_period\n)\nSELECT 'tb_notifications' AS tile, c.year, c.source_name, c.cases,\n       ROUND(c.cases * 100000.0 / p.population, 1) AS per_100k\nFROM c CROSS JOIN p",
         "measures": [
           {
             "name": "cases",
@@ -1670,7 +1669,7 @@
       "name": "ov_dengue_incidence",
       "displayName": "OV Dengue incidence per 100k by province (latest full year)",
       "config": {
-        "source": "WITH latest AS (\n  SELECT year AS yr FROM (\n    SELECT year, COUNT(*) AS rows_cnt, COUNT(DISTINCT area_key) AS areas\n    FROM public_health.test_gold2.v_disease_metric_totals\n    WHERE disease_code = 'dengue' AND source_dataset = 'hdx_dengue' AND metric_name = 'cases'\n      AND value_status = 'ok' AND geographic_level = 'province'\n    GROUP BY year\n  )\n  WHERE rows_cnt >= areas * 40\n  ORDER BY year DESC\n  LIMIT 1\n),\nacm AS (\n  SELECT area_key, MAX(area_name) AS area_name, MAX(REPLACE(area_code, 'psgc:', '')) AS psgc_code\n  FROM public_health.test_gold2.area_coverage_map\n  WHERE area_key IN (\n    SELECT DISTINCT area_key FROM public_health.test_gold2.v_disease_metric_totals\n    WHERE disease_code = 'dengue' AND source_dataset = 'hdx_dengue' AND metric_name = 'cases'\n      AND value_status = 'ok' AND geographic_level = 'province')\n  GROUP BY area_key\n),\nc AS (\n  SELECT v.area_key, SUM(v.value) AS cases\n  FROM public_health.test_gold2.v_disease_metric_totals v\n  WHERE v.disease_code = 'dengue' AND v.source_dataset = 'hdx_dengue' AND v.metric_name = 'cases'\n    AND v.value_status = 'ok' AND v.geographic_level = 'province'\n    AND v.year = (SELECT yr FROM latest)\n  GROUP BY 1\n),\np AS (\n  SELECT REPLACE(area_code, 'psgc:', '') AS psgc_code, MAX(area_name) AS province_name, SUM(population) AS population\n  FROM public_health.test_gold2.mart_area_service_profile\n  WHERE unit_level = 'province' AND population > 0\n  GROUP BY 1\n)\nSELECT\n  p.province_name,\n  c.cases,\n  p.population,\n  ROUND(c.cases * 100000.0 / p.population, 1) AS incidence_per_100k,\n  ROW_NUMBER() OVER (ORDER BY ROUND(c.cases * 100000.0 / p.population, 1) DESC) AS rnk,\n  ROW_NUMBER() OVER (ORDER BY ROUND(c.cases * 100000.0 / p.population, 1) DESC) <= 10 AS in_top10\nFROM c\nJOIN acm ON acm.area_key = c.area_key\nJOIN p ON p.psgc_code = acm.psgc_code\nWHERE p.population > 0",
+        "source": "WITH latest AS (\n  SELECT year AS yr FROM (\n    SELECT year, COUNT(*) AS rows_cnt, COUNT(DISTINCT area_key) AS areas\n    FROM public_health.gold.v_disease_metric_totals\n    WHERE disease_code = 'dengue' AND source_dataset = 'hdx_dengue' AND metric_name = 'cases'\n      AND value_status = 'ok' AND geographic_level = 'province'\n    GROUP BY year\n  )\n  WHERE rows_cnt >= areas * 40\n  ORDER BY year DESC\n  LIMIT 1\n),\nacm AS (\n  SELECT area_key, MAX(area_name) AS area_name, MAX(REPLACE(area_code, 'psgc:', '')) AS psgc_code\n  FROM public_health.gold.area_coverage_map\n  WHERE area_key IN (\n    SELECT DISTINCT area_key FROM public_health.gold.v_disease_metric_totals\n    WHERE disease_code = 'dengue' AND source_dataset = 'hdx_dengue' AND metric_name = 'cases'\n      AND value_status = 'ok' AND geographic_level = 'province')\n  GROUP BY area_key\n),\nc AS (\n  SELECT v.area_key, SUM(v.value) AS cases\n  FROM public_health.gold.v_disease_metric_totals v\n  WHERE v.disease_code = 'dengue' AND v.source_dataset = 'hdx_dengue' AND v.metric_name = 'cases'\n    AND v.value_status = 'ok' AND v.geographic_level = 'province'\n    AND v.year = (SELECT yr FROM latest)\n  GROUP BY 1\n),\np AS (\n  SELECT REPLACE(area_code, 'psgc:', '') AS psgc_code, MAX(area_name) AS province_name, SUM(population) AS population\n  FROM public_health.gold.mart_area_service_profile\n  WHERE unit_level = 'province' AND population > 0\n  GROUP BY 1\n)\nSELECT\n  p.province_name,\n  c.cases,\n  p.population,\n  ROUND(c.cases * 100000.0 / p.population, 1) AS incidence_per_100k,\n  ROW_NUMBER() OVER (ORDER BY ROUND(c.cases * 100000.0 / p.population, 1) DESC) AS rnk,\n  ROW_NUMBER() OVER (ORDER BY ROUND(c.cases * 100000.0 / p.population, 1) DESC) <= 10 AS in_top10\nFROM c\nJOIN acm ON acm.area_key = c.area_key\nJOIN p ON p.psgc_code = acm.psgc_code\nWHERE p.population > 0",
         "measures": [
           {
             "name": "cases",
@@ -6791,10 +6790,6 @@
                       "expression": "`layer`"
                     },
                     {
-                      "name": "model",
-                      "expression": "`model`"
-                    },
-                    {
                       "name": "row_count",
                       "expression": "`row_count`"
                     },
@@ -6852,12 +6847,6 @@
                     "headerAlignment": "left",
                     "useForSearch": false,
                     "displayName": "Layer"
-                  },
-                  {
-                    "fieldName": "model",
-                    "headerAlignment": "left",
-                    "useForSearch": false,
-                    "displayName": "Model"
                   },
                   {
                     "fieldName": "row_count",
@@ -6953,7 +6942,7 @@
                 "title": "Gold tables built",
                 "description": {
                   "fields": [],
-                  "value": "test_gold2 layer"
+                  "value": "gold layer"
                 }
               },
               "version": 2,
