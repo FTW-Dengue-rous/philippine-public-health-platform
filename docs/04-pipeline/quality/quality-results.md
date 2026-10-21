@@ -109,7 +109,7 @@ The final job ran three times on the same inputs. Records and screenshots: [fina
 | `gold_o13_evidence.sql` Q1–Q6 | Read for D-56 | Pending |
 | Bronze does not reload (query I3) | Every source "loaded 0, failed 0" in runs 2 and 3 | Runs 1, 2 and 3: all 40 sources |
 
-The mart checks (gold 11, 22, 23, 24) and `gold_o13_evidence.sql` were not captured in the final runs. Run them once after run 3 if time allows.
+The mart checks (gold 11, 22, 23, 24) and `gold_o13_evidence.sql` were not captured in the final runs. Run them once against the final gold build if time allows.
 
 Record each result here with the date and `validation_id`, and screenshot it.
 
