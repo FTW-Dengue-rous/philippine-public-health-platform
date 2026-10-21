@@ -77,7 +77,6 @@ docs/
 ├── 06-evidence/                           run records, query outputs and screenshots
 │   ├── README.md                            how evidence is captured; index of runs
 │   ├── evidence_queries.sql                 the seven evidence queries (B1, S1, S2, G1, I1, I2, I3)
-│   ├── 2026-10-18-new-workspace-run.md      first full run in this workspace (history)
 │   ├── idempotency/comparison.md            earlier manual comparisons (history)
 │   └── 2026-10-21-final-runs/               the evidence: three runs on the same inputs
 │       ├── README.md                        runs, rules, comparison

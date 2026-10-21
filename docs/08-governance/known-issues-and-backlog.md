@@ -131,7 +131,7 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | 2026-10-19 | Silver: D-44 / D-46 week convention; population QC fixes and S59; rule 2a in every silver build and QC file; full rebuild kept (D-57); proposal values agreed (D-56) |
 | 2026-10-20 | Silver closed: workforce override for Zamboanga Sibugay (D-58); cross-domain QC 68 checks, 0 FAIL, 10 WARN. Runs stay manual (D-59) |
 | 2026-10-21 | CI checks on `dev` fixed; they pass |
-| 2026-10-21 | Final runs 1 and 2 of the bundle job: 0 FAIL; run 2 shows G12 PASS on all 9 gold tables, bronze loaded nothing, same row counts. Run 3: to fill ([final runs](../06-evidence/2026-10-21-final-runs/README.md)) |
+| 2026-10-21 | Final runs 1–3 of the bundle job: 0 FAIL; runs 2 and 3 show G12 PASS on all 9 gold tables, bronze loaded nothing, and the same row counts. See [final runs](../06-evidence/2026-10-21-final-runs/README.md). |
 | 2026-10-21 | `qc_registry` job task added and passed; `strict_registry=True` is the default in every QC script (item 7, KI-03, O-17) |
 
 ## 5. History of updates
