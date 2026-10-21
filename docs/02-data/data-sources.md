@@ -89,7 +89,7 @@ The four `doh_fhsis` disease entries write `_source_key = doh_fhsis` (`source_ke
 
 | `source_key` | Publisher | What it holds | Grain | Coverage | Sharing |
 |---|---|---|---|---|---|
-| `doh_fhsis_demographic` | DOH FHSIS | Health worker tabs (18 sheets), printed population | Area × year | 2018–2025 | public |
+| `doh_fhsis_demographic` | DOH FHSIS | Health worker tabs (18 sheets), printed population. Counts cover LGU-hired and DOH-hired workers only, for every profession — not just doctors. They exclude private-sector workers and do not represent the entire Philippine healthcare workforce | Area × year | 2018–2025 | public |
 | `psa_gov_practitioners` | PSA Table 9.14 | Government practitioners by profession | Region × year | 2012–2023 | open |
 | `psmo_oncologists` | PSMO | Medical oncologists | Area snapshot | One pull (date CONFIRM) | open |
 
@@ -130,10 +130,10 @@ The four `doh_fhsis` disease entries write `_source_key = doh_fhsis` (`source_ke
 
 ## 6. Source acquisition
 
-* **Open sources** are downloaded from public URLs or APIs and placed in the landing volume.
+* **Open sources** are downloaded from public URLs or APIs and placed in the landing volume. API-ingested sources have their URL in the YAML config: `psgc` has `base_url` (`https://classification.psa.gov.ph/psgc`) and `hdx_phl_admin` has `base_url` (`https://data.humdata.org`) in [`sources_geography.yaml`](../../config/sources_geography.yaml). See the **Publisher** column in section 3 for the portal or agency name of each source.
 * **FOI sources** are obtained through eFOI requests to DOH. Each request has a ticket number where confirmed. See the [Data request log](data-request-log.md).
-* **PSGC** is fetched via the PSA PSGC API by the [`psgc_ingestion`](../../src/01_ingestion/psgc_ingestion.ipynb) notebook in `src/01_ingestion`.
-* **Admin boundaries** are fetched from HDX and processed by the [`admin_boundaries_ingestion`](../../src/01_ingestion/admin_boundaries_ingestion.ipynb) notebook in `src/01_ingestion`. This step runs outside the main job; see the [runbook](../07-operations/runbook.md) for the procedure.
+* **PSGC** is fetched via the PSA PSGC API by the [`psgc_ingestion`](../../src/01_ingestion/psgc_ingestion.ipynb) notebook in `src/01_ingestion`. The API URL is built from the YAML `base_url`, `version` and `endpoint`.
+* **Admin boundaries** are fetched from HDX and processed by the [`admin_boundaries_ingestion`](../../src/01_ingestion/admin_boundaries_ingestion.ipynb) notebook in `src/01_ingestion`. The HDX dataset URL is the YAML `base_url` + `dataset_id`. This step runs outside the main job; see the [runbook](../07-operations/runbook.md) for the procedure.
 * The landing volume is not synced by the DABs bundle. Files must be placed manually or by the ingestion notebooks.
 
 ## 7. History of updates
@@ -148,3 +148,5 @@ The four `doh_fhsis` disease entries write `_source_key = doh_fhsis` (`source_ke
 | 2026-10-21 | Link text renamed to “Data request log” to match the file's general name |
 | 2026-10-21 | Section 6: PSGC and admin-boundaries ingestion references now link to the notebooks in `src/01_ingestion` |
 | 2026-10-21 | Cross-reference links added: the six config YAMLs in section 1; `run_bronze.py` and `dim_data_source` in section 5; decision references D-16 and D-47 |
+| 2026-10-21 | Section 6: noted that API-ingested sources (`psgc`, `hdx_phl_admin`) have `base_url` in `sources_geography.yaml`; readers are directed to the Publisher column for portal names |
+| 2026-10-21 | Workforce section: `doh_fhsis_demographic` description now states counts cover LGU-hired and DOH-hired workers only, for every profession, exclude private sector, and do not represent the entire PH healthcare workforce |

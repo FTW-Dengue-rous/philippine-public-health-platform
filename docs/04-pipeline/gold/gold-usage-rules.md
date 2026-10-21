@@ -77,7 +77,7 @@ Never compare an FHSIS-population rate with a census-population rate. Never inte
 | "Claims at hospitals in <area>" | "Claims of residents of <area>" | The area is where the hospital delivered care |
 | "Amount claimed" | "Amount paid" | The release gives the amount claimed |
 | "Peak cases per 100 beds (relative)" | "Beds needed", "would exceed capacity" | No admission or length-of-stay assumption (BQ2 is stretch 2) |
-| "Health workers (public sector)" | "Health workers" | Private practitioners are not counted |
+| "LGU- and DOH-hired health workers (FHSIS)" | "Health workers", "public-sector health workers" | Counts cover LGU-hired and DOH-hired workers only, for every profession. They exclude private-sector workers and do not represent the entire Philippine healthcare workforce. A missing count means not reported, not zero. These counts alone do not prove a shortage |
 | "Modelled estimate (IHME)" | A plain number | Modelled values carry uncertainty |
 | "Highest observed week" for an incomplete year | "Peak" | A missing week could hold the peak |
 

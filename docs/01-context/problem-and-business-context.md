@@ -75,7 +75,7 @@ The business questions break into analytical questions. Each one is answered by 
 | Need | N1–N4 | Disease burden by area: cause-of-death shares (N1), modelled deaths and prevalence (N2), dengue peaks (N3), TB notifications (N4) | `fact_disease_metric` (N1), `mart_area_burden_indicator`, `mart_dengue_peak_capacity` |
 | Supply | S1, S2, S3 | Hospital and bed supply, bed occupancy, health stations and health centres | `mart_area_service_profile` (S1, S3), `fact_facility_capacity` (S2) |
 | Access | A1–A4 | Areas with no hospital or primary care recorded; highest hospital level; population per facility or bed; distance to care | `mart_locality_service_presence`, `fact_area_access` |
-| Workforce | W1, W2 | Doctors, nurses, midwives and barangay health workers per population | `mart_area_service_profile` |
+| Workforce | W1, W2 | LGU- and DOH-hired doctors, nurses, midwives and barangay health workers per population (FHSIS; excludes private sector) | `mart_area_service_profile` |
 | Equity | E1, E2 | Service gaps by poverty band | `mart_area_service_profile` |
 | Priority | P1, P2 | Areas with high burden and several gaps; how the ranking moves with weights | `mart_area_priority` |
 | TB case study | T1, T2 | TB rates against workers and primary care; preventive treatment and treatment success | `mart_tb_case_study` |

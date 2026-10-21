@@ -88,7 +88,7 @@ flowchart LR
 |---|---|---|
 | Hospitals, beds, licensed primary care | Registry (mart 14) | Sum of the unit's localities: exact by construction |
 | BHS, health centres | FHSIS published counts | Through `area_coverage_map`: a `direct` row, or **all** parts of an `aggregate` |
-| Doctors, nurses, midwives, BHW | FHSIS workforce (preferred, eligible) | Same, through the coverage map |
+| Doctors, nurses, midwives, BHW | FHSIS workforce (preferred, eligible) — only LGU-hired and DOH-hired health workers for every profession. Excludes private-sector and other government workers not covered by FHSIS. PSA covers government practitioners (public sector), but does not split LGU/DOH; both FHSIS and PSA cover only public-sector (LGU + DOH) workers, not the entire Philippine healthcare workforce. Ratios per 10,000 use this limited numerator (LGU + DOH headcount) and census population as denominator; both reflect this limited coverage. A missing value means not reported, not zero. These counts and rates alone do not prove a workforce shortage and do not support comparison to broad workforce standards or national norms. |
 | Poverty incidence | PSA poverty | A `direct` row only; a percentage is never summed |
 
 **Rules and why.**

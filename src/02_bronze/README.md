@@ -85,6 +85,7 @@ The job allows one run at a time (`max_concurrent_runs: 1`). The geography and a
 - **Restricted files** sit under `<domain>/restricted/`. These are FOI releases, the patient-level hospital extract, bed occupancy and IHME GBD. They are never committed to GitHub.
 - **PSGC:** the PSGC API job lands a completed snapshot under `geography/psgc_api/raw/version=<version>/run_id=<id>/`: API pages, record files, `manifest.json` and `_SUCCESS`.
 - **HDX boundaries:** the HDX ingestion notebook writes prepared files and a `handoff.json` under `admin_boundaries/_runs/<run_id>/`.
+- **Download URLs:** API-ingested sources (`psgc`, `hdx_phl_admin`) have `base_url` in `sources_geography.yaml`. See [data sources](../../docs/02-data/data-sources.md) section 6.
 
 ---
 

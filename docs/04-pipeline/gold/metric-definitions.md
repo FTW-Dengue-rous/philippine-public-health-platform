@@ -60,7 +60,15 @@ rolling up groups      = sum(bor_weighted_pct × bor_weighted_beds_sum) ÷ sum(b
 | `bhw_lgu_hired_per_10k` | LGU-hired BHW × 10,000 ÷ census population | per 10,000 | 21 |
 | `doh_deployed_share` | DOH-hired core headcount ÷ core headcount | 0–1 | 16 |
 
-Headcounts come from `source_role = 'preferred'` and `analysis_eligible` rows only. `workforce_year` is the latest year in which doctors, nurses and midwives are all usable. Counts are public sector only.
+Headcounts come from `source_role = 'preferred'` and `analysis_eligible` rows only. `workforce_year` is the latest year in which doctors, nurses and midwives are all usable.
+
+**Scope of the workforce data.** The whole workforce dataset covers **LGU-hired and DOH-hired healthcare workers** only. This applies to every profession — doctors, nurses, midwives, BHW and all others listed in the fact — not just doctors. The primary source is the FHSIS Demographic Profile (`doh_fhsis_demographic`), where `headcount_total` is the sum of `headcount_lgu_hired` and `headcount_doh_hired`.
+
+These counts do **not** represent the entire Philippine healthcare workforce. They exclude private-sector workers and any public-sector workers not captured in the FHSIS reporting. A missing record means the source did not report a count for that area and profession, not that zero workers are present. These counts alone do not prove an overall workforce shortage; they show the recorded public-sector supply against population.
+
+**Numerator and denominator.** Each `*_per_10k` ratio uses `headcount_total` (LGU-hired + DOH-hired) as the numerator and the unit's **census population** as the denominator. The census population comes from `fact_area_indicator` (PSGC-based, latest census year within the 2-year alignment window). `doh_deployed_share` uses `headcount_doh_hired` ÷ `headcount_total` for the core clinical professions (doctors, nurses, midwives); it has no population denominator.
+
+`psa_gov_practitioners` (PSA Statistical Yearbook, 2012–2023) is a `cross_check` source for years before FHSIS. It covers government practitioners by region; these are also LGU- and DOH-hired (public-sector) workers, but the source does not carry the LGU/DOH employer split. `psmo_oncologists` is a separate specialist directory and is not part of this scope.
 
 ## 4. Burden
 
@@ -167,3 +175,4 @@ d = 2 × 6371 × asin( sqrt( sin²(Δlat/2) + cos(lat1) × cos(lat2) × sin²(Δ
 | 2026-10-19 | `ds_small_cohort`, `mdr_small_cohort` added; values agreed (D-56) |
 | 2026-10-20 | Page written from the SQL |
 | 2026-10-20 | Rewritten in short, active sentences |
+| 2026-10-21 | Section 3: replaced "Counts are public sector only" with full scope clarification — LGU- and DOH-hired workers in FHSIS, not the entire PH workforce, excludes private sector, missing ≠ zero, ratios use headcount_total ÷ census population; noted PSA and PSMO are separate sources |

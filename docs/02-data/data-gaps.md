@@ -33,7 +33,7 @@ Limits on how to *read* the data are in [limitations and recommendations](../01-
 | G-13 | HDX dengue stops in 2021; UP NOAH misses 2020–2021 | Continuous weekly series | Each source kept in its own ranking; coverage per year in `diseases_source_coverage_silver` |
 | G-14 | HDX 2019 lacks ISO week 1; one gap at the 2019/2020 boundary | Weekly completeness | Flagged (S43 WARN, F14) |
 | G-15 | TB preventive treatment and treatment success: FHSIS 2025 only | TB trend | Single-year view |
-| G-16 | Health workforce: FHSIS from 2018, PSA 2012–2023 by region | Long workforce trend at local level | PSA preferred 2012–2017; FHSIS from 2018 |
+| G-16 | Health workforce: FHSIS (LGU- and DOH-hired only, from 2018), PSA (government practitioners, 2012–2023 by region). Neither source covers private-sector workers | Long workforce trend at local level; no count of the entire PH healthcare workforce | PSA preferred 2012–2017; FHSIS from 2018 |
 | G-17 | PSMO oncologists: one snapshot, composite areas | Specialist trend | Exploratory comparison only (W3) |
 | G-18 | Boundaries: no ADM4; 8 SGA municipalities have no polygon | Barangay maps; SGA maps | `has_boundary = false` |
 | G-19 | Bed occupancy: 2018–2025 only; 2016–2017 sit in eFOI 2026-5476, not ingested | Pre-2018 baseline | Series starts 2018 |

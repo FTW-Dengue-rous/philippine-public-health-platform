@@ -13,5 +13,6 @@ Last updated: 2026-10-21
 | Comparison eligible | A flag showing the source coverage and denominator permit the intended comparison. |
 | Authorized beds | Licensed beds, not staffed beds or actual available beds. |
 | Disease burden | A reported or modelled measure from its named source. It does not establish causality. |
+| Recorded health worker | An LGU-hired or DOH-hired healthcare worker counted in FHSIS, for any profession (doctors, nurses, midwives, BHW and others). The counts do not represent the entire Philippine healthcare workforce and exclude private-sector workers. Ratios per 10,000 population use this limited coverage. A missing record means no count was reported, not that zero workers are present. These counts alone do not prove an overall workforce shortage. |
 
 Formulas, denominator choices, and null rules are in [metric definitions](metric-definitions.md). The full technical column dictionary is [gold-data-dictionary.md](gold-data-dictionary.md).

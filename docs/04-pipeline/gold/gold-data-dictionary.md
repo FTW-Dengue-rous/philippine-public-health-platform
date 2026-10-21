@@ -186,15 +186,17 @@ Only the measures of the row's `capacity_basis` hold values. A gate checks this.
 | `profession_code` | Grain | `doctors`, `nurses`, `midwives`, `bhw`, `dentists`, `medtech`, `nutritionists`, `sanitary_engineers`, `sanitary_inspectors` |
 | `profession_name` | Attr | Readable name (reviewed list) |
 | `profession_group` | Attr | `core_clinical` (doctors, nurses, midwives), `community` (BHW), `other` |
-| `headcount_total` | Measure | Total headcount; filled only when its silver status is ok |
-| `headcount_lgu_hired` | Measure | LGU-hired part |
-| `headcount_doh_hired` | Measure | DOH-hired (deployed) part |
+| `headcount_total` | Measure | LGU-hired + DOH-hired headcount; filled only when its silver status is ok. Does not include private-sector workers or any public-sector workers not captured in FHSIS reporting. These counts do not represent the entire Philippine healthcare workforce. A missing record means no count was reported, not that zero workers are present |
+| `headcount_lgu_hired` | Measure | LGU-hired part of `headcount_total` |
+| `headcount_doh_hired` | Measure | DOH-hired (deployed) part of `headcount_total` |
 | `analysis_eligible` | Flag | A rate may use `headcount_total` |
 | `exclusion_reason` | Status | Why not eligible |
 | `source_role` | Attr | `preferred` or `cross_check` (PSA 2018–2023) |
 | `coverage_basis` | Attr | Geographic coverage as silver gives it |
 | `is_break_year` | Flag | Nurse series definition changes (2019) |
 | `_gold_build_id` | Lineage | |
+
+The whole workforce dataset covers LGU-hired and DOH-hired healthcare workers, for every profession listed above — not just doctors. This applies to both FHSIS (`doh_fhsis_demographic`, preferred) and PSA (`psa_gov_practitioners`, cross_check). PSA does not carry the LGU/DOH employer split, but its government-practitioner counts are still public-sector (LGU + DOH) workers. The counts do not represent the entire Philippine healthcare workforce and do not include private-sector workers. Ratios per 10,000 population use `headcount_total` as the numerator and census population as the denominator; both reflect this limited coverage. A null means the source did not report a count, not that zero workers are present. These counts alone do not prove an overall workforce shortage.
 
 ### 2.4 `fact_area_indicator`
 
@@ -461,3 +463,5 @@ Only the measures of the row's `capacity_basis` hold values. A gate checks this.
 | 2026-10-19 | `mart_tb_case_study` + `ds_small_cohort`, `mdr_small_cohort`; `mart_evidence_readiness` − `model` |
 | 2026-10-20 | Page written from the SQL files |
 | 2026-10-20 | Rewritten in short, active sentences |
+| 2026-10-21 | Section 2.3: clarified `headcount_total` = LGU-hired + DOH-hired, excludes private sector; added scope note after table; null ≠ zero workers |
+| 2026-10-21 | Section 2.3: expanded scope note — not entire PH workforce, applies to all professions, ratios use limited coverage, counts alone do not prove shortage |
