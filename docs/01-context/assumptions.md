@@ -25,7 +25,7 @@ Limits of the study and the data, and the team's recommendations, are in [limita
 | AS-08 | UP NOAH regional dengue counts are DOH counts by ISO week, not approximations | The UP NOAH data dictionary says so (D-46) | `source_priority` |
 | AS-09 | A bed occupancy rate (BOR) above 150% is a reporting error, not real load | Some values exceed 1,000% | `baseline_eligible`, `exclusion_reason` |
 | AS-10 | Planning units are each province without its HUCs, each HUC, and NCR | Sources publish HUCs apart from their provinces | `mart_base_planning_unit` (O-01) |
-| AS-11 | The mart values are team judgements, not published standards: poverty bands 10/20/30%, gap fifths, the "two of three" rule, 3 weight sets, 80% dialysis completeness | The team agreed each value with a reason (D-56). `gold_o13_evidence.sql` holds the evidence queries | `mart_area_priority`, `mart_kidney_case_study` |
+| AS-11 | The mart values are team judgements, not published standards: poverty bands 10/20/30%, gap fifths, the "two of three" rule, 3 weight sets, 80% dialysis completeness | The team agreed each value with a reason (D-56). `gold_o13_evidence.sql` (run in the workspace; not kept in the repo) holds the evidence queries | `mart_area_priority`, `mart_kidney_case_study` |
 
 ## 2. History of updates
 

@@ -3,7 +3,7 @@
 Owner: LUNASaan Documentation Team
 Last updated: 2026-10-21
 
-Who provides care: public health workers by profession, area and year, the population figures FHSIS prints beside them, and a directory count of medical oncologists.
+Who provides care: LGU- and DOH-hired health workers by profession, area and year (FHSIS), the population figures FHSIS prints beside them, and a directory count of medical oncologists.
 
 Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), section 4.4. Back to the [silver overview](README.md).
 
@@ -11,7 +11,7 @@ Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), sectio
 
 | Source | What it gives | Notes |
 |---|---|---|
-| DOH FHSIS health workers, 2018–2025 | Doctors, nurses, midwives and six other professions by area | One workbook per year; layout changes every year; only the 2025 file prints PSGC codes |
+| DOH FHSIS health workers, 2018–2025 | Doctors, nurses, midwives and six other professions by area. Counts cover LGU-hired and DOH-hired workers only; they exclude private-sector workers | One workbook per year; layout changes every year; only the 2025 file prints PSGC codes |
 | PSA Statistical Yearbook 9.14, 2012–2023 | Government medical practitioners by region | History source for 2012–2017 |
 | PSMO oncologist directory | Listed medical oncologists by area of practice | One snapshot |
 
@@ -71,3 +71,4 @@ Every check of this domain, with its rule and severity: [silver quality checks](
 - The 2019 employer split is incomplete; use totals for 2019.
 - A few labels are under review (Davao, San Jose); they are listed in the backlog.
 - The PSMO count unit is not confirmed (`count_unit = 'unconfirmed'`).
+- **Workforce scope.** The whole workforce dataset covers LGU-hired and DOH-hired healthcare workers only, for every profession — not just doctors. This applies to both FHSIS (preferred) and PSA (cross_check). PSA does not carry the LGU/DOH employer split, but its government-practitioner counts are still public-sector (LGU + DOH) workers. The counts do not represent the entire Philippine healthcare workforce and exclude private-sector workers. Ratios per 10,000 population use this limited coverage (numerator: `headcount_total`; denominator: census population). A missing record means the source did not report a count, not that zero workers are present. These counts alone do not prove an overall workforce shortage; they show the recorded public-sector supply against population. PSMO oncologists are a separate specialist directory and are not part of this scope.

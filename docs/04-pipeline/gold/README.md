@@ -28,7 +28,7 @@ Status date: 2026-10-20. Schema: `public_health.gold`. Reference README (run ord
 |---|---|---|
 | [conceptual-model.md](conceptual-model.md) | The business entities and how they relate, and how the model was chosen | You need the big picture, or to explain the model to a reviewer |
 | [logical-data-model-and-erd.md](logical-data-model-and-erd.md) | Tables, keys, cardinalities, the ERD, key design | You write joins or change a table |
-| [table-catalog.md](table-catalog.md) | Every gold object: type, file, grain, key, inputs, consumers | You look for the right object |
+| [table-catalog.md](table-catalog.md) | Every gold object: type and file | You look for the right object. Grain, key, inputs and consumers: [`src/04_gold/README.md`](../../../src/04_gold/README.md), section 1 |
 | [data-dictionary.md](data-dictionary.md) | Every column of every gold object, technical | You need the meaning of a column |
 | [business-data-dictionary.md](business-data-dictionary.md) | The business terms in plain language | You write a dashboard label or explain a number |
 | [data-marts.md](data-marts.md) | Each mart: the question, the logic, the rules, why | You build or check a dashboard page |

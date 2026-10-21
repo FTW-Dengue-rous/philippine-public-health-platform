@@ -1,6 +1,9 @@
 # Final runs (2026-10-21)
 
-Three full runs of the final pipeline job on the same inputs. They are the evidence that the pipeline is complete, passes its own QC, and is idempotent: bronze does not reload, and silver and gold rebuild to the same content.
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
+Three full runs of the final pipeline job on the same inputs. They are the evidence that the pipeline is complete, passes its own QC, and that reruns repeat the same result: bronze reloaded no file, all 28 silver and gold tables kept the same row counts, and all 9 gold model tables kept the same content (G12) in runs 2 and 3. Not tested: loading new or changed files, recovery from a failed run, and content equality of marts and views.
 
 Status date: 2026-10-21. All three runs done; every idempotency check passed.
 
@@ -49,3 +52,4 @@ All three runs used the bundle job `[dev jemmalyn_santiago] ph-public-health-pip
 | 2026-10-21 | Run 2 recorded: it meets the conditions and counts as run 2. Every idempotency check passed |
 | 2026-10-21 | Run 3 recorded; comparison complete: every idempotency check passed |
 | 2026-10-21 | Page tidied after run 3: planning text (run-2 options, "before run 3" rules) replaced by how the runs were kept comparable; code note states the deployment and that strict registry came after run 3 |
+| 2026-10-21 | Owner and Last updated added; idempotency wording replaced with recorded-test wording and what was not tested |

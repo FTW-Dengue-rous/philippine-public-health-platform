@@ -25,7 +25,7 @@ All eight pages are populated. There is no separate S3 page: the old empty S3 dr
 
 ### Overview
 
-National KPIs (population, registered deaths, beds per 10,000, municipalities with no hospital, government doctors and nurses per 10,000, poverty incidence), top priority provinces, and a beds map. Covers highlights of S1, W1, E1, P1.
+National KPIs (population, registered deaths, beds per 10,000, municipalities with no hospital, LGU- and DOH-hired doctors and nurses per 10,000, poverty incidence), top priority provinces, and a beds map. Covers highlights of S1, W1, E1, P1.
 
 ### Need
 
@@ -106,6 +106,7 @@ If `quality.build_log` is not available in your workspace, trace freshness manua
 * **Association is not cause**: A link between two figures does not prove that one causes the other. See SL-02.
 * **Restricted data**: Several dashboard pages use FOI-released or licence-restricted sources (bed occupancy, dengue, PhilHealth claims, IHME). These appear as aggregates only; cells built from fewer than 3 records are suppressed. Do not export restricted charts outside the project without confirming terms with each FOI officer. See [data governance](../docs/08-governance/data-governance.md).
 * **No causal claims**: The platform does not establish causal effects or measure real-world impact. Treat each result as a lead to verify, not a confirmed fact. See SL-09.
+* **Workforce coverage**: Health worker counts cover LGU-hired and DOH-hired workers recorded in FHSIS only, for every profession shown — not just doctors. They do not represent the entire Philippine healthcare workforce and exclude private-sector workers. Ratios per 10,000 population use this limited coverage. A missing count means no count was reported, not that zero workers are present. These counts alone do not prove an overall workforce shortage. See [metric definitions](../docs/04-pipeline/gold/metric-definitions.md), section 3.
 
 Full lists of assumptions (AS-xx), data limitations (LM-xx), and study limitations (SL-xx) are in [assumptions](../docs/01-context/assumptions.md) and [limitations and recommendations](../docs/01-context/limitations-and-recommendations.md).
 

@@ -7,8 +7,8 @@ Last updated: 2026-10-21
 
 The Geography Bronze domain loads geographic reference records and administrative-boundary features into Bronze tables. It covers two notebooks:
 
-- `geography_bronze.ipynb` - loads completed PSGC API landing batches.
-- `admin_boundaries_bronze.ipynb` - loads prepared administrative-boundary features from a validated handoff and staging manifest.
+- `geography_bronze.py` - loads completed PSGC API landing batches.
+- `admin_boundaries_bronze.py` - loads prepared administrative-boundary features from a validated handoff and staging manifest.
 
 The notebooks preserve source content and add ingestion lineage. They do not perform the full PSGC-to-boundary reconciliation; that belongs in a downstream step.
 
@@ -30,7 +30,7 @@ The notebook reads already-landed data; it does not call the PSGC API or require
 
 | Item | Details |
 |---|---|
-| Notebook | `admin_boundaries_bronze.ipynb` |
+| Notebook | `admin_boundaries_bronze.py` |
 | Input handoff | `handoff.json` |
 | Landing receipt | `receipt.json` |
 | Staging manifest | `manifest.json` |
@@ -147,7 +147,7 @@ The notebook checks the landing completion marker and manifest, landing status a
 
 ### 6.2 Administrative-boundary checks
 
-The notebook validates the handoff, receipt, staging manifest, source-version and batch identifiers, and listed input files. It checks expected feature counts by administrative level, existing-version/rerun conditions, target schema compatibility, and post-write counts before publishing the handoff. Detailed data-quality approval is handled by the separate `admin_boundaries_bronze_qc.ipynb` workflow.
+The notebook validates the handoff, receipt, staging manifest, source-version and batch identifiers, and listed input files. It checks expected feature counts by administrative level, existing-version/rerun conditions, target schema compatibility, and post-write counts before publishing the handoff. Detailed data-quality approval is handled by the separate `admin_boundaries_bronze_qc.py` workflow.
 
 ## 7. Downstream Dependencies
 
@@ -173,7 +173,7 @@ The notebook validates the handoff, receipt, staging manifest, source-version an
 3. Run the notebook with a single concurrent writer for the source version.
 4. Review expected and candidate counts by administrative level and the selected load action.
 5. Review the post-write reconciliation and generated `bronze_handoff.json`.
-6. Run `admin_boundaries_bronze_qc.ipynb` for the separate Bronze quality checks.
+6. Run `admin_boundaries_bronze_qc.py` for the separate Bronze quality checks.
 
 ## 9. Open Issues
 

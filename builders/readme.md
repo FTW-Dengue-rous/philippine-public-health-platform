@@ -1,5 +1,8 @@
 # builders/
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Scripts that **prepare inputs** for the pipeline. They are run by hand, never by the pipeline job.
 Each one writes a file that a person reviews before the pipeline uses it.
 

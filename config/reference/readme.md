@@ -1,5 +1,8 @@
 # config/reference/
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Reviewed reference CSVs that silver needs: label → PSGC code maps, cause maps, the disease directory, area exceptions and row overrides. They are **inputs**, not data. Each domain's `*_silver_00_reference.sql` loads them into silver tables, and the silver builds join to those tables.
 
 ## Where each copy lives

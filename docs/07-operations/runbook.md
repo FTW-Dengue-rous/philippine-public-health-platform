@@ -138,7 +138,7 @@ The job runs, in order ([architecture overview](../03-architecture/architecture-
 6. Gold `gold_01` → `gold_24` (`dimension/`, `fact/`, `mart/`), then `qc_gold`.
 7. `qc_registry` (`quality_registry_check.sql`): every check code recorded in the run is in `check_registry` with the right layer. It writes nothing; a failure here loses no data.
 
-By hand, run the same files in the same order. In a workspace whose `bronze.ingestion_metadata` predates the file-load columns, run `ingestion_metadata_fix.sql` Part 1 first (incident 3).
+By hand, run the same files in the same order. In a workspace whose `bronze.ingestion_metadata` predates the file-load columns, run `ingestion_metadata_fix.sql` (run in the workspace; not kept in the repo) Part 1 first (incident 3).
 
 ## 6. Incident log
 

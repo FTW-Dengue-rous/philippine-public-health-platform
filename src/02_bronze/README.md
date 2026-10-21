@@ -1,5 +1,8 @@
 # Bronze layer (`src/02_bronze`)
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 The bronze layer copies every source file into the lakehouse exactly as it arrived. It changes no values: a cell that says "1,234" stays the text "1,234". What bronze adds is a label on every row: which source, which file, which sheet, which row, and when it was loaded.
 
 Bronze has two jobs:
@@ -82,6 +85,7 @@ The job allows one run at a time (`max_concurrent_runs: 1`). The geography and a
 - **Restricted files** sit under `<domain>/restricted/`. These are FOI releases, the patient-level hospital extract, bed occupancy and IHME GBD. They are never committed to GitHub.
 - **PSGC:** the PSGC API job lands a completed snapshot under `geography/psgc_api/raw/version=<version>/run_id=<id>/`: API pages, record files, `manifest.json` and `_SUCCESS`.
 - **HDX boundaries:** the HDX ingestion notebook writes prepared files and a `handoff.json` under `admin_boundaries/_runs/<run_id>/`.
+- **Download URLs:** API-ingested sources (`psgc`, `hdx_phl_admin`) have `base_url` in `sources_geography.yaml`. See [data sources](../../docs/02-data/data-sources.md) section 6.
 
 ---
 

@@ -1,5 +1,8 @@
 # Silver: diseases
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 > **Historical implementation note.** The current, authoritative diseases documentation is [the Silver diseases guide](../../../docs/04-pipeline/silver/diseases.md). This file is retained for implementation history; its dated status statements must not be used as current deployment evidence.
 
 This page covers the diseases domain in silver: six built tables, four reference tables, the rules that decide which bronze rows are kept, and what has been run so far. The design source is `diseases-silver-plan.md` (v1.7, 2026-10-09). Facts dated 2026-10-11 or later on this page are newer than the plan and override it.

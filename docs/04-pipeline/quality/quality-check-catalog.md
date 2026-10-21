@@ -7,6 +7,8 @@ Every check code in the platform, in one list. A code has one meaning in every d
 
 The names and severities here are the ones in the scripts (`CHECKS` dictionaries and recorded `check_name`). How each check works, what fails it and what to do: [bronze quality checks](../bronze/bronze-quality-checks.md), [silver quality checks](../silver/silver-quality-checks.md), and [gold analytical validation and traceability](../gold/analytical-validation-and-traceability.md). Rules for severities and gates: [quality control framework](quality-control-framework.md).
 
+Thresholds and failure actions per code are in [silver quality checks](../silver/silver-quality-checks.md) ("Fails when" column, section 16) and [bronze quality checks](../bronze/bronze-quality-checks.md). FAIL stops the job; WARN is recorded and reviewed.
+
 Status date: 2026-10-21. Back to the [quality overview](README.md).
 
 ---

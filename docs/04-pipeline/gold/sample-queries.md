@@ -19,6 +19,7 @@ ORDER BY beds_per_10k NULLS FIRST, area_name;
 SELECT build_id, status, finished_at, row_count, code_version
 FROM public_health.quality.build_log
 WHERE target_table = 'public_health.gold.fact_disease_metric'
+  AND status = 'succeeded'
 ORDER BY finished_at DESC
 LIMIT 1;
 ```
@@ -30,3 +31,4 @@ Do not sum sources, coverage bases, or periods merely because their columns shar
 | Date | Change |
 |---|---|
 | 2026-10-21 | Query 1 uses the mart's real columns (`hospitals`, `beds`, `beds_per_10k`) |
+| 2026-10-21 | Query 2: added `AND status = 'succeeded'` to return only published builds |

@@ -1,6 +1,7 @@
 # Evidence
 
 Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
 
 Proof that the pipeline runs, checks itself and gives the same result twice. Each run record holds the job run, the query results and screenshots, with the run date in the name. The methods are described elsewhere; this folder holds the results.
 
@@ -22,7 +23,7 @@ One record per pipeline session, named by date. The final runs are the evidence 
 │   ├── run-1/                         run-1.md and its screenshots
 │   ├── run-2/
 │   ├── run-3/
-│   └── reconciliation/                queries A–D, once after run 3
+│   └── reconciliation/                queries A–D (not yet captured)
 ├── 2026-10-21-empty-workspace-run/          one full run from empty tables in a new workspace
 └── 2026-10-21-dashboard/              dashboard page screenshots and what they show
 ```
@@ -33,7 +34,7 @@ One record per pipeline session, named by date. The final runs are the evidence 
 | `2026-10-21-final-runs/README.md` | Three runs on the same inputs give the same published content |
 | `2026-10-21-empty-workspace-run/` | The pipeline builds every layer from the landing files alone, with the same row counts as the final runs |
 | `2026-10-21-dashboard/` | The dashboard pages render on the gold build, and which widgets need a fix |
-| `reconciliation/` | Every bronze row is loaded or set aside with a reason; controls match at both layers ([silver reconciliation](../04-pipeline/silver/reconciliation.md), section 5) |
+| `reconciliation/` | Every bronze row is loaded or set aside with a reason; controls match at both layers ([silver reconciliation](../04-pipeline/silver/reconciliation.md), section 5). **Not yet captured.** |
 
 A new session of runs gets its own `<yyyy-mm-dd>-<what>/` folder. Don't move or rewrite an older record: add a note to it instead.
 

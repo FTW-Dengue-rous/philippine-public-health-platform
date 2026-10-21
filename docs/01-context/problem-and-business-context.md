@@ -3,7 +3,7 @@
 This page explains why LUNASaan? exists, who it is for and which questions it answers. Read it first if you are new to the project.
 
 Owner: LUNASaan Documentation Team
-Last updated: 2026-10-20
+Last updated: 2026-10-21
 
 | Item | Value |
 |---|---|
@@ -75,7 +75,7 @@ The business questions break into analytical questions. Each one is answered by 
 | Need | N1–N4 | Disease burden by area: cause-of-death shares (N1), modelled deaths and prevalence (N2), dengue peaks (N3), TB notifications (N4) | `fact_disease_metric` (N1), `mart_area_burden_indicator`, `mart_dengue_peak_capacity` |
 | Supply | S1, S2, S3 | Hospital and bed supply, bed occupancy, health stations and health centres | `mart_area_service_profile` (S1, S3), `fact_facility_capacity` (S2) |
 | Access | A1–A4 | Areas with no hospital or primary care recorded; highest hospital level; population per facility or bed; distance to care | `mart_locality_service_presence`, `fact_area_access` |
-| Workforce | W1, W2 | Doctors, nurses, midwives and barangay health workers per population | `mart_area_service_profile` |
+| Workforce | W1, W2 | LGU- and DOH-hired doctors, nurses, midwives and barangay health workers per population (FHSIS; excludes private sector) | `mart_area_service_profile` |
 | Equity | E1, E2 | Service gaps by poverty band | `mart_area_service_profile` |
 | Priority | P1, P2 | Areas with high burden and several gaps; how the ranking moves with weights | `mart_area_priority` |
 | TB case study | T1, T2 | TB rates against workers and primary care; preventive treatment and treatment success | `mart_tb_case_study` |
@@ -101,11 +101,11 @@ The business questions break into analytical questions. Each one is answered by 
 | 1 | The dashboard shows where government should add services | BQ1 marts answer every core analytical question above |
 | 2 | Every number can be traced to its source | Lineage from a dashboard cell to a source cell (silver lineage + `build_inputs`) |
 | 3 | Areas that cannot be compared fairly are flagged, not hidden | `comparison_eligible`, `exclusion_reason` and `mapping_outcome` on mart rows |
-| 4 | The pipeline can rerun safely | Idempotency evidence: three full runs on the same inputs; every gold QC G12 row passes on runs 2 and 3 ([evidence](../06-evidence/README.md)). **Met 2026-10-21:** [final runs](../06-evidence/2026-10-21-final-runs/README.md) |
+| 4 | The pipeline can rerun safely | Reruns on unchanged inputs give the same result: bronze reloaded no file, all 28 silver and gold tables kept the same row counts, and all 9 gold model tables kept the same content (G12) in runs 2 and 3. Not tested: loading new or changed files, recovery from a failed run, and content equality of marts and views. [Final runs](../06-evidence/2026-10-21-final-runs/README.md) |
 | 5 | Restricted data stays restricted | Aggregates only; cells under 3 suppressed; raw files not in the repo |
 | 6 | A new engineer can reproduce the pipeline end to end from the documentation | [Setup guide](../07-operations/setup-guide.md), [runbook](../07-operations/runbook.md), [reproducibility](../07-operations/reproducibility.md) |
 
-Criteria 1–5 come from the team's success-criteria slide — confirm them against the slide before the final submission. Criterion 6 was added during the documentation pass; it is not on the slide.
+Criteria 1–5 come from the team's success-criteria slide. Criterion 6 was added during the documentation pass; it is not on the slide.
 
 ## 8. The platform name
 
@@ -131,3 +131,4 @@ Motto: **Tamang Datos. Tamang Lugar. Tamang Tugon.** The right data, for the rig
 | 2026-10-20 | Build-status wording was qualified for repository-only review: live `public_health.gold`, `build_log`, and `build_inputs` records are not contained in the checkout; status-check date restored to the heading; 2026-10-12 rewording date restored to the access-questions heading |
 | 2026-10-21 | Criterion 4 met: three final runs of 2026-10-21 |
 | 2026-10-21 | Build-status note updated: `public_health.gold`, `build_log` and `build_inputs` written by the final runs |
+| 2026-10-21 | Criterion 4 wording updated to match recorded tests and state what was not tested; submission reminder removed from success criteria |
