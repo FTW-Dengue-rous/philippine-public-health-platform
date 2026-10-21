@@ -98,7 +98,7 @@ Moved here from `docs/decisions.md` on 2026-10-20. Status date: 2026-10-20.
 | O-14 | Pandemic period in `dim_date` (open decision 5) | Closed by D-61 (2026-10-19): 2020–2022. |
 | O-15 | Alignment window between a count year and its population year (open decision 7) | 2 years in the marts. |
 | O-16 | Show `other` planning units on the dashboard (Isabela City, the SGA municipalities) | They are in the marts. Display not decided. |
-| O-17 | `check_registry` codes for bronze and gold | GB01–GB13 (geography), HB00–HB14 (admin boundaries), B16 (population), S59, the SG/AB build codes and G01–G13 are not in `quality_registry_seed.sql` yet. Add them, then switch every QC script to `strict_registry=True`. |
+| O-17 | `check_registry` codes for bronze and gold | Since 2026-10-21, `quality_registry_seed.sql` (Step 1b) holds every code: GB, HB, SG, GS, AB, AS/ASB, the per-domain S codes, S59 and G01–G13. Still open: run the setup job, check that the `qc_registry` job task passes, then switch every QC script to `strict_registry=True`. |
 
 ## History of updates
 
@@ -110,3 +110,4 @@ Moved here from `docs/decisions.md` on 2026-10-20. Status date: 2026-10-20.
 | 2026-10-20 | D-60 (no gold setup file), D-61 (pandemic period, closes O-14), D-62 (gold rule 2a, null keys) added; O-08 closed by D-42; O-17 widened to gold and silver codes; O-01 and O-05 file names updated to `gold_11`, `gold_14`–`24` |
 | 2026-10-20 | D-63 (manual acquisition for file-based domains, AD-17) added |
 | 2026-10-20 | Rewritten in short, active sentences |
+| 2026-10-21 | Registry seed holds every check code (O-17); only the switch to `strict_registry=True` is left |
