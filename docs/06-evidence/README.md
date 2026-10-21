@@ -1,21 +1,36 @@
 # Evidence
 
-Proof that the pipeline runs, checks itself and gives the same result twice. Each folder holds screenshots and query outputs from recorded runs, with the run date in the file name. The methods are described elsewhere; this folder holds the results.
+Proof that the pipeline runs, checks itself and gives the same result twice. Each run record holds the job run, the query results and screenshots, with the run date in the name. The methods are described elsewhere; this folder holds the results.
 
-Status date: 2026-10-20. Capture plan for the three evidence runs below; outputs are added after the runs.
+Status date: 2026-10-21. Final run 1 done (2026-10-21); runs 2 and 3 next.
 
 ---
 
-## 1. What each folder proves
+## 1. Folder layout
 
-| Folder | Proves | Captured from |
-|---|---|---|
-| `architecture/` | The job as deployed: task graph, settings, environments | Job page in the workspace (graph view, settings) |
-| `bronze/` | Every source loaded or correctly skipped; bronze QC and the gate passed | `run_bronze.py` summary, gate output, query B1 |
-| `silver/` | Every silver build succeeded; domain and cross-domain QC have no FAIL; expected WARNs only | Query S1, S2, the QC run summaries |
-| `gold/` | Gold built; gold QC has no FAIL; readiness mart current | Query G1, `mart_evidence_readiness`, the gold QC summary |
-| `idempotency/` | Three runs on the same inputs give the same published content | `run-01/`, `run-02/`, `run-03/`, and `run-comparison.md` (queries I1, I2) |
-| `reconciliation/` | Every bronze row is loaded or set aside with a reason; controls match at both layers | Queries A–D of [silver reconciliation](../04-pipeline/silver/reconciliation.md), section 5 |
+One record per pipeline session, named by date. The final runs are the evidence to read; earlier records are history.
+
+```
+06-evidence/
+├── README.md                          this guide and the run index (section 5)
+├── evidence_queries.sql               the seven queries (B1, S1, S2, G1, I1, I2, I3)
+├── 2026-10-18-new-workspace-run.md    first full run in this workspace (history)
+├── idempotency/comparison.md          earlier manual comparisons (history)
+└── 2026-10-21-final-runs/             the evidence: three runs on the same inputs
+    ├── README.md                      runs, rules, comparison (I1, I2, I3)
+    ├── run-1/                         run-1.md and its screenshots
+    ├── run-2/
+    ├── run-3/
+    └── reconciliation/                queries A–D, once after run 3
+```
+
+| Record | Proves |
+|---|---|
+| Each `run-N/` | The job ran end to end; bronze skipped or loaded correctly and the gate passed; silver and gold built; QC has no FAIL and only expected WARNs |
+| `2026-10-21-final-runs/README.md` | Three runs on the same inputs give the same published content |
+| `reconciliation/` | Every bronze row is loaded or set aside with a reason; controls match at both layers ([silver reconciliation](../04-pipeline/silver/reconciliation.md), section 5) |
+
+A new session of runs gets its own `<yyyy-mm-dd>-<what>/` folder. Don't move or rewrite an older record: add a note to it instead.
 
 ## 2. The three evidence runs
 
@@ -27,109 +42,83 @@ Run the full job three times with no new data and no code change between runs (D
 | Run 2 | Same inputs: bronze skips every file; silver and gold rebuild; every G12 row PASS ("same as previous") |
 | Run 3 | Confirms run 2: every G12 row PASS again |
 
-For each run, save into `idempotency/run-0N/`:
+Between runs, don't:
 
-1. A screenshot of the job run (all tasks green) with its run id and duration.
+- merge a pull request or redeploy the bundle;
+- add or replace a file in the landing Volume;
+- run a single task or a build by hand (an extra build shifts the I1 columns).
+
+For each run, save into `run-N/` of the session folder:
+
+1. A screenshot of the job run (all tasks green) with its run id and duration, and of the task graph.
 2. The outputs of queries B1, S1, S2, G1 (section 3), exported as CSV or screenshots.
 3. The `run_bronze.py` summary and the six gate outputs (task logs).
+4. `run-N.md`: what ran, the results, and why each WARN is expected ([run 1](2026-10-21-final-runs/run-1/run-1.md) is the model).
 
-After run 3, write `idempotency/run-comparison.md` from queries I1 and I2: row counts per table across the three runs, and the G12 status per gold table.
+After run 3, fill the comparison in the session `README.md` from queries I1, I2 and I3: row counts per table, the G12 status per gold table, and what each bronze loader did, across the three runs.
 
 Then run the reconciliation queries A–D once and save them in `reconciliation/` with the run date. Record the three runs in the [change log](../08-governance/change-log.md) and the results in [quality results and evidence](../04-pipeline/quality/quality-results-and-evidence.md).
 
+### Idempotency passes when
+
+| Check | Where | Pass |
+|---|---|---|
+| Bronze reloads nothing | I3, and the `run_bronze.py` summary of runs 2 and 3 | `no_reload` true for every source: `run_2` and `run_3` show "loaded 0, failed 0" |
+| Geography and boundaries change nothing | MERGE task output, runs 2 and 3 | 0 inserts, 0 updates |
+| Silver and gold row counts | I1 | `same_count` true for every table |
+| Gold content | I2 | `run_2` and `run_3` PASS for all 9 tables, detail "same as previous" |
+| No new failures | G1, runs 2 and 3 | Only G07 and G13 WARN; no G12 row |
+
 ## 3. Queries
 
-**B1. Bronze QC and the gate's view, latest run per source**
+All seven are in [`evidence_queries.sql`](evidence_queries.sql). Run them right after the job finishes, before anything else builds.
 
-```sql
-SELECT r.domain, q.source_key, q.check_id, q.status, q.detail
-FROM public_health.quality.qc_results q
-JOIN public_health.quality.run_log r ON r.validation_id = q.validation_id
-WHERE q.layer = 'bronze' AND q.status <> 'PASS'
-QUALIFY row_number() OVER (PARTITION BY r.domain, q.source_key, q.check_id, q.detail ORDER BY q.executed_at DESC) = 1
-ORDER BY q.status, r.domain, q.source_key;
-```
+| Query | When | What it returns | Expected |
+|---|---|---|---|
+| B1 | Each run | Bronze checks not PASS, from the latest QC run of each source (what the gate reads) | Only the WARNs in [bronze quality checks](../04-pipeline/bronze/bronze-quality-checks.md): B08 claims, B08 `doh_fhsis_demographic`, B10 `psgc_population` |
+| S1 | Each run | Last run of every QC script | No FAIL, no ERROR |
+| S2 | Each run | Latest build of every silver and gold table (test schemas left out) | Every table, finished during this run |
+| G1 | Each run | Gold QC results not PASS, latest gold QC run | No FAIL |
+| I1 | After run 3 | Row counts per table across the last three builds | Same count in all three columns |
+| I2 | After run 3 | G12 per gold table across the last three gold QC runs | `run_2`, `run_3` PASS |
+| I3 | After run 3 | Per bronze source, what its loader logged in its last three runs (loaded, skipped, failed) from `ingestion_metadata` | `run_2`, `run_3`: loaded 0, failed 0; `no_reload` true |
 
-**S1. Every QC script's last run (all layers)**
+Notes on reading them:
 
-```sql
-SELECT layer, script_name, status, checks_total, checks_pass, checks_warn, checks_fail,
-       started_at, validation_id
-FROM public_health.quality.run_log
-QUALIFY row_number() OVER (PARTITION BY script_name ORDER BY started_at DESC) = 1
-ORDER BY layer, script_name;
-```
-
-**S2. Latest build of every silver and gold table**
-
-```sql
-SELECT layer, target_table, status, row_count, target_table_version, finished_at
-FROM public_health.quality.build_log
-WHERE status = 'succeeded'
-QUALIFY row_number() OVER (PARTITION BY target_table ORDER BY finished_at DESC) = 1
-ORDER BY layer, target_table;
-```
-
-**G1. Gold QC results that are not PASS (latest run)**
-
-```sql
-SELECT table_name, check_id, check_name, status, observed, expected, detail
-FROM public_health.quality.qc_results
-WHERE layer = 'gold'
-  AND validation_id = (SELECT max_by(validation_id, started_at) FROM public_health.quality.run_log
-                       WHERE layer = 'gold')
-  AND status <> 'PASS'
-ORDER BY status, table_name, check_id;
-```
-
-**I1. Row counts per table across the last three builds**
-
-```sql
-WITH b AS (
-  SELECT target_table, row_count, finished_at,
-         row_number() OVER (PARTITION BY target_table ORDER BY finished_at DESC) AS rn
-  FROM public_health.quality.build_log
-  WHERE status = 'succeeded')
-SELECT target_table,
-       max(CASE WHEN rn = 3 THEN row_count END) AS run_1,
-       max(CASE WHEN rn = 2 THEN row_count END) AS run_2,
-       max(CASE WHEN rn = 1 THEN row_count END) AS run_3
-FROM b WHERE rn <= 3
-GROUP BY target_table
-ORDER BY target_table;
-```
-
-Run it right after run 3, before any other build. Expected: the same count in all three columns for every table. Geography and boundaries are MERGE builds outside `build_log`; their rerun evidence is 0 inserts and 0 updates in the task output.
-
-**I2. G12 per gold table, last three gold QC runs**
-
-```sql
-WITH g AS (
-  SELECT q.table_name, q.status, q.observed, q.detail, r.started_at,
-         dense_rank() OVER (ORDER BY r.started_at DESC) AS run_rank
-  FROM public_health.quality.qc_results q
-  JOIN public_health.quality.run_log r ON r.validation_id = q.validation_id
-  WHERE q.layer = 'gold' AND q.check_id = 'G12')
-SELECT table_name,
-       max(CASE WHEN run_rank = 3 THEN status END) AS run_1,
-       max(CASE WHEN run_rank = 2 THEN status END) AS run_2,
-       max(CASE WHEN run_rank = 1 THEN status END) AS run_3
-FROM g WHERE run_rank <= 3
-GROUP BY table_name
-ORDER BY table_name;
-```
-
-Expected: `run_2` and `run_3` PASS for every table.
+- **Bronze dates stay old.** `run_bronze.py` re-runs QC only for sources it loaded or that are not cleared. In S1 and B1, an unchanged source keeps the date of its last QC run.
+- **B1 reads the latest run only.** A failure that a later run fixed no longer shows. The first version partitioned by `detail` and kept old failures.
+- **I3 covers the file and API loaders.** PSGC geography and HDX boundaries don't log skips to `ingestion_metadata`; their evidence is the task output (`unchanged`, 0 inserts, 0 updates).
+- **S1 lists retired script names.** `population_silver_qc.py` (2026-10-17) is the old name of `psgc_population_silver_qc.py`.
 
 ## 4. Rules
 
-- Name files `<what>_<yyyy-mm-dd>.<ext>` (for example `gate_2026-10-20.png`) inside the run folder.
+- **One person runs the evidence runs.** Every run writes to the same tables, so a teammate's run in between becomes part of the "last three" in I1–I3 and in G12. Agree who runs before starting.
+- **One owner per record.** The person who ran it writes its record. The other reviews it and adds a note instead of rewriting it.
+- Name screenshots `<n>_run<N>.png` inside the run folder, numbered in query order: 1 B1, 2 S1, 3 S2, 4 G1, 5 I1, 6 I2, 7 I3, 8 job run, 9 job details (List view), 10 run history of the job, 11 task graph (Graph view). Add `a`, `b` when one result needs two screenshots (for example `3a_run1.png`, `3b_run1.png`).
 - Never put restricted values in a screenshot: aggregates, counts and QC results only (D-47).
 - Don't edit an output; rerun and replace it.
-- A WARN in the evidence is fine when it is an expected WARN on the layer's quality page; anything else gets a note in `run-comparison.md`.
+- A WARN in the evidence is fine when it is an expected WARN on the layer's quality page; anything else gets a note in the run record.
 
-## 5. History of updates
+## 5. Run index
+
+| Date | Record | Status | What it shows |
+|---|---|---|---|
+| 2026-10-18 | [First full run in this workspace](2026-10-18-new-workspace-run.md) | History | Setup, bronze, silver and gold ran end to end; bronze and silver QC 0 FAIL. No gold QC yet; idempotency not tested |
+| 2026-10-21 | [Final runs](2026-10-21-final-runs/README.md) | Evidence, in progress | Three runs on the same inputs: QC in every layer, incremental bronze, idempotency |
+
+**Final runs, 2026-10-21:**
+
+| Run | Date | Result |
+|---|---|---|
+| 1 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-1/run-1.md), job run `186099985728312`. Bronze: nothing reloaded (I3). Gold built in `public_health.gold`. Gold QC 118 checks: 111 PASS, 7 WARN, 0 FAIL. WARNs: G12 on 5 tables (content changed since the run before the gold pass), G13 (Kalayaan, Makati, Pikit: boundary changes between censuses), G07 claims (27 region cells suppressed). Silver QC: 0 FAIL. Bronze: 3 expected WARNs |
+| 2 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-2/run-2.md), job run `26759964775689`. Bronze loaded nothing; all 28 tables same row count; G12 PASS "same as previous" on all 9 gold tables; gold QC 118 checks: 116 PASS, 2 WARN (G13, G07), 0 FAIL |
+| 3 | — | Pending |
+
+## 6. History of updates
 
 | Date | Change |
 |---|---|
 | 2026-10-20 | Folder guide and capture plan for three evidence runs written |
+| 2026-10-21 | Folder layout: one dated record per session; final runs in `2026-10-21-final-runs/`; the 2026-10-18 record kept as history. Rules for two people |
+| 2026-10-21 | I3 added: bronze loads across the three runs |
+| 2026-10-21 | Queries moved to `evidence_queries.sql`. B1 reads each source's latest QC run; S2 and I1 leave out test schemas; I1 adds `same_count`. Pass criteria for idempotency; run 1 recorded |

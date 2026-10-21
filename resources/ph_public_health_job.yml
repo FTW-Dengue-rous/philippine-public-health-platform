@@ -54,8 +54,9 @@
 #   build_log.parameters and read by QC (rule 2a). facilities 04a and 04 must run in the same
 #   run (04 reads the nearest_max_km column 04a writes).
 #
-# Gold (revised 2026-10-20): files gold_01-gold_24, dimension/ fact/ mart/. qc_gold is the last
-#   task. Evidence: run the job three times on the same inputs; every G12 row of runs 2 and 3
+# Gold (revised 2026-10-20): files gold_01-gold_24, dimension/ fact/ mart/. qc_gold, then
+#   qc_registry (2026-10-21: registry against recorded results) are the last tasks.
+#   Evidence: run the job three times on the same inputs; every G12 row of runs 2 and 3
 #   should PASS ("same as previous"). Capture plan: docs/06-evidence/README.md. The first run after the D-44 / D-46 rebuild shows G12 WARN once for
 #   the weekly rows (their date_key changed).
 #
@@ -894,6 +895,19 @@ resources:
             parameters:
               - --job_run_id
               - "{{job.run_id}}"
+
+        # ================================================================
+        # 10b. REGISTRY CHECK (2026-10-21): check_registry against every recorded result.
+        #      Fails only when a code is not registered or has the wrong layer; type and
+        #      severity differences are listed in the task output. Writes nothing.
+        # ================================================================
+        - task_key: qc_registry
+          depends_on:
+            - task_key: qc_gold
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/05_quality/sql/quality_registry_check.sql
 
         # ================================================================
         # 11. DASHBOARD REFRESH (to-do 10, optional). Uncomment when the dashboard queries

@@ -3,8 +3,8 @@
 -- Keeps QC output out of the bronze / silver / gold schemas.
 --
 -- Tables
---   quality.check_registry    one row per check code (B01, S03, ...). Created empty;
---                             filled at the end by quality_registry_seed.sql
+--   quality.check_registry    one row per check code (B01, S03, ...). Created empty here;
+--                             filled by quality_registry_seed.sql in the setup job
 --   quality.run_log           one row per QC execution (validation session)
 --   quality.qc_results        one row per check result (agreed 21-column team format)
 --   quality.profile           one row per column per profiled table per QC execution
@@ -29,16 +29,21 @@
 --
 -- How to run
 --   This file only CREATEs objects (IF NOT EXISTS / OR REPLACE VIEW), so "Run All"
---   is safe and re-running it changes no data. Run it once before any QC script, and again
---   after editing a view here. Views are computed when queried, so they never need a rerun
---   after a QC run.
---   The other two quality files are run separately, step by step (not "Run All"):
---     quality_migrate_bronze_qc.sql   once, to move old public_health.bronze.qc_results rows
---     quality_registry_seed.sql       at the end of the project, to fill check_registry
+--   is safe and re-running it changes no data. The setup job runs it on every pipeline run
+--   (task setup_quality). Run it by hand after editing a view here. Views are computed when
+--   queried, so they never need a rerun after a QC run.
+--   The other two quality files:
+--     quality_registry_seed.sql       setup job, right after this file, on every run.
+--                                     Insert-only, so a rerun only adds missing codes
+--     quality_migrate_bronze_qc.sql   once, by hand, to move old public_health.bronze.qc_results rows
 --   QC scripts append to these tables (see dq_utils.py), so several domains can run QC at
 --   the same time without Delta write conflicts. The one exception is quarantine: a QC run
 --   replaces its own slice (layer, table, check, source table), so reruns do not duplicate rows.
 --   Silver and gold builds only append to build_log and build_inputs
+--
+-- Changes
+--   2026-10-21  registry is filled by the setup job (not "at the end"); gold G codes added to
+--               v_check_attribute_override, so gold results no longer show as 'unmapped'
 -- =============================================================================
 
 
@@ -67,8 +72,9 @@ CREATE TABLE IF NOT EXISTS public_health.quality.check_registry (
 USING DELTA
 COMMENT 'One row per data quality check code, all layers';
 
--- The table starts EMPTY. It is filled at the end (quality_registry_seed.sql), once the
--- checks the team actually uses are settled. QC scripts work without it until then.
+-- The table starts empty. quality_registry_seed.sql fills it in the setup job, right after
+-- this file, on every run (insert-only). Scripts with strict_registry=False also work without
+-- a registry row; with strict_registry=True an unregistered code stops the run.
 
 
 -- -----------------------------------------------------------------------------
@@ -441,6 +447,8 @@ WHERE i.input_kind = 'bronze_source';
 --      Types the geography / admin boundaries files use: ACCEPTED_VALUES, RANGE -> validity;
 --      VOLUME -> completeness; REFERENTIAL_INTEGRITY -> consistency.
 --   3. anything else -> 'unmapped' (it shows in v_quality_scorecard, so it gets an entry here).
+--   gold_qc.py writes INTEGRITY, AUDITABILITY, TIMELINESS and BUSINESS_RULE, which step 2 does
+--   not map, so every gold code with one of those types is listed in the override (2026-10-21).
 
 CREATE OR REPLACE VIEW public_health.quality.v_check_attribute_override
 COMMENT 'check_id -> quality attribute where check_type does not give it'
@@ -469,7 +477,10 @@ SELECT * FROM VALUES
   -- business rules: team-owned rules and plausibility bands
   ('S23', 'business_rule'), ('S24', 'business_rule'), ('S25', 'business_rule'), ('S47', 'business_rule'),
   ('S58', 'business_rule'), ('S67', 'business_rule'), ('S72', 'business_rule'), ('S94', 'business_rule'),
-  ('S95', 'business_rule'), ('S97', 'business_rule')
+  ('S95', 'business_rule'), ('S97', 'business_rule'),
+  -- gold (gold_qc.py): codes whose check_type step 2 does not map, plus the control totals
+  ('G04', 'consistency'), ('G05', 'auditability'), ('G06', 'timeliness'),
+  ('G07', 'accuracy'), ('G10', 'business_rule'), ('G13', 'business_rule')
 AS t(check_id, quality_attribute);
 
 CREATE OR REPLACE VIEW public_health.quality.v_qc_results_attribute
@@ -533,8 +544,9 @@ GROUP BY a.layer, a.table_name, a.quality_attribute;
 -- * Python QC scripts write through dq_utils.DQRun (same folder as the QC scripts).
 -- * table_name is always the full name: public_health.<layer>.<table>. The views group
 --   by it, so a short name and a full name for the same table would show up twice.
--- * Until quality_registry_seed.sql is run, a new check only needs a code (B13, S14, ...)
---   plus check_name and check_type passed to dq.record(). Keep codes unique per layer.
+-- * A new check needs a code (B13, S14, ...) plus check_name and check_type passed to
+--   dq.record(). Add the code to quality_registry_seed.sql in the same pull request: with
+--   strict_registry=True an unregistered code stops the run. Keep codes unique per layer.
 -- * A new check whose attribute is not clear from its check_type: add its code to
 --   v_check_attribute_override (section 8b) and re-run this file.
 -- * build_log.build_id is one id per build of ONE table. A job that builds three tables
