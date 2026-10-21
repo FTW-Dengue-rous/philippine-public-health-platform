@@ -1,5 +1,7 @@
 # Data sources
 
+Owner: LUNASaan Documentation Team
+
 This page lists every source dataset the pipeline loads, who publishes it, what it covers and how it may be shared. Each source feeds specific analytical questions in the BQ1 framework. See [business context](../01-context/problem-and-business-context.md) for the question-to-source traceability.
 
 Last updated: 2026-10-21

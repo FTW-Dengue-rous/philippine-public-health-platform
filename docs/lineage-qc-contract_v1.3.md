@@ -1,6 +1,11 @@
-# Lineage and QC contract (shared, v1.3 draft)
+# Historical lineage and QC contract (v1.3 draft)
 
-Last updated: 2026-10-09.
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
+> **Historical record only.** This file preserves the 2026-10-09 draft. The adopted, current contract is [Lineage and quality contract](04-pipeline/quality/lineage-and-quality-contract.md). When the two files differ, the current contract is authoritative.
+
+Historical draft date: 2026-10-09.
 - **v1.3: `row_disposition` stores only the bronze rows that were not loaded** (dropped, duplicate, quarantined, merged). Loaded rows are no longer written: about 99% fewer rows, with the same reconciliation check (section 7.1).
 - **v1.2 reduces the lineage columns on silver rows from 11 to 7** (6 where nothing is unpivoted). Facts that are the same for every row of a file (load time, load id, checksum, build time) are stored once per build in `build_inputs` and `build_log`, and reached by a join. Traceability is unchanged (sections 3.3 to 3.5, 13).
 - v1.1 added four clarifications (section 13). No table, column or identifier changes, and nothing a domain plan has to restructure.
