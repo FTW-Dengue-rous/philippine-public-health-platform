@@ -111,7 +111,7 @@ Notes on reading them:
 | Run | Date | Result |
 |---|---|---|
 | 1 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-1/run-1.md), job run `186099985728312`. Bronze: nothing reloaded (I3). Gold built in `public_health.gold`. Gold QC 118 checks: 111 PASS, 7 WARN, 0 FAIL. WARNs: G12 on 5 tables (content changed since the run before the gold pass), G13 (Kalayaan, Makati, Pikit: boundary changes between censuses), G07 claims (27 region cells suppressed). Silver QC: 0 FAIL. Bronze: 3 expected WARNs |
-| 2 | — | Pending |
+| 2 | 2026-10-21 | [Run record](2026-10-21-final-runs/run-2/run-2.md), job run `26759964775689`. Bronze loaded nothing; all 28 tables same row count; G12 PASS "same as previous" on all 9 gold tables; gold QC 118 checks: 116 PASS, 2 WARN (G13, G07), 0 FAIL |
 | 3 | — | Pending |
 
 ## 6. History of updates
