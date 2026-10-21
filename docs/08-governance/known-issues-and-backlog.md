@@ -33,7 +33,7 @@ Decisions: [decision log](decision-log.md). Assumptions: [assumptions](../01-con
 | KI-16 | The manually created job (66 tasks) lacks the OSM silver build step that the bundle job (72 tasks) has | `gold_43_ref_osm_healthsite_point` depends on `facilities_osm_point_silver`, which only the bundle job builds | Use the bundle job, or add the OSM step to the manual job | — |
 | KI-17 | Unmatched facilities in the hospitals-only registry build (2026-10-10): 71 NHFR-only and 48 HFSRB-only out of 1,407 hospitals (1,092 by code, 196 by name) | Registry has unmatched facilities from both sources | Counts are from that build. The documented team build (2026-10-12, 3,957 rows with all four HFSRB lists) supersedes it. Detailed matching is in [facilities silver](../04-pipeline/silver/facilities.md) | — |
 | KI-18 | FOI ticket numbers marked CONFIRM in YAML but not verified against the actual requests | FOI provenance is incomplete | Confirm and record actual ticket numbers before publishing | 22 |
-| KI-19 | **Closed 2026-10-21.** A rebuild in an empty Databricks workspace is recorded: [new-workspace run](../06-evidence/2026-10-21-new-workspace/README.md), 0 FAIL, row counts equal to the final runs | — | — | — |
+| KI-19 | **Closed 2026-10-21.** A rebuild in an empty Databricks workspace is recorded: [new-workspace run](../06-evidence/2026-10-21-empty-workspace-run/README.md), 0 FAIL, row counts equal to the final runs | — | — | — |
 | KI-20 | The pipeline is documented to run without Databricks ([reproducibility](../07-operations/reproducibility.md): capabilities, code tied to Databricks, rebuild steps), but no rebuild outside Databricks is recorded | Portability rests on a review of the code, not on a run. A first rebuild elsewhere may find Databricks-only calls the review missed | Rebuild one open-data domain on Apache Spark 4 with open-source Delta Lake, following reproducibility section 4, and record it in `06-evidence/`; then the full pipeline | 40 |
 
 ### 1.2 Engineering limitations
@@ -136,7 +136,7 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | 2026-10-21 | CI checks on `dev` fixed; they pass |
 | 2026-10-21 | Final runs 1–3 of the bundle job: 0 FAIL; runs 2 and 3 show G12 PASS on all 9 gold tables, bronze loaded nothing, same row counts (idempotency proven; [final runs](../06-evidence/2026-10-21-final-runs/README.md)) |
 | 2026-10-21 | `qc_registry` job task added and passed; `strict_registry=True` is the default in every QC script (item 7, KI-03, O-17) |
-| 2026-10-21 | Full run in a new, empty workspace (run `908246813677292`): every layer built from the landing files, 0 FAIL, row counts equal to the final runs ([new-workspace run](../06-evidence/2026-10-21-new-workspace/README.md); KI-19 and item 39 closed). The first attempt found the `sources_population.yaml` `skip_checks` error (runbook incident 8) |
+| 2026-10-21 | Full run in a new, empty workspace (run `908246813677292`): every layer built from the landing files, 0 FAIL, row counts equal to the final runs ([new-workspace run](../06-evidence/2026-10-21-empty-workspace-run/README.md); KI-19 and item 39 closed). The first attempt found the `sources_population.yaml` `skip_checks` error (runbook incident 8) |
 
 ## 5. History of updates
 
