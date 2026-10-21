@@ -23,7 +23,7 @@ One record per pipeline session, named by date. The final runs are the evidence 
 │   ├── run-2/
 │   ├── run-3/
 │   └── reconciliation/                queries A–D, once after run 3
-├── 2026-10-21-new-workspace/          one full run from empty tables in a new workspace
+├── 2026-10-21-empty-workspace-run/          one full run from empty tables in a new workspace
 └── 2026-10-21-dashboard/              dashboard page screenshots and what they show
 ```
 
@@ -31,7 +31,7 @@ One record per pipeline session, named by date. The final runs are the evidence 
 |---|---|
 | Each `run-N/` | The job ran end to end; bronze skipped or loaded correctly and the gate passed; silver and gold built; QC has no FAIL and only expected WARNs |
 | `2026-10-21-final-runs/README.md` | Three runs on the same inputs give the same published content |
-| `2026-10-21-new-workspace/` | The pipeline builds every layer from the landing files alone, with the same row counts as the final runs |
+| `2026-10-21-empty-workspace-run/` | The pipeline builds every layer from the landing files alone, with the same row counts as the final runs |
 | `2026-10-21-dashboard/` | The dashboard pages render on the gold build, and which widgets need a fix |
 | `reconciliation/` | Every bronze row is loaded or set aside with a reason; controls match at both layers ([silver reconciliation](../04-pipeline/silver/reconciliation.md), section 5) |
 
@@ -110,7 +110,7 @@ Notes on reading them:
 | Date | Record | Status | What it shows |
 |---|---|---|---|
 | 2026-10-21 | [Final runs](2026-10-21-final-runs/README.md) | Evidence, complete (deployment provenance still required) | Three runs on unchanged inputs; every idempotency check passed |
-| 2026-10-21 | [New workspace](2026-10-21-new-workspace/README.md) | Evidence, complete (commit SHA not recorded) | Job run `908246813677292` in an empty workspace: every source loaded, all 28 tables built, 0 FAIL, row counts equal to the final runs |
+| 2026-10-21 | [New workspace](2026-10-21-empty-workspace-run/README.md) | Evidence, complete (commit SHA not recorded) | Job run `908246813677292` in an empty workspace: every source loaded, all 28 tables built, 0 FAIL, row counts equal to the final runs |
 | 2026-10-21 | [Dashboard](2026-10-21-dashboard/README.md) | Partial: pages 0, 2, 3, 4 captured; 1 and 7 still to capture | Published pages render with data; one widget bug and five minor issues listed |
 
 **Final runs, 2026-10-21:**
@@ -133,4 +133,4 @@ Deployment provenance (commit SHA and bundle deployment ID) was not recorded at 
 | 2026-10-21 | Queries moved to `evidence_queries.sql`. B1 reads each source's latest QC run; S2 and I1 leave out test schemas; I1 adds `same_count`. Pass criteria for idempotency; run 1 recorded |
 | 2026-10-21 | Run 3 restored to the status line and run index (its record and screenshots are in `run-3/`); provenance kept as still required. `headline_figures.sql` added (reproduces the root README's headline figures) |
 | 2026-10-21 | Dashboard record added: screenshots of pages 0, 2, 3 and 4, and the widget issues they show |
-| 2026-10-21 | New-workspace run recorded (`2026-10-21-new-workspace/`) |
+| 2026-10-21 | New-workspace run recorded (`2026-10-21-empty-workspace-run/`) |
