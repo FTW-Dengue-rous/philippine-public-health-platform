@@ -1,5 +1,7 @@
 # Change log
 
+Owner: LUNASaan Documentation Team
+
 Dated runs and revisions of the platform, newest first. Pages carry their own history; this page is the one place to see what changed when, and which run proves it.
 
 Status date: 2026-10-21. Add a row for every full run and every change that alters a published table.

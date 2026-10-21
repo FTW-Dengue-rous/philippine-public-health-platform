@@ -1,5 +1,7 @@
 # Architecture decisions
 
+Owner: LUNASaan Documentation Team
+
 The technical choices that shape the pipeline, with the reason and the trade-off for each. Each record links to the full decision log by ID (`D-NN`).
 
 This page is a summary. The full, dated log (business and technical decisions, plus open questions) is the [decision log](../08-governance/decision-log.md). When they disagree, the decision log wins.

@@ -1,6 +1,10 @@
 # Final runs (2026-10-21)
 
-Three full runs of the final pipeline job on the same inputs and the same code. They are the evidence that the pipeline is complete, passes its own QC, and is idempotent: bronze does not reload, and silver and gold rebuild to the same content.
+Owner: LUNASaan Documentation Team
+
+Last updated: 2026-10-21
+
+This branch records two full runs of the pipeline job on unchanged inputs. They show that the pipeline passes its recorded QC and that the second rerun reproduced the recorded Gold content. A third run is required before claiming three-run idempotency.
 
 Status date: 2026-10-21. Runs 1 and 2 done; run 3 next.
 
@@ -16,7 +20,7 @@ Method and queries: [evidence guide](../README.md), sections 2 and 3, and [`evid
 | 2 | `26759964775689` | to fill | 2026-10-21 10:16 – 11:16 | Succeeded. 0 FAIL; G12 PASS on all 9 gold tables; bronze loaded nothing; same row counts | [run-2](run-2/run-2.md) |
 | 3 | — | — | — | Pending | `run-3/` |
 
-Code for all three runs: branch `dev`, commit **to fill**. All three must use the same commit.
+**Provenance captured:** both records identify the Databricks job, job run ID, timestamps, and evidence-query outputs. **Provenance not captured:** the immutable Git commit SHA and bundle deployment ID. Do not describe these records as proof of an exact source revision until those identifiers are recorded.
 
 ## 2. Rules for these runs
 
@@ -47,9 +51,17 @@ With the second option, the "last three" columns of I1, I2 and I3 show runs 2 an
 
 Save the I1, I2 and I3 screenshots in `run-3/` as `5_run3.png`, `6_run3.png`, `7_run3.png` (the naming rule is in the [evidence guide](../README.md), section 4).
 
-## 4. History of updates
+## 4. Evidence still required
+
+- Record the Git commit SHA and bundle deployment ID for each evidence run.
+- Capture the `bronze_geography` and `bronze_admin_boundaries` task outputs that show `unchanged`, with zero inserts and updates.
+- Run and record run 3 before making a three-run idempotency claim.
+- After enabling `strict_registry=True`, capture one complete run on that deployment. It validates the current configuration; it must not be retroactively counted as one of these comparable runs if code or configuration changed.
+
+## 5. History of updates
 
 | Date | Change |
 |---|---|
 | 2026-10-21 | Folder created; run 1 recorded; run `26759964775689` (10:16) listed as candidate run 2 |
 | 2026-10-21 | Run 2 recorded: it meets the conditions and counts as run 2. Every idempotency check passed |
+| 2026-10-21 | Added explicit provenance and remaining-evidence requirements; the records do not claim evidence that was not captured. |

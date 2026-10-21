@@ -1,5 +1,9 @@
 # Documentation
 
+Owner: LUNASaan Documentation Team
+
+Last updated: 2026-10-21
+
 Start here. This folder explains the LUNASaan? platform: why it exists, what data it uses, how the pipeline is built, how its quality is checked and how to run it. The project summary is in the [root README](../README.md).
 
 ## Two kinds of pages

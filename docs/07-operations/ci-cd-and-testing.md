@@ -42,3 +42,9 @@ The GitHub Environment for each target must supply `DATABRICKS_HOST`, `DATABRICK
 ## What CI does not prove
 
 CI does not execute the Databricks pipeline, inspect restricted source data, prove dashboard rendering, or validate data-quality outcomes. A deploy is also not a successful pipeline run. Use the [runbook](runbook.md), [quality results](../04-pipeline/quality/quality-results.md), and saved run evidence for those claims.
+
+## Current automated-test coverage
+
+The current repository test is a smoke test for the expected project folders. It confirms that pytest is configured, but it does **not** validate loader parsing, geography matching, metric formulas, or quality-gate failure behavior. Treat the Databricks run evidence as execution evidence, not as a replacement for automated tests.
+
+Before a production handover, add deterministic fixture-based tests for at least: a valid and an invalid Bronze header, duplicate and missing-value disposition, one geography-map exception, a published Gold metric calculation, and a FAIL-level gate that stops its downstream build. Add a CI coverage threshold after those tests exist.
