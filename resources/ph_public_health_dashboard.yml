@@ -1,9 +1,22 @@
-# AI/BI (Lakeview) dashboard on the gold v2 marts (public_health.test_gold2).
-# Deployed by the bundle from dashboard/*.lvdash.json and refreshed by the last task of
-# ph_public_health_job.yml (dashboard_refresh), after gold_71 finishes.
+# AI/BI (Lakeview) dashboard on the gold marts and default views (public_health.gold).
+# Deployed by the bundle from dashboard/Philippine Public Health Platform.lvdash.json:
+# 8 pages (0. National Overview to 7. About the data) and 46 datasets, every one reading
+# public_health.gold (switched from public_health.test_gold2 on 2026-10-21; backup,
+# "for redesign" and duplicate pages and 18 unused datasets removed the same day).
 #
-# The .lvdash.json is read at deploy time, so dashboard/** can stay in sync.exclude.
-# Edits made in the workspace UI are overwritten on the next deploy: export them back with
+# Column changes the datasets already follow (gold pass, 2026-10-19 to 10-21):
+#   - mart_evidence_readiness: no `model` column (P7 pipeline status uses schema_name).
+#   - mart_area_burden_indicator / mart_area_evidence: exclusion_reason
+#     'province_estimate_includes_its_huc'.
+#   - mart_tb_case_study: ds_small_cohort and mdr_small_cohort.
+#   - mart_kidney_case_study: provinces with HUCs (unit_basis = broad) can be comparable.
+#   - mart_dengue_peak_capacity: HDX peak_period_label reads "week ending <date>".
+# Attribution lines: IHME on modelled values, "© OpenStreetMap contributors" on OSM layers.
+#
+# Refresh: the dashboard queries the warehouse when opened. The pipeline job has an optional
+# dashboard_refresh task after qc_gold, commented out (ph_public_health_job.yml).
+#
+# Edits made in the workspace UI are overwritten on the next deploy. Export them back first:
 #   databricks bundle generate dashboard --resource ph_public_health_dashboard --force
 
 resources:

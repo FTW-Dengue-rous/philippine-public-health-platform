@@ -18,9 +18,9 @@ Status date: 2026-10-21.
 | 2026-10-19 | Bronze notebook runs (baseline QC, gate, `run_bronze`) | Bronze | Gate passed; 0 blocking |
 | 2026-10-19 | Silver rebuild with the revisions (D-44, rule 2a) | Silver | Diseases 0 FAIL. Population 0 FAIL. Cross-domain 0 FAIL |
 | 2026-10-20 | Workforce rebuild (Zamboanga Sibugay override) and cross-domain QC | Silver | 0 FAIL |
-| 2026-10-21 | Final evidence run 1 | All, including gold QC | Succeeded; 0 FAIL; 7 expected gold WARNs |
-| 2026-10-21 | Final evidence run 2 | All, including gold QC | Succeeded; 0 FAIL; 2 standing gold WARNs; G12 PASS for all 9 gold tables |
-| Pending | Final evidence run 3 and reconciliation | All, including gold QC | — |
+| 2026-10-21, 04:49–06:13 | Final run 1 (job run `186099985728312`) | All, including gold QC | 0 FAIL in every layer. Gold QC 118 checks: 111 PASS, 7 WARN |
+| 2026-10-21, 10:16–11:16 | Final run 2 (job run `26759964775689`) | All, including gold QC | 0 FAIL. Gold QC 116 PASS, 2 WARN. G12 PASS on all 9 gold tables; bronze loaded nothing; `qc_registry` passed |
+| 2026-10-21, 11:28–12:32 | Final run 3 (job run `996544156339205`) | All, including gold QC | 0 FAIL. Gold QC 116 PASS, 2 WARN. G12 PASS on all 9 gold tables; bronze loaded nothing; `qc_registry` passed |
 
 The full runs of 2026-10-16/17 used the job and gold of those dates. Gold was in `test_gold2` and had no `gold_qc.py` yet. `qc_results` holds their per-check results. The team wrote their layer pages before the post-capstone revisions.
 
@@ -90,19 +90,18 @@ One S29 WARN fewer than 2026-10-19: the Zamboanga Sibugay row override (D-58) re
 
 ### 4.1 Test build, 2026-10-14 (`test_gold2`)
 
-All build gates returned 0 on every table. This historical test build is not the evidence source for current static findings; use the recorded final-run evidence for those results. `gold_qc.py` did not exist yet.
+All build gates returned 0 on every table. Row counts and mart figures from that build are in the [table catalog](../gold/table-catalog.md) and the [findings report](../gold/findings-report.md). `gold_qc.py` did not exist yet.
 
-### 4.2 Final build: runs 1 and 2 recorded; run 3 pending
+### 4.2 Final build: final runs of 2026-10-21
 
-The final job ran twice on unchanged inputs on 2026-10-21. The records are in the [final evidence session](../../06-evidence/2026-10-21-final-runs/README.md). A third run and reconciliation are still required before claiming complete idempotency evidence.
+The final job ran three times on the same inputs. Records and screenshots: [final runs](../../06-evidence/2026-10-21-final-runs/README.md).
 
 | Item | Expected | Result |
 |---|---|---|
-| Every gold build, runs 1 and 2 | `succeeded` in `build_log`; every gate 0 | Recorded in the run records: all 28 silver and gold tables succeeded in each run |
-| Gold QC run 1 | 0 FAIL; G12 can WARN once after a content change; G13 and G07 can WARN | Recorded: 118 checks, 111 PASS, 7 expected WARN, 0 FAIL. See [run 1](../../06-evidence/2026-10-21-final-runs/run-1/run-1.md) |
-| Gold QC run 2 | 0 FAIL; G12 PASS "same as previous" | Recorded: 118 checks, 116 PASS, 2 standing WARN, 0 FAIL; G12 PASS for all 9 gold tables. See [run 2](../../06-evidence/2026-10-21-final-runs/run-2/run-2.md) |
-| Row counts across runs 1 and 2 | Same count for every table (query I1) | Recorded: `same_count` true for all 28 tables in run 2 |
-| Gold QC run 3 and final comparison | 0 FAIL; **every G12 row PASS "same as previous"** (query I2) | Pending |
+| Every gold build | `succeeded` in `build_log`; every gate 0 | Runs 1, 2 and 3: all 10 gold builds `succeeded`; job green |
+| Gold QC run 1 | 0 FAIL. G12 WARN once on `dim_date` and `fact_disease_metric` (weekly `date_key` changed, D-44, D-46); other G12 rows PASS or "first fingerprint". G13 WARN possible (boundary changes between censuses) | 0 FAIL, 7 WARN (`8f2fb223-93d1-480c-b38d-806709ad436b`): G12 on 5 tables (`dim_data_source`, `dim_date`, `fact_disease_metric`, `fact_workforce_capacity`, `fact_area_indicator`: content changed since the run before the gold pass), G13 (Kalayaan, Makati, Pikit), G07 claims (27 cells suppressed) |
+| Gold QC runs 2 and 3 | 0 FAIL; **every G12 row PASS "same as previous"** (query I2) | Run 2: 0 FAIL, 2 WARN (G13, G07), G12 PASS "same as previous" on 9 of 9 (`f04150c9-a75b-4650-a55a-2f9ae30e8cf7`). Run 3: the same, 9 of 9 (`64d2024a-98e1-4033-8b64-3efec820c709`) |
+| Row counts across runs 1–3 | Same count for every table (query I1) | Same count for all 28 silver and gold tables in runs 1, 2 and 3 |
 | Gold 11 check 1 | All 17 HUCs `matched` | Pending |
 | Gold 22 check 1 | No `ihme_province_coverage_not_confirmed` | Pending |
 | Gold 23 check 3 | No row | Pending |
@@ -112,7 +111,7 @@ The final job ran twice on unchanged inputs on 2026-10-21. The records are in th
 
 The mart checks (gold 11, 22, 23, 24) and `gold_o13_evidence.sql` were not captured in the final runs. Run them once after run 3 if time allows.
 
-Record the run-3 result here with its date and `validation_id`, then link the final comparison and reconciliation evidence.
+Record each result here with the date and `validation_id`, and screenshot it.
 
 ## 5. Evidence to capture
 
@@ -165,4 +164,4 @@ SELECT * FROM public_health.quality.v_run_errors ORDER BY started_at DESC;
 | 2026-10-16, 10-17 | Full runs 1 and 2 |
 | 2026-10-19 | Bronze notebook runs; silver rebuild and QC |
 | 2026-10-20 | Workforce rebuild and cross-domain QC. Page written; gold section ready for the final runs |
-| 2026-10-21 | Final evidence runs 1 and 2 recorded. Gold section updated from the evidence records; run 3 and reconciliation remain pending |
+| 2026-10-21 | Final runs 1, 2 and 3 recorded (section 1, 4.2) |

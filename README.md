@@ -54,7 +54,7 @@ The data needed to answer this already exists, but it is split across agencies a
 
 LUNASaan? joins these sources on one shared geography code (PSGC) and flags every place where they cannot be compared fairly.
 
-About 40 source datasets span six domains: diseases, facilities, workforce, socioeconomic, geography, and population. Full list: [data sources](docs/02-data/data-sources.md).
+The sources span six domains: diseases, facilities, workforce, socioeconomic, geography, and population. The final runs of 2026-10-21 checked 40 file and API sources through the bronze loaders, plus the PSGC and HDX boundary snapshots. Full list, with counts per domain: [data sources](docs/02-data/data-sources.md).
 
 **The main business question:**
 
@@ -94,7 +94,7 @@ Silver  ── public_health.silver   (cleaned, typed, matched, lineage-tracked)
     │         + silver QC + cross-domain QC
     ▼
 Gold    ── public_health.gold (analytical marts and dimensions for the dashboard)
-    │         + gold QC (G00–G13)
+    │         + gold QC (G00–G13) + registry check (qc_registry)
     ▼
 Dashboard (Lakeview) + Unity Catalog serving
 ```
@@ -113,13 +113,13 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 | Workforce (FHSIS, PSA, PSMO) | Yes | Yes | Yes | Yes |
 | Socioeconomic (poverty, expenditure) | Yes | Yes | Yes | Yes |
 
-Yes = implemented and verified on Databricks. The final evidence session has recorded successful runs 1 and 2; run 3 and reconciliation remain pending. See the [final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md), [quality results](docs/04-pipeline/quality/quality-results.md), and [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
+Yes = implemented and verified on Databricks. Three final runs of the full job on 2026-10-21 (job runs `186099985728312`, `26759964775689`, `996544156339205`) all succeeded with 0 FAIL in every layer. Runs 2 and 3 loaded no bronze file again and rebuilt all 28 silver and gold tables to the same row counts, and all 9 gold model tables to the same content (G12). See the [final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md), [quality results](docs/04-pipeline/quality/quality-results.md), and [runbook](docs/07-operations/runbook.md). Open items, including the reconciliation queries A–D and an empty-workspace rebuild (not yet recorded), are in [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md).
 
-The dashboard has eight pages. Confirm the published dashboard definition and serving schema with its owner before deployment, then save a successful refresh check before presenting it as live. See the [dashboard guide](docs/05-dashboard/dashboard-guide.md) for pages, filters, and freshness checks.
+The dashboard has eight pages and 46 datasets, all reading `public_health.gold` since 2026-10-21. It queries the warehouse when opened, so it shows the latest gold build. The definition is [`dashboard/Philippine Public Health Platform.lvdash.json`](dashboard/Philippine%20Public%20Health%20Platform.lvdash.json), deployed by [`resources/ph_public_health_dashboard.yml`](resources/ph_public_health_dashboard.yml). Pages, filters and freshness: [dashboard guide](dashboard/dashboard-guide.md).
 
 ## What the data shows
 
-Headline figures from the current gold build. "Recorded" means listed in the source registry; it does not prove that no facility exists. Distances are straight-line, not travel distance.
+Headline figures from the gold build of the final runs (2026-10-21). "Recorded" means listed in the source registry; it does not prove that no facility exists. Distances are straight-line, not travel distance.
 
 | Finding | Value |
 |---|---|
@@ -129,15 +129,15 @@ Headline figures from the current gold build. "Recorded" means listed in the sou
 | Registry beds per 10,000 residents (national) | 8.0 |
 | Beds per 10,000 residents: provinces under 10% poverty vs 20-30% poverty | 10.3 vs 6.2 |
 
-The locality counts were verified against `public_health.gold.mart_locality_service_presence` on 2026-10-19. Before final publication, rerun and save the headline-figures query output for every value in this table; do not rely on the README as evidence. Limits that apply to every chart, and the team's recommendations, are in [limitations and recommendations](docs/01-context/limitations-and-recommendations.md). The assumptions behind the figures are in [assumptions](docs/01-context/assumptions.md).
+To reproduce each figure, run [`headline_figures.sql`](docs/06-evidence/headline_figures.sql) (queries H1–H5) against `public_health.gold`. Limits that apply to every chart, and the team's recommendations, are in [limitations and recommendations](docs/01-context/limitations-and-recommendations.md). The assumptions behind the figures are in [assumptions](docs/01-context/assumptions.md).
 
 ## How quality is enforced
 
 * **Gated layers** — bronze and silver QC stop the job on a FAIL-level check; a preload gate stops a domain's silver when one of its bronze sources is not cleared; silver builds validate keys, duplicates and lineage before publishing.
 * **Traceable** — every silver row carries lineage columns; every build records its inputs in `quality.build_log` and `quality.build_inputs`; rows that are dropped, quarantined or merged are recorded with a reason in `quality.row_disposition`.
-* **Repeatability evidence** — the recorded final runs show unchanged file loaders did not reload files, all 28 recorded silver and gold tables kept the same row counts, and G12 fingerprints matched for nine gold tables in runs 2 and 3. This does not by itself prove dashboard freshness, recovery, or every mart-specific validation.
+* **Repeatable** — in the final runs, unchanged files were not reloaded, all 28 silver and gold tables kept the same row counts, and the G12 fingerprints of all 9 gold model tables matched in runs 2 and 3.
 * **Honest about gaps** — nulls stay null. Every excluded area or row carries a reason.
-* **Gold QC** — checks published gold tables (G00–G13: row counts, primary keys, grain uniqueness, foreign keys, published-table integrity, freshness against inputs, control totals, value consistency, default views, selection contract, measure ranges, idempotency fingerprint, census plausibility). Any FAIL fails the last task of the job. See the [quality framework](docs/04-pipeline/quality/quality-control-framework.md) and the [check catalog](docs/04-pipeline/quality/quality-check-catalog.md).
+* **Gold QC** — checks published gold tables (G00–G13: row counts, primary keys, grain uniqueness, foreign keys, published-table integrity, freshness against inputs, control totals, value consistency, default views, selection contract, measure ranges, idempotency fingerprint, census plausibility). Any FAIL fails the job. The last task, `qc_registry`, checks that every recorded check code is registered; QC scripts reject unregistered codes (`strict_registry=True`). See the [quality framework](docs/04-pipeline/quality/quality-control-framework.md) and the [check catalog](docs/04-pipeline/quality/quality-check-catalog.md).
 
 ## Key limitations
 
@@ -153,8 +153,8 @@ Full documentation lives in [`docs/`](docs/README.md). Key entry points:
 
 * **New to the project?** -> [Business context](docs/01-context/problem-and-business-context.md) -> [Data sources](docs/02-data/data-sources.md) -> [Architecture](docs/03-architecture/architecture-overview.md)
 * **Want to run the pipeline?** -> [Setup guide](docs/07-operations/setup-guide.md) -> [Runbook](docs/07-operations/runbook.md)
-* **Maintaining the platform?** -> [Architecture](docs/03-architecture/architecture-overview.md) -> [CI/CD setup](docs/03-architecture/ci-cd-setup.md) -> [Troubleshooting](docs/07-operations/troubleshooting.md)
-* **Using the dashboard?** -> [Dashboard guide](docs/05-dashboard/dashboard-guide.md) -> [Metric definitions](docs/04-pipeline/gold/metric-definitions.md)
+* **Maintaining the platform?** -> [Architecture](docs/03-architecture/architecture-overview.md) -> [CI/CD and testing](docs/07-operations/ci-cd-and-testing.md) -> [Troubleshooting](docs/07-operations/troubleshooting.md)
+* **Using the dashboard?** -> [Dashboard guide](dashboard/dashboard-guide.md) -> [Metric definitions](docs/04-pipeline/gold/metric-definitions.md)
 * **Lineage and quality contract** -> [Lineage and quality contract](docs/04-pipeline/quality/lineage-and-quality-contract.md)
 * **Handover** -> [Documentation reading paths](docs/README.md) -> [Setup guide](docs/07-operations/setup-guide.md) -> [Runbook](docs/07-operations/runbook.md)
 * **Verified execution** -> [Final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md)
@@ -173,7 +173,7 @@ config/             Source YAML configs (one per domain) + reference CSVs
 resources/           Databricks job definitions (DABs)
 builders/            Reference CSV generators (run by hand)
 tests/               pytest smoke test
-dashboard/           Lakeview dashboard JSON
+dashboard/           Lakeview dashboard JSON and its guide
 docs/               This documentation
 archive/             Obsolete notebooks and SQL (not deployed)
 .github/             GitHub Actions CI workflows
