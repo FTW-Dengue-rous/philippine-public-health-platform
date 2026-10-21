@@ -3,7 +3,7 @@
 Owner: LUNASaan Documentation Team
 Last updated: 2026-10-21
 
-Every column of every object in `public_health.gold`, in the order the object returns them. This is the technical dictionary. Plain-language definitions of the business terms are in the [business data dictionary](business-data-dictionary.md); formulas are in [metric definitions](metric-definitions.md).
+Every column of every object in `public_health.gold`. This is the technical dictionary. Plain-language definitions of the business terms are in the [business data dictionary](business-data-dictionary.md); formulas are in [metric definitions](metric-definitions.md).
 
 Status date: 2026-10-20. Column lists checked against the SQL files of 2026-10-20. Back to the [gold overview](README.md).
 
@@ -37,7 +37,7 @@ Status date: 2026-10-20. Column lists checked against the SQL files of 2026-10-2
 | `area_name` | Attr | Name from the PSGC snapshot |
 | `geographic_level` | Attr | `region`, `province`, `city`, `municipality`, `submunicipality`, `special_geographic_area`; named areas: `country` (`ph`), `foreign`, `historical_province`, `ncr_district` |
 | `income_class` | Attr | LGU income class from PSGC |
-| `parent_area_key` | FK | Next level up (section 5 of the [logical model](logical-data-model-and-erd.md)) |
+| `parent_area_key` | FK | Next level up |
 | `region_key` | FK | The region |
 | `province_key` | FK | The province; null for regions and HUCs |
 | `planning_unit_key` | FK | The planning unit (O-01); null for regions outside NCR |
@@ -293,7 +293,7 @@ Only the measures of the row's `capacity_basis` hold values. A gate checks this.
 | View | Columns |
 |---|---|
 | `v_facility_capacity_totals` | `area_key`, `date_key`, `data_source_key`, `capacity_basis`, `coverage_basis`, `facility_category`, `ownership` (always `total`), `hospital_level` (`all`), `facility_count`, `authorized_beds`, `analysis_beds`, `dialysis_stations`, `facilities_license_valid`, `bor_weighted_pct`, `bor_reporting_record_count`, `value_status`, `nhfr_as_of_date`, `hfsrb_as_of_date` |
-| `v_disease_metric_totals` | Every column of `fact_disease_metric` for all-ages, both-sexes rows, plus `is_preferred_source` (the row's source is `preferred` in `source_priority` for its metric, scope, level, grain and year) |
+| `v_disease_metric_totals` | Main fact columns of `fact_disease_metric` for all-ages, both-sexes rows, plus dimension labels and `is_preferred_source` (the row's source is `preferred` in `source_priority` for its metric, scope, level, grain and year) |
 | `v_workforce_preferred` | `fact_workforce_capacity_key`, `area_key`, `date_key`, `data_source_key`, `profession_code`, `profession_name`, `profession_group`, `headcount_total`, `headcount_lgu_hired`, `headcount_doh_hired`, `coverage_basis`, `is_break_year`, `exclusion_reason`, `year`, `source_dataset` |
 | `v_area_indicator_latest` | The `fact_area_indicator` columns for ok rows, plus `year`, `source_dataset`, `is_latest_period` (latest year of that area, indicator, category and source) |
 

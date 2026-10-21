@@ -14,4 +14,4 @@ dim_data_source┼─ fact_workforce_capacity
 dim_geography ── dim_facility
 ```
 
-Every table's grain, primary key, source inputs, and consumers are in the [table catalog](table-catalog.md). Column meanings and the natural-key rules are in the [technical data dictionary](gold-data-dictionary.md). Do not join facts or aggregate values until the source, coverage basis, period, and grain are compatible; the [gold usage rules](gold-usage-rules.md) are mandatory for analysis.
+Every table's grain, primary key, source inputs, and consumers are in the [gold README](../../../src/04_gold/README.md), section 1. Column meanings and the natural-key rules are in the [technical data dictionary](gold-data-dictionary.md). Do not join facts or aggregate values until the source, coverage basis, period, and grain are compatible; the [gold usage rules](gold-usage-rules.md) are mandatory for analysis.

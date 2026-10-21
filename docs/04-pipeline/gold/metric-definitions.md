@@ -36,7 +36,7 @@ Status date: 2026-10-20. Back to the [gold overview](README.md).
 | `reported_bhs_per_10k` | FHSIS BHS × 10,000 ÷ **FHSIS-printed** population | per 10,000 | 16 | Source-specific rate; never compare with a census rate |
 | `reported_health_centers_per_10k` | FHSIS health centres × 10,000 ÷ FHSIS-printed population | per 10,000 | 16 | Same |
 | `dialysis_stations_per_100k` | stations reported × 100,000 ÷ census population | per 100,000 | 22 | Broad units include their HUCs |
-| `stations_known_share` | dialysis facilities with a station count ÷ all dialysis facilities | 0–1 | 22 | Gate 4: compared only when ≥ 0.80 |
+| `stations_known_share` | dialysis facilities with a station count ÷ all dialysis facilities | 0–1 | 22 | Gate 4: compared only when ≥ 0.80. A unit with no dialysis facility passes the station-completeness gate (`coalesce(stations_known_share >= 0.8, true)`) |
 
 ### 2.1 Bed occupancy (roll-up)
 

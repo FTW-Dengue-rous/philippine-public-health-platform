@@ -2,6 +2,7 @@
 
 This page lists the data the questions need but the team does not have, or has only in part. For each gap it says what it blocks, how the pipeline handles it now, and what would close it. The business questions and analytical question IDs (N1–N4, S1–S3, A1–A4, W1–W2, E1–E2, P1–P2) are defined in [problem and business context](../01-context/problem-and-business-context.md).
 
+Owner: LUNASaan Documentation Team
 Last updated: 2026-10-21
 
 Limits on how to *read* the data are in [limitations and recommendations](../01-context/limitations-and-recommendations.md), section 2. This page is about *missing* data.
@@ -20,7 +21,7 @@ Limits on how to *read* the data are in [limitations and recommendations](../01-
 | G-06 | Travel time or road network | Real access distance | Straight-line distance | Road network routing (OSM) |
 | G-07 | Monthly or weekly data for TB, pneumonia, heart disease | Seasonality and peaks outside dengue | Yearly views only | FHSIS monthly reports or FOI |
 | G-08 | 2024 regional all-cause death total not confirmed | N1 (cause-of-death shares by area) | PSA deaths file used as delivered; regional totals not independently confirmed | Confirm the 2024 PSA deaths file has complete regional totals |
-| G-09 | Validated facility coordinates for distance analysis | CON1 (distance to care) | Registry (NHFR + HFSRB) has no coordinates. The bundle job built `facilities_osm_point_silver` from HDX Healthsites (16,030 published rows; 2 rows quarantined). These crowd-sourced points support straight-line distance and map context only; they do not validate, replace, or count the regulated facility registries. | Validate OSM points against the registry before using them for facility-level conclusions; retain the straight-line-distance limitation. |
+| G-09 | Validated facility coordinates for distance analysis | Access: distance to care (`fact_area_access`) | Registry (NHFR + HFSRB) has no coordinates. The bundle job built `facilities_osm_point_silver` from HDX Healthsites (16,030 published rows; 2 rows quarantined). These crowd-sourced points support straight-line distance and map context only; they do not validate, replace, or count the regulated facility registries. | Validate OSM points against the registry before using them for facility-level conclusions; retain the straight-line-distance limitation. |
 
 ## 2. Gaps in coverage
 
@@ -83,3 +84,4 @@ The data granularity the team asks publishers for is in [limitations and recomme
 | 2026-10-19 | Page written from the silver and gold limits, decision log and FOI notes |
 | 2026-10-21 | Integration pass: added G-08 (2024 regional deaths), G-09 (facility coordinates), G-22 (S2 cohort), G-23 (BHS municipality), and G-24 (PSA national series to 2015); labelled BQ2 as previous scope in G-01; added patient-level clinical data and clarified that the completed OSM silver build is a map/distance reference rather than a registry count. |
 | 2026-10-20 | Links point to the limitations and recommendations page (the old "Assumptions and limitations" page was split) |
+| 2026-10-21 | Owner added; G-09 blocks column changed from undefined CON1 to Access: distance to care (`fact_area_access`) |

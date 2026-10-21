@@ -22,8 +22,8 @@ Checks run at four points:
 |---|---|---|---|---|
 | 1 | **Before the build** | Every silver input has a succeeded build, and its latest silver QC has no FAIL | Step [1] and the first gates of every table file | The build stops. The published table stays as it was. `build_log` gets a `failed` row |
 | 2 | **Before publishing** | Build gates on the candidate: keys, grain, foreign keys, control totals, business rules | `__gates` in every table file | Same |
-| 3 | **After publishing** | Gold QC on the published objects | `gold_qc.py` (G00–G13), last job task | A FAIL makes the task fail; the dashboard refresh does not start |
-| 4 | **On demand** | Check queries at the end of seed and mart files; evidence queries | End of gold 10, 11, 19, 22, 23, 24; `gold_o13_evidence.sql` | A person reads them |
+| 3 | **After publishing** | Gold QC on the published objects | `gold_qc.py` (G00–G13); `qc_registry` runs after it and is the last job task | A FAIL makes the task fail; the dashboard refresh does not start |
+| 4 | **On demand** | Check queries at the end of seed and mart files; evidence queries | End of gold 10, 11, 19, 22, 23, 24; `gold_o13_evidence.sql` (run in the workspace; not kept in the repo) | A person reads them |
 
 **Why both gates and QC.** A gate stops a bad candidate before anyone sees it. QC checks what gold actually published. It stores the result for reviewers and the dashboard. QC also checks three things a gate cannot:
 
@@ -75,7 +75,7 @@ Every table runs these common gates:
 
 ## 4. Gold QC (`gold_qc.py`)
 
-Gold QC runs after `gold_24` as the last job task. It writes through `dq_utils.DQRun` with layer `gold` and domain `gold`, like every other QC script. It reads each of the 9 model tables at **one fixed version** (its latest). So every check of a table sees the same data.
+Gold QC runs after `gold_24`; `qc_registry` runs after it and is the last job task. It writes through `dq_utils.DQRun` with layer `gold` and domain `gold`, like every other QC script. It reads each of the 9 model tables at **one fixed version** (its latest). So every check of a table sees the same data.
 
 | Code | Check | Severity | Fails when |
 |---|---|---|---|

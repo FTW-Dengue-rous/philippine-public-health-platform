@@ -1,5 +1,8 @@
 # Gold layer (`src/04_gold`)
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 The gold layer prepares the cleaned silver data for analysis. It builds the gold data model: 5 dimensions and 4 facts. It also builds the seeds, reference tables, views and marts that the LUNASaan? dashboard reads.
 
 Use this guide to rebuild the layer, understand what each row represents, and choose the right data for a query.
@@ -98,7 +101,7 @@ qc_silver_cross_domain -> {01, 02, 03, 05} -> 04 -> {06, 07, 08, 09} -> {10, 11,
 ```
 
 - The dimensions wait for `qc_silver_cross_domain`, so a silver FAIL anywhere stops gold before it starts.
-- `qc_gold` is the last task. The YAML holds an optional `dashboard_refresh` task after it, commented out.
+- `qc_gold` runs after `gold_24`; `qc_registry` runs after it and is the last task. The YAML holds an optional `dashboard_refresh` task after `qc_registry`, commented out.
 - Runs stay manual for the capstone. The recommendations cover the file-arrival trigger and the change check (R0, R1) (D-59).
 - Environment: SQL tasks need only the warehouse (ANSI on). `gold_qc.py` runs on the `default` serverless environment (pyyaml, openpyxl); it needs no extra library.
 

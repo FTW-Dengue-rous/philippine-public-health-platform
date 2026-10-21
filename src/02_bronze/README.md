@@ -1,5 +1,8 @@
 # Bronze layer (`src/02_bronze`)
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 The bronze layer copies every source file into the lakehouse exactly as it arrived. It changes no values: a cell that says "1,234" stays the text "1,234". What bronze adds is a label on every row: which source, which file, which sheet, which row, and when it was loaded.
 
 Bronze has two jobs:

@@ -230,7 +230,7 @@ The name starts with `fact_`, but it is a mart view, not one of the four model f
 1. The unit has a population (`no_population`).
 2. Burden year and census year at most 2 years apart (`outside_alignment_window`).
 3. Planning unit, or IHME coverage confirmed (`ihme_province_coverage_not_confirmed`; no longer appears since D-42).
-4. At least 80% of the unit's dialysis facilities have a station count (`station_counts_incomplete`). Why 80%: the mart skips stations per 100,000 when more than a fifth of the facilities have no count (D-56).
+4. At least 80% of the unit's dialysis facilities have a station count (`station_counts_incomplete`). A unit with no dialysis facility passes the station-completeness gate (`coalesce(stations_known_share >= 0.8, true)`). Why 80%: the mart skips stations per 100,000 when more than a fifth of the facilities have no count (D-56).
 
 ### 5.3 `mart_dengue_peak_capacity` (gold 23): preparedness
 

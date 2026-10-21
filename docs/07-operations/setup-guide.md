@@ -21,6 +21,17 @@ Status date: 2026-10-21. Items marked **confirm** depend on your workspace.
 | The repository | Cloned locally, branch `dev` |
 | Source files | Open sources downloaded from their publishers; restricted files from the team's FOI requests (never in the repository) |
 
+**Permissions:**
+
+| Action | Where |
+|---|---|
+| USE CATALOG, CREATE SCHEMA | `public_health` catalog (or be the catalog owner) |
+| READ VOLUME, WRITE VOLUME | Landing Volume |
+| CAN USE | SQL warehouse |
+| Create jobs and dashboards | Workspace (bundle deploy) |
+
+**Local planning:** `run_bronze.py --plan true` needs `pyspark` and `pyyaml` installed locally.
+
 ## 2. One-time setup
 
 1. **Create the catalog** `public_health` if it doesn't exist, and the landing Volume.

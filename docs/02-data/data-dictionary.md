@@ -1,6 +1,7 @@
 # Data dictionary
 
 Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
 
 This page is the index of every table in the platform. It lists each bronze and silver table with its source, grain and key. It also links to the page with the column detail. Gold has its own full dictionary.
 
