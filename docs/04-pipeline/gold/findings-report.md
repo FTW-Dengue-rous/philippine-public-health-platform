@@ -3,7 +3,7 @@
 Owner: LUNASaan Documentation Team
 Last updated: 2026-10-21
 
-This page intentionally does not state static rankings or counts. Those outputs depend on the selected source, reporting period, coverage basis, and latest successful build. Use the dashboard or marts together with the recorded run evidence to make a dated finding.
+This page intentionally does not state static rankings or counts. Those outputs depend on the selected source, reporting period, coverage basis, and latest successful build. Static row counts belong in recorded evidence; use the dashboard or marts together with the recorded run evidence to make a dated finding.
 
 Every finding must name its source and as-of date, use the metric's documented denominator, identify exclusions, and say when a value is recorded rather than observed in the real world. It must not claim causal effects or measured real-world impact.
 

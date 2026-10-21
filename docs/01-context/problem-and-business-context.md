@@ -101,7 +101,7 @@ The business questions break into analytical questions. Each one is answered by 
 | 1 | The dashboard shows where government should add services | BQ1 marts answer every core analytical question above |
 | 2 | Every number can be traced to its source | Lineage from a dashboard cell to a source cell (silver lineage + `build_inputs`) |
 | 3 | Areas that cannot be compared fairly are flagged, not hidden | `comparison_eligible`, `exclusion_reason` and `mapping_outcome` on mart rows |
-| 4 | The pipeline can rerun safely | Idempotency evidence: three full runs on the same inputs; every gold QC G12 row passes on runs 2 and 3 ([evidence](../06-evidence/README.md)). **Met 2026-10-21:** [final runs](../06-evidence/2026-10-21-final-runs/README.md) |
+| 4 | The pipeline repeats consistently on unchanged recorded inputs | The three final runs completed with equal recorded row counts across 28 silver and gold tables; G12 fingerprints matched for all nine gold tables in runs 2 and 3 ([final runs](../06-evidence/2026-10-21-final-runs/README.md)). This is not proof of dashboard freshness, recovery, or every mart-specific validation. |
 | 5 | Restricted data stays restricted | Aggregates only; cells under 3 suppressed; raw files not in the repo |
 | 6 | A new engineer can reproduce the pipeline end to end from the documentation | [Setup guide](../07-operations/setup-guide.md), [runbook](../07-operations/runbook.md), [reproducibility](../07-operations/reproducibility.md) |
 

@@ -2,7 +2,7 @@
 
 Proof that the pipeline runs, checks itself and gives the same result twice. Each run record holds the job run, the query results and screenshots, with the run date in the name. The methods are described elsewhere; this folder holds the results.
 
-Status date: 2026-10-21. Final run 1 done (2026-10-21); runs 2 and 3 next.
+Status date: 2026-10-21. Final runs 1–3 are recorded. The evidence still does not identify the deployed Git commit or include the PSGC/HDX task-output capture.
 
 ---
 
@@ -14,8 +14,6 @@ One record per pipeline session, named by date. The final runs are the evidence 
 06-evidence/
 ├── README.md                          this guide and the run index (section 5)
 ├── evidence_queries.sql               the seven queries (B1, S1, S2, G1, I1, I2, I3)
-├── 2026-10-18-new-workspace-run.md    first full run in this workspace (history)
-├── idempotency/comparison.md          earlier manual comparisons (history)
 └── 2026-10-21-final-runs/             the evidence: three runs on the same inputs
     ├── README.md                      runs, rules, comparison (I1, I2, I3)
     ├── run-1/                         run-1.md and its screenshots
@@ -103,7 +101,6 @@ Notes on reading them:
 
 | Date | Record | Status | What it shows |
 |---|---|---|---|
-| 2026-10-18 | [First full run in this workspace](2026-10-18-new-workspace-run.md) | History | Setup, bronze, silver and gold ran end to end; bronze and silver QC 0 FAIL. No gold QC yet; idempotency not tested |
 | 2026-10-21 | [Final runs](2026-10-21-final-runs/README.md) | Evidence, complete | Three runs on the same inputs: QC in every layer, incremental bronze, idempotency |
 
 **Final runs, 2026-10-21:**
