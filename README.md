@@ -115,7 +115,7 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 
 Yes = implemented and verified on Databricks. Three final runs of the full job on 2026-10-21 (job runs `186099985728312`, `26759964775689`, `996544156339205`) all succeeded with 0 FAIL in every layer. Runs 2 and 3 loaded no bronze file again and rebuilt all 28 silver and gold tables to the same row counts, and all 9 gold model tables to the same content (G12). See the [final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md), [quality results](docs/04-pipeline/quality/quality-results.md), and [runbook](docs/07-operations/runbook.md). Open items, including the reconciliation queries A–D and an empty-workspace rebuild (not yet recorded), are in [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md).
 
-The dashboard has eight pages and 46 datasets, all reading `public_health.gold` since 2026-10-21. It queries the warehouse when opened, so it shows the latest gold build. The definition is [`dashboard/Philippine Public Health Platform.lvdash.json`](dashboard/Philippine%20Public%20Health%20Platform.lvdash.json), deployed by [`resources/ph_public_health_dashboard.yml`](resources/ph_public_health_dashboard.yml). Pages, filters and freshness: [dashboard guide](dashboard/dashboard-guide.md).
+The dashboard has eight pages and 46 datasets, all reading `public_health.gold` since 2026-10-21. It queries the warehouse when opened, so it shows the latest gold build. The definition is `dashboard/Philippine Public Health Platform.lvdash.json`, deployed by [`resources/ph_public_health_dashboard.yml`](resources/ph_public_health_dashboard.yml). Pages, filters and freshness: [dashboard guide](dashboard/dashboard-guide.md).
 
 ## What the data shows
 
