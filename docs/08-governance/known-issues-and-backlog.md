@@ -1,8 +1,11 @@
 # Known issues and backlog
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 What is open after the capstone: known issues that affect results or operations today, the engineering limitations of the pipeline, the backlog ordered by priority, and the recommendations that wait for a trigger. Item numbers are the ones used in the team's to-do list and in the other pages (for example "to-do 13").
 
-Status date: 2026-10-21. Decisions: [decision log](decision-log.md). Assumptions: [assumptions](../01-context/assumptions.md). Limits on reading the data and the team's recommendations: [limitations and recommendations](../01-context/limitations-and-recommendations.md).
+Decisions: [decision log](decision-log.md). Assumptions: [assumptions](../01-context/assumptions.md). Limits on reading the data and the team's recommendations: [limitations and recommendations](../01-context/limitations-and-recommendations.md).
 
 ---
 
@@ -25,6 +28,11 @@ Status date: 2026-10-21. Decisions: [decision log](decision-log.md). Assumptions
 | KI-11 | A teammate workspace's `ingestion_metadata` fix (runbook incident 3) not confirmed as run | Silver builds fail there with `UNRESOLVED_COLUMN` | Run `ingestion_metadata_fix.sql` in that workspace | — |
 | KI-12 | eFOI 2026-5476 (bed sheets 2016–2017, named OHSRS 2023 hospitals) received 2026-10-16 but not ingested | Occupancy starts in 2018; no named hospital utilization | Data freeze before submission. Decide whether to land it after submission | 12 |
 | KI-13 | DOH OHSRS regional release (annual consolidated, 2016–2025, government / private by region): inpatient average length of stay (ALOS) and outpatient re-visits; received 2026-10-20, not ingested | No length of stay in the pipeline; the dengue peak view compares cases with beds, not bed-days | Data freeze before submission. Region grain only, so it does not join the province / municipality marts. Main use: bed-day demand for stretch 2 | 36 |
+| KI-14 | Two pipeline jobs execute the same scripts: a manually created 66-task job (553440510410749) and a DABs-deployed 72-task bundle job (835555203376044) | Concurrent-run risk and drift between the two | Consolidate to one job. The bundle job is the source of truth (D-49) | 14 |
+| KI-15 | Concurrent runs of the two pipeline jobs race on `CREATE OR REPLACE TABLE` | A manual run can fail when the bundle job runs the same scripts at the same time | Run one job at a time. A manual run (513012844601841) failed twice on 2026-10-18 (gold_11, then gold_20) and recovered by run repair. See the [evidence README](../06-evidence/README.md) | — |
+| KI-16 | The manually created job (66 tasks) lacks the OSM silver build step that the bundle job (72 tasks) has | `gold_43_ref_osm_healthsite_point` depends on `facilities_osm_point_silver`, which only the bundle job builds | Use the bundle job, or add the OSM step to the manual job | — |
+| KI-17 | Unmatched facilities in the hospitals-only registry build (2026-10-10): 71 NHFR-only and 48 HFSRB-only out of 1,407 hospitals (1,092 by code, 196 by name) | Registry has unmatched facilities from both sources | Counts are from that build. The documented team build (2026-10-12, 3,957 rows with all four HFSRB lists) supersedes it. Detailed matching is in [facilities silver](../04-pipeline/silver/facilities.md) | — |
+| KI-18 | FOI ticket numbers marked CONFIRM in YAML but not verified against the actual requests | FOI provenance is incomplete | Confirm and record actual ticket numbers before publishing | 22 |
 
 ### 1.2 Engineering limitations
 
@@ -44,15 +52,7 @@ These limits affect how the pipeline runs, not what the data means.
 
 ## 2. Backlog
 
-### Tier 1: finish and prove (now)
-
-| # | Item | Layer | Status |
-|---|---|---|---|
-| 6a | `gold_02_dim_date`: gate accepts `iso_week` and `iso_week_ending_date`; weekly dates from silver; `source_priority` drops the "approximated" reason for UP NOAH | gold | Gold pass, in progress |
-| 5 / 6b | Three full job runs on the same inputs as evidence: gate tasks, silver, gold, `gold_qc.py`; every G12 row PASS on runs 2 and 3 | all | After the gold pass |
-| — | Gold README and decision log updates for the gold pass | gold, docs | Gold pass |
-
-### Tier 2: close what the capstone left open
+### Tier 1: close what the capstone left open
 
 | # | Item | Layer | Effort |
 |---|---|---|---|
@@ -63,8 +63,9 @@ These limits affect how the pipeline runs, not what the data means.
 | 10 | Confirm the bundle deploy; optional `dashboard_refresh` task after `qc_gold` | job | 0.5 day |
 | 12 | Decide on eFOI 2026-5476 (KI-12). Decide together with 36 | bronze, silver | 1–2 days |
 | 36 | Decide on the OHSRS regional release (KI-13). Profile every tab first. Parse issues seen so far: 3-row header (metric / year / ownership), text `Started 2025` in a numeric cell (NIR 2016), NOTE footer row | bronze, silver | 1 day |
+| 37 | Build `mart_capacity_gap` (BQ1): join `mart_area_service_profile` (supply, access, workforce, poverty) with `mart_area_burden_indicator` (disease burden) in one row per planning unit. No gold file exists for this yet | gold | 1–2 days |
 
-### Tier 3: structural improvements
+### Tier 2: structural improvements
 
 | # | Item | Layer | Effort |
 |---|---|---|---|
@@ -82,8 +83,11 @@ These limits affect how the pipeline runs, not what the data means.
 | 22 | `header_check` for facilities entries 1–13; clear CONFIRM markers; split `_as_of_date` into release and download dates | bronze | 1 day |
 | 23 | Unity Catalog grants on restricted tables (KI-05) | bronze, silver | 0.5 day |
 | 24 | Materialise `fact_area_access` and `area_coverage_map` if latency or readiness needs it | gold | 0.5 day |
+| 25 | `row_disposition` cleanup: separate legacy v1.2 rows from v1.3 dispositions | quality | 0.5 day |
+| 25a | Review and retire `__moved`, `__classified`, `__records` staging tables no longer needed | silver | 0.5 day |
+| 25b | Add `age_group` dimension to gold (SUP1 needs it; gold model has none yet) | gold | 1 day |
 
-### Tier 4: data questions (not code)
+### Tier 3: data questions (not code)
 
 | # | Question | Blocks |
 |---|---|---|
@@ -91,6 +95,7 @@ These limits affect how the pipeline runs, not what the data means.
 | 27 | BOR bed basis and reporting period from HFSRB (KI-07) | `bor_basis_confirmed`, `period_confirmed` |
 | 29 | Whether the dashboard shows planning units of level `other` (Isabela City, SGA municipalities) (O-16) | `mart_base_planning_unit` consumers |
 | 30 | How a second PhilHealth claims release replaces the first (`06` stops on more than one file) | Future FOI releases |
+| 28 | Clean income-class values for E2 (values seen: 4th*, 1st (as Mun), Special, -) | socioeconomic |
 
 ### Stretch (after Tiers 1–2)
 
@@ -101,6 +106,7 @@ These limits affect how the pipeline runs, not what the data means.
 | 33 | Facility-grain capacity fact |
 | 34 | Specialist workforce fact (PSMO) |
 | 35 | Spark reads for large bronze files; ADM4 boundaries; WKT / WKB beside GeoJSON |
+| 38 | FHSIS primary-care counts on the dashboard (S3): the Access page shows registry-based presence only. FHSIS BHS/RHU/health-centre counts exist in `facilities_metric_silver` and gold but have no dashboard widgets. Adding visuals is a backlog item, not a defect |
 
 ## 3. Recommendations: cost (waiting for a trigger)
 
@@ -120,6 +126,7 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | Date | Item |
 |---|---|
 | 2026-10-18 | Gold QC script (D-48); gold promoted to `public_health.gold`, files `gold_01`–`gold_24` (D-49) |
+| 2026-10-18 | `facilities_osm_point_silver` built (16,030 rows) by the bundle job (run 23167081408523); OSM point analysis now available. See [data gaps](../02-data/data-gaps.md) G10 (resolved) |
 | 2026-10-19 | Bronze closed: QC re-queue, preload gate, geography in `run_bronze.py`, overrides validated, timezone-aware UTC (D-50 to D-55) |
 | 2026-10-19 | Silver: D-44 / D-46 week convention; population QC fixes and S59; rule 2a in every silver build and QC file; full rebuild kept (D-57); proposal values agreed (D-56) |
 | 2026-10-20 | Silver closed: workforce override for Zamboanga Sibugay (D-58); cross-domain QC 68 checks, 0 FAIL, 10 WARN. Runs stay manual (D-59) |
@@ -135,4 +142,5 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | 2026-10-20 | Late FOI releases: KI-13 and item 36 added for the OHSRS regional release; KI-12 / item 12 (eFOI 2026-5476) linked to it; stretch 32 notes both as inputs |
 | 2026-10-20 | Engineering limitations EL-01 to EL-09 moved here from "Assumptions and limitations" as section 1.2. Links point to the new assumptions page and the limitations and recommendations page |
 | 2026-10-21 | CI on `dev` fixed: KI-02 and EL-09 now cover thin tests only; the Tier 2 CI row moved to section 4 |
+| 2026-10-21 | Integrated user-supplied additions: KI-14 to KI-18 (two pipeline jobs, concurrent runs, manual job OSM gap, unmatched facilities, FOI tickets); EL-10 (admin boundaries manual ingestion); OSM build added to Done; backlog items 25, 25a, 25b, 28, 37, 38 (row_disposition cleanup, staging table review, age_group dimension, income class values, mart_capacity_gap, S3 dashboard widgets). Header changed to Owner / Last updated format |
 | 2026-10-21 | Registry seed holds every check code (O-17); only the switch to `strict_registry=True` is left |
