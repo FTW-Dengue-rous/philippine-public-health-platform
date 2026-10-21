@@ -82,7 +82,7 @@ Steps 5–8 are what the Databricks job does: run them as one workflow that stop
 
 | What | Status | Evidence |
 |---|---|---|
-| Rebuild from empty tables on Databricks | Proven | [New-workspace run](../06-evidence/2026-10-21-new-workspace/README.md): landing files to gold QC, 0 FAIL, row counts equal to the final runs |
+| Rebuild from empty tables on Databricks | Proven | [New-workspace run](../06-evidence/2026-10-21-empty-workspace-run/README.md): landing files to gold QC, 0 FAIL, row counts equal to the final runs |
 | Reruns give the same result | Proven | [Final runs](../06-evidence/2026-10-21-final-runs/README.md): bronze loads nothing, same row counts, G12 same content |
 | Rebuild without Databricks (this page) | Documented, not run | Sections 1–4 come from a review of the code. No open-source rebuild is recorded yet (KI-20, backlog 40) |
 
