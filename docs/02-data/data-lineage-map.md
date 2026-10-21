@@ -51,7 +51,7 @@ Rules that hold everywhere:
 |---|---|---|---|
 | Geography | `psgc` | PSGC bronze table (`psgc.bronze_table` in YAML) | `geography_silver` |
 | Population | `psgc_population` (payload in PSGC rows) | same PSGC table | `population_silver` |
-| Geography | `hdx_phl_admin` | `admin_boundaries_bronze` (not yet built) | `admin_boundaries_silver` (not yet built) |
+| Geography | `hdx_phl_admin` | `admin_boundaries_bronze` | `admin_boundaries_silver` |
 | Diseases | `doh_foi_dengue`, `upnoah`, `hdx_dengue`, PSA deaths entries, `doh_fhsis` (TB, morbidity), `ihme_gbd` | `diseases_*_bronze` (one per source) | `diseases_metric_silver` |
 | Diseases | `psa_deaths_region_annual` (age groups) | `diseases_psa_deaths_region_annual_bronze` | `diseases_deaths_age_silver` |
 | Diseases | `davao_hospital_pneumonia` | `diseases_davao_hospital_pneumonia_bronze` | `diseases_hospital_encounters_silver` |
@@ -63,7 +63,7 @@ Rules that hold everywhere:
 | Facilities | `doh_nhfr`, `doh_hfsrb_*` | `facilities_nhfr_bronze`, `facilities_hfsrb_*_bronze` | `facilities_id_map_silver`, `facilities_registry_silver` |
 | Facilities | PSA hospital/bed/BHS tables, `doh_fhsis_demographic` (BGY & BHS) | `facilities_psa_*_bronze`, `facilities_fhsis_primary_care_bronze` | `facilities_metric_silver` |
 | Facilities | `doh_foi_hospital_beds` | `facilities_bed_occupancy_bronze` | `facilities_bed_occupancy_silver` |
-| Facilities | `hdx_healthsites` (+ `admin_boundaries_silver`) | `facilities_hdx_healthsites_bronze` | `facilities_area_boundary` (not yet built), `facilities_osm_point_silver` (not yet built) |
+| Facilities | `hdx_healthsites` (+ `admin_boundaries_silver`) | `facilities_hdx_healthsites_bronze` | `facilities_area_boundary`, `facilities_osm_point_silver` |
 | Workforce | `doh_fhsis_demographic`, `psa_gov_practitioners` | `workforce_fhsis_health_workers_bronze`, `workforce_psa_gov_practitioners_bronze` | `workforce_headcount_silver` |
 | Workforce | `doh_fhsis_demographic` | same | `workforce_area_denominator_silver` |
 | Workforce | `psmo_oncologists` | `workforce_psmo_oncologists_bronze` | `workforce_specialist_silver` |

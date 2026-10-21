@@ -57,6 +57,7 @@ flowchart TB
         XQC[qc_silver_cross_domain]
         GLD[gold_01 → 24<br/>dimension → fact → mart]
         GQC[qc_gold<br/>G00–G13]
+        REG[qc_registry<br/>recorded-results registry]
     end
 
     QUAL[(public_health.quality)]
@@ -64,7 +65,7 @@ flowchart TB
 
     S1 & S2 & S3 & S4 -->|manual download + upload<br/>AD-17| LAND
     S5 --> API --> LAND
-    SET --> BRZ --> GATE --> SIL --> XQC --> GLD --> GQC --> DASH
+    SET --> BRZ --> GATE --> SIL --> XQC --> GLD --> GQC --> REG --> DASH
     LAND --> BRZ
     BRZ -.-> QUAL
     SIL -.-> QUAL
@@ -143,7 +144,7 @@ One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public
 | 3. Silver | Geography first; then facilities, diseases, workforce, socioeconomic: `00_reference` → builds → domain QC | the domain gate and geography silver QC |
 | 4. Cross-domain QC | `qc_silver_cross_domain` | every silver QC task |
 | 5. Gold | `gold_01` → dimensions → facts → marts (task key = file name, files in `src/04_gold/{dimension,fact,mart}`); the setup job creates the `gold` schema | cross-domain QC |
-| 6. Gold QC | `qc_gold` (G00–G13) | `gold_24` |
+| 6. Gold QC | `qc_gold` (G00–G13), then `qc_registry` validates the check registry against recorded results | `gold_24`, then `qc_gold` |
 
 **Dependency rule:** a task waits for the tables it reads *and* for the QC of those tables. A FAIL stops everything downstream.
 
@@ -151,7 +152,7 @@ One Databricks job, `ph-public-health-pipeline`, defined in `resources/ph_public
 |---|---|
 | Concurrency | `max_concurrent_runs: 1` (PSGC and HDX loaders allow one writer) |
 | Compute | Serverless. Python tasks on environment `default` (pyyaml, openpyxl); `geo` adds shapely<2.1 and numpy<2 for the OSM point-in-polygon step (shapely 2.1 requires numpy 2, which breaks pandas in other tasks). SQL tasks on a SQL warehouse |
-| Schedule | Defined, paused (Monday 06:00 Asia/Manila). Runs stay manual (D-59) |
+| Schedule | No active schedule. The proposed Monday 06:00 Asia/Manila schedule is commented out in the job YAML, so runs stay manual (D-59). |
 | Not in the job | You run these by hand: `src/01_ingestion` (PSGC and HDX API landing), the manual uploads for the other four domains (AD-17), and `builders/` (reference CSV generators) |
 
 ## 7. Serving

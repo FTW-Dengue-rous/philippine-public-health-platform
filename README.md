@@ -64,13 +64,13 @@ A previous-scope question, outside the active scope and retained as a stretch go
 
 * **BQ2** — If a selected historical dengue outbreak recurred against the latest available hospital capacity, which regions or provinces would face the greatest estimated bed shortfalls under different assumptions? (dengue surge stress test; previous scope)
 
-BQ1 breaks down into pillars: Need (N1-N4), Supply (S1-S3), Access (A1-A2), Workforce (W1-W2), Equity (E1-E2), Priority (P1-P2), plus supporting (SUP1-SUP6) and conditional (CON1-CON3) analyses.
+BQ1 breaks down into pillars: Need (N1-N4), Supply (S1-S3), Access (A1-A4), Workforce (W1-W2), Equity (E1-E2), Priority (P1-P2), plus supporting (SUP1-SUP6) and conditional (CON1-CON3) analyses.
 
 **Built in gold and shown on the dashboard (BQ1):**
 
 * **Need (N1–N4)** — Leading causes of death by region; disease prevalence/mortality by province; dengue peaks and recurring burden; TB notification counts by municipality.
 * **Supply (S1–S3)** — Hospital counts and authorized beds relative to population, by level and ownership; bed occupancy by area and ownership; BHS, RHU and health-centre availability (S3 is shown as registry-based presence; full FHSIS counts are query-only).
-* **Access (A1–A2)** — Share of municipalities with no in-scope hospital; service presence and distance to the nearest hospital (Level 3 presence, A2, is query-only).
+* **Access (A1–A4)** — Areas with no hospital or licensed primary care recorded; highest recorded hospital level; population per recorded facility or bed; and distance to the nearest hospital. Some detail is query-only.
 * **Workforce (W1–W2)** — Public doctors, nurses and midwives relative to population (the LGU-employed vs DOH-deployed split, W2, is query-only).
 * **Equity (E1–E2)** — Poverty vs service supply, beds and access; government bed share by poverty band (income-class analysis, E2, is query-only).
 * **Priority (P1–P2)** — Areas combining high disease burden with low supply, poor access or disadvantage; ranking stability under different weights.
@@ -113,9 +113,9 @@ Full architecture: [Architecture overview](docs/03-architecture/architecture-ove
 | Workforce (FHSIS, PSA, PSMO) | Yes | Yes | Yes | Yes |
 | Socioeconomic (poverty, expenditure) | Yes | Yes | Yes | Yes |
 
-Yes = implemented and verified on Databricks. The full pipeline (bronze, silver, gold) was verified end to end on 2026-10-18 in the current workspace; see the [run record](docs/06-evidence/2026-10-18-new-workspace-run.md). Recorded QC outcomes are in [quality results and evidence](docs/04-pipeline/quality/quality-results-and-evidence.md); post-run verification steps and expected row counts are in the [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
+Yes = implemented and verified on Databricks in the recorded final runs of 2026-10-21. See [final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md), [quality results](docs/04-pipeline/quality/quality-results.md), and the [runbook](docs/07-operations/runbook.md). See [Known issues and backlog](docs/08-governance/known-issues-and-backlog.md) for caveats.
 
-The Lakeview dashboard has eight pages and reads gold tables in `public_health.gold`. It refreshes when opened. Open it from the Databricks UI; see the [dashboard guide](docs/05-dashboard/dashboard-guide.md) for pages, filters, and data freshness checks.
+The dashboard has eight pages. Confirm the published dashboard definition and serving schema with its owner before deployment, then save a successful refresh check before presenting it as live. See the [dashboard guide](docs/05-dashboard/dashboard-guide.md) for pages, filters, and freshness checks.
 
 ## What the data shows
 
@@ -129,13 +129,13 @@ Headline figures from the current gold build. "Recorded" means listed in the sou
 | Registry beds per 10,000 residents (national) | 8.0 |
 | Beds per 10,000 residents: provinces under 10% poverty vs 20-30% poverty | 10.3 vs 6.2 |
 
-The locality counts were verified against `public_health.gold.mart_locality_service_presence` on 2026-10-19; the other figures are the team's presented dashboard values (see the [dashboard guide](docs/05-dashboard/dashboard-guide.md)). Limits that apply to every chart, and the team's recommendations, are in [limitations and recommendations](docs/01-context/limitations-and-recommendations.md). The assumptions behind the figures are in [assumptions](docs/01-context/assumptions.md).
+The locality counts were verified against `public_health.gold.mart_locality_service_presence` on 2026-10-19. Before final publication, rerun and save the headline-figures query output for every value in this table; do not rely on the README as evidence. Limits that apply to every chart, and the team's recommendations, are in [limitations and recommendations](docs/01-context/limitations-and-recommendations.md). The assumptions behind the figures are in [assumptions](docs/01-context/assumptions.md).
 
 ## How quality is enforced
 
 * **Gated layers** — bronze and silver QC stop the job on a FAIL-level check; a preload gate stops a domain's silver when one of its bronze sources is not cleared; silver builds validate keys, duplicates and lineage before publishing.
 * **Traceable** — every silver row carries lineage columns; every build records its inputs in `quality.build_log` and `quality.build_inputs`; rows that are dropped, quarantined or merged are recorded with a reason in `quality.row_disposition`.
-* **Idempotent** — bronze loads only new or changed files; silver and gold use write-audit-publish. Reruns are safe and a failed build leaves the published table untouched.
+* **Repeatability evidence** — the recorded final runs show unchanged file loaders did not reload files, all 28 recorded silver and gold tables kept the same row counts, and G12 fingerprints matched for nine gold tables in runs 2 and 3. This does not by itself prove dashboard freshness, recovery, or every mart-specific validation.
 * **Honest about gaps** — nulls stay null. Every excluded area or row carries a reason.
 * **Gold QC** — checks published gold tables (G00–G13: row counts, primary keys, grain uniqueness, foreign keys, published-table integrity, freshness against inputs, control totals, value consistency, default views, selection contract, measure ranges, idempotency fingerprint, census plausibility). Any FAIL fails the last task of the job. See the [quality framework](docs/04-pipeline/quality/quality-control-framework.md) and the [check catalog](docs/04-pipeline/quality/quality-check-catalog.md).
 
@@ -156,8 +156,8 @@ Full documentation lives in [`docs/`](docs/README.md). Key entry points:
 * **Maintaining the platform?** -> [Architecture](docs/03-architecture/architecture-overview.md) -> [CI/CD setup](docs/03-architecture/ci-cd-setup.md) -> [Troubleshooting](docs/07-operations/troubleshooting.md)
 * **Using the dashboard?** -> [Dashboard guide](docs/05-dashboard/dashboard-guide.md) -> [Metric definitions](docs/04-pipeline/gold/metric-definitions.md)
 * **Lineage and quality contract** -> [Lineage and quality contract](docs/04-pipeline/quality/lineage-and-quality-contract.md)
-* **Handover** -> [Handover checklist](handover-checklist.md)
-* **Verified execution** -> [Evidence: 2026-10-18 full pipeline run](docs/06-evidence/2026-10-18-new-workspace-run.md)
+* **Handover** -> [Documentation reading paths](docs/README.md) -> [Setup guide](docs/07-operations/setup-guide.md) -> [Runbook](docs/07-operations/runbook.md)
+* **Verified execution** -> [Final-run evidence](docs/06-evidence/2026-10-21-final-runs/README.md)
 
 ## Repository layout
 

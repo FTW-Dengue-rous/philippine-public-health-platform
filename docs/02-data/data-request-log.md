@@ -32,7 +32,7 @@ If the dashboard is published beyond the capstone, ask each FOI officer to confi
 | R-04 | DOH / HFSRB | eFOI 2026-5476 | Hospital bed capacity and occupancy | TBC | 2026-10-16 | Received, **not ingested** | None. Anonymous sheets 2016–2025 (2020–2025 CALABARZON only) and a named OHSRS 2023 sheet with DOH facility codes. Dropped before the capstone; decision pending (backlog 12) |
 | R-05 | DOH Region II | eFOI (ticket TBC) | TB tables 2020–2025 | TBC | Before 2026-10-04 | Received | `doh_foi_tb_region2` → bronze only |
 | R-06 | PhilHealth | eFOI (ticket TBC) | TB claims 2017–2019 | TBC | TBC | Received | `philhealth_foi_tb_claims` → bronze only |
-| R-07 | Government hospital (Davao) | Shared extract | De-identified pneumonia admissions | — | Before 2026-10-01 | Received, not yet loaded | `davao_hospital_pneumonia` → `diseases_hospital_encounters_silver` (QC counts only). Config entry exists but bronze and silver tables are not yet built in this workspace |
+| R-07 | Government hospital (Davao) | Shared extract | De-identified pneumonia admissions | — | Before 2026-10-01 | Received and loaded for the recorded final runs | `davao_hospital_pneumonia` → `diseases_hospital_encounters_silver` (QC counts only). Confirm current row counts from the workspace before a new release. |
 
 ### Third-party releases we use
 
@@ -70,7 +70,7 @@ Set the YAML entries in section 2 to `enabled: false`. Expect these outputs to b
 | R-02 hospital beds | Bed occupancy rows in `fact_facility_capacity` |
 | R-03 PhilHealth claims | Claims metrics in `fact_disease_metric` |
 | R-05 Region II TB | None beyond bronze |
-| R-07 Davao pneumonia | `diseases_hospital_encounters_silver` (not yet built) |
+| R-07 Davao pneumonia | `diseases_hospital_encounters_silver` |
 | IHME | Modelled deaths and prevalence; kidney case study; part of the burden mart |
 
 ## 6. History of updates

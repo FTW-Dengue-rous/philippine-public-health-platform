@@ -90,7 +90,7 @@ One S29 WARN fewer than 2026-10-19: the Zamboanga Sibugay row override (D-58) re
 
 ### 4.1 Test build, 2026-10-14 (`test_gold2`)
 
-All build gates returned 0 on every table. Row counts and mart figures from that build are in the [table catalog](../gold/table-catalog.md) and the [findings report](../gold/findings-report.md). `gold_qc.py` did not exist yet.
+All build gates returned 0 on every table. This historical test build is not the evidence source for current static findings; use the recorded final-run evidence for those results. `gold_qc.py` did not exist yet.
 
 ### 4.2 Final build: final runs of 2026-10-21
 
