@@ -1,1 +1,0 @@
--- Gold layer setup statements.
