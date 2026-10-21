@@ -1,5 +1,8 @@
 # Population Bronze Layer Documentation
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 ## 1. Domain Overview
 
 The active population input described in this documentation is the `populations_json` field in `public_health.bronze.geography_bronze`. The supplied standalone `01_population_bronze.ipynb` notebook documents a separate workbook-ingestion path to `public_health.bronze.population_bronze`; it is included below as legacy reference, not as the active input to Population Silver.

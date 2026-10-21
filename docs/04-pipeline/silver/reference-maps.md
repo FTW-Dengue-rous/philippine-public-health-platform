@@ -1,5 +1,8 @@
 # Silver — reference maps
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Sources name the same place, disease or hospital in many ways. Reference maps are reviewed CSVs that translate what a source says (a label, a cause name, a hospital id, a row) into what the platform means: a PSGC code at a level, a `disease_key`, a `facility_key`. Silver never matches by guessing. A label is resolved by a rule, by a reviewed decision, or it is set aside with a reason.
 
 The reference for the files is in the repo: `builders/README.md` (one section per builder) and `config/reference/README.md` (one row per CSV). Back to the [silver overview](README.md).

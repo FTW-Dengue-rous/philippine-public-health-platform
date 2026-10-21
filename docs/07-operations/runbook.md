@@ -1,8 +1,11 @@
 # Runbook
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 How to run the pipeline, how to find out why a run stopped, how to fix it, and how to rerun safely. It also keeps a log of the failures and data incidents we have had: add a row every time a run stops, or when a data gap changes what a mart can show (incident 6).
 
-Status date: 2026-10-20. Started 2026-10-13. First-time setup: [setup guide](setup-guide.md). Symptom-by-symptom fixes: [troubleshooting](troubleshooting.md).
+Status date: 2026-10-21. Started 2026-10-13. First-time setup: [setup guide](setup-guide.md). Symptom-by-symptom fixes: [troubleshooting](troubleshooting.md).
 
 ## 0. A routine run
 
@@ -133,6 +136,7 @@ The job runs, in order ([architecture overview](../03-architecture/architecture-
 4. Silver: geography, admin boundaries and population first, each with its QC; then facilities, diseases, workforce, socioeconomic: `00_reference` → builds in number order → domain QC. Diseases `06` waits for the facilities registry QC. Per-domain order: [`src/03_silver/README.md`](../../src/03_silver/README.md).
 5. `qc_silver_cross_domain`, after every silver QC task.
 6. Gold `gold_01` → `gold_24` (`dimension/`, `fact/`, `mart/`), then `qc_gold`.
+7. `qc_registry` (`quality_registry_check.sql`): every check code recorded in the run is in `check_registry` with the right layer. It writes nothing; a failure here loses no data.
 
 By hand, run the same files in the same order. In a workspace whose `bronze.ingestion_metadata` predates the file-load columns, run `ingestion_metadata_fix.sql` Part 1 first (incident 3).
 
@@ -205,3 +209,4 @@ By hand, run the same files in the same order. In a workspace whose `bronze.inge
 |---|---|
 | 2026-10-13 – 10-14 | Started; incidents 1–6 |
 | 2026-10-20 | Moved to `07-operations/runbook.md`. Routine run (section 0), current run order (gold `public_health.gold`, `gold_01`–`gold_24`, preload gate), geography scripts in the rerun table, row-count query, incident 7 |
+| 2026-10-21 | Run order: `qc_registry` task after `qc_gold` |

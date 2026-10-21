@@ -1,8 +1,11 @@
 # Silver — reconciliation
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Reconciliation proves that silver lost nothing, doubled nothing and changed no value on the way from bronze. Every bronze row a build reads is either in a silver row or recorded with the reason it was set aside, and the numbers that come out match the numbers that went in and the numbers the agencies published.
 
-This page is the method. The results of each recorded run go to [`06-evidence/reconciliation/`](../../06-evidence/reconciliation/). Back to the [silver overview](README.md).
+This page is the method. The evidence index states where a recorded run's reconciliation outputs belong; see [evidence](../../06-evidence/README.md). Back to the [silver overview](README.md).
 
 ## 1. Row accounting
 
@@ -69,7 +72,7 @@ Known at the last builds. The live counts are in `row_disposition` and in the S0
 
 ## 5. Producing the evidence
 
-Run these after a full run and save the outputs, with the run date, to `docs/06-evidence/reconciliation/`.
+Run these after a full run and save the outputs in the reconciliation folder named by the evidence index, with the run date.
 
 **A. Row accounting per table and source** (latest succeeded build of each silver table):
 
@@ -130,4 +133,4 @@ ORDER BY source_key, layer, check_id;
 
 **D. Geography and boundaries:** the build output lines "Bronze snapshot rows / Silver snapshot rows" (geography) and "MERGE inserted / updated" (0 / 0 on a rerun), or GS05 and ASB05 in query B.
 
-**What the evidence should show:** every `rows_loaded` in A equals the rows silver references (S09 PASS in B); every S10 and control PASS; S29 PASS, or WARN with the rows of section 4. Anything else is a finding to explain in [quality results and evidence](../quality/quality-results-and-evidence.md).
+**What the evidence should show:** every `rows_loaded` in A equals the rows silver references (S09 PASS in B); every S10 and control PASS; S29 PASS, or WARN with the rows of section 4. Anything else is a finding to explain in [quality results and evidence](../quality/quality-results.md).

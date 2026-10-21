@@ -1,5 +1,8 @@
 # Silver rebuild strategy
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Why silver rebuilds its tables in full, what that costs, and how to cut the cost later.
 
 Status date: 2026-10-20. Decisions: D-57 (replaces the "per-source rebuild next" plan in AD-15) and D-59 (runs stay manual; R0 and R1 deferred). Back to the [silver overview](README.md).

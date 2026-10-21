@@ -2,7 +2,7 @@
 
 Dated runs and revisions of the platform, newest first. Pages carry their own history; this page is the one place to see what changed when, and which run proves it.
 
-Status date: 2026-10-20. Add a row for every full run and every change that alters a published table.
+Status date: 2026-10-21. Add a row for every full run and every change that alters a published table.
 
 ---
 
@@ -10,7 +10,7 @@ Status date: 2026-10-20. Add a row for every full run and every change that alte
 
 | Date | Run | Result | Evidence |
 |---|---|---|---|
-| 2026-10-20 | Evidence runs 1–3: full job on the same inputs | **To record:** gate, silver and gold QC summaries; G12 PASS on runs 2 and 3 (run 1 shows G12 WARN once on `dim_date` and `fact_disease_metric`: weekly `date_key` changed, D-44, D-46) | [`06-evidence/idempotency/`](../06-evidence/README.md); [quality results](../04-pipeline/quality/quality-results-and-evidence.md), section 4.2 |
+| 2026-10-21 | Final runs 1–3 of the bundle job on the same inputs (runs `186099985728312`, `26759964775689`, run 3 to fill) | Run 1: 0 FAIL; gold QC 118 checks, 7 WARN (G12 on 5 tables once, G13, G07). Run 2: 0 FAIL; G12 PASS on all 9 gold tables; bronze loaded nothing; same row counts for 28 tables; `qc_registry` passed. **Run 3: to fill** | [Final runs](../06-evidence/2026-10-21-final-runs/README.md); [quality results](../04-pipeline/quality/quality-results.md), section 4.2 |
 | 2026-10-20 | Workforce rebuild (`00` → `03`) with the Zamboanga Sibugay override. Then `workforce_silver_qc.py` and `silver_cross_domain_qc.py` | Headcount 28,080, denominator 3,024. Workforce QC 0 FAIL. Cross-domain 68 checks, 0 FAIL, 10 WARN (`14f27bc1-8c3f-48dd-aa5c-8a6faddd2ed4`) | [Silver quality checks](../04-pipeline/silver/silver-quality-checks.md), section 14 |
 | 2026-10-19 | Silver rebuild with the rule 2a and D-44 revisions, every domain and QC | Cross-domain 68 checks, 0 FAIL, 11 WARN (`e56cdd87-64bd-4686-9f32-74ff95622ed6`). Diseases QC 143 checks, 0 FAIL, 7 WARN. Population QC 19 checks, 0 FAIL, 5 WARN. `silver_rev_d44_verify.sql` steps 1–4 passed | Silver quality checks, section 14 |
 | 2026-10-19 | Bronze from a notebook: baseline QC, gate, `run_bronze.py` over 6 domains (four runs) | Gate: 41 sources, 39 PASS, 2 WARN, 0 blocking. `run_bronze`: 46 sources unchanged, 0 failed, 0 re-queued | [Bronze quality checks](../04-pipeline/bronze/bronze-quality-checks.md), section 11 |
@@ -22,6 +22,8 @@ Status date: 2026-10-20. Add a row for every full run and every change that alte
 
 | Date | Layer | Change | Decision |
 |---|---|---|---|
+| 2026-10-21 | quality | `strict_registry=True` is the default in `dq_utils.py` and `psgc_population_silver_qc.py` (gold QC comment updated). The `qc_registry` job task passed in the final runs first. An unknown check code now stops its QC script | O-17 |
+| 2026-10-21 | job | `qc_registry` task added after `qc_gold` (`quality_registry_check.sql`); the registry seed (Step 1b) holds every check code and runs in the setup job. `quality_setup.sql`: gold check types mapped to quality attributes | O-17 |
 | 2026-10-21 | CI | Failing CI checks on `dev` fixed; they pass. Tests stay thin (KI-02) | — |
 | 2026-10-20 | docs | Architecture: AD-17 manual acquisition added (D-63). The diagram shows the manual upload. New serving section covers dashboard pages, `embed_credentials: false` and refresh. `prod` target noted as unused | D-63 |
 | 2026-10-20 | job | Job YAML: `gold_00_setup` task removed. Gold dimensions wait for `qc_silver_cross_domain`. Dated notes cover the bronze and silver changes and the environments (no new library). Optional `dashboard_refresh` added, commented out. Setup and dashboard YAML comments updated. Dashboard datasets now point to `public_health.gold` instead of `test_gold2` | D-59, D-60 |
@@ -55,3 +57,4 @@ Status date: 2026-10-20. Add a row for every full run and every change that alte
 | 2026-10-20 | Page written. Evidence runs 1–3 still to record |
 | 2026-10-20 | Gold revision, job YAML and gold/quality docs rows added |
 | 2026-10-21 | CI fix row added |
+| 2026-10-21 | Final runs row (replaces the 2026-10-20 "to record" row); registry and strict-mode rows |

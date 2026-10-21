@@ -1,5 +1,8 @@
 # Silver — quality checks
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Every check that guards the silver layer: what it tests, which table it runs on, how bad a failure is, and what to do about it. The check IDs, names and severities on this page are the ones in the QC scripts' `CHECKS` dictionaries.
 
 Status date: 2026-10-19, after the rule 2a revision. Back to the [silver overview](README.md). Row accounting is explained in [reconciliation](reconciliation.md); every code across all layers (B, S, G) is in the [quality check catalog](../quality/quality-check-catalog.md).
@@ -421,7 +424,7 @@ Passed: S04 for workforce (0 of 1,743 codes missing from geography), S08 everywh
 
 The previous run (2026-10-19, `e56cdd87-64bd-4686-9f32-74ff95622ed6`, 11 WARN) had one more S29 WARN: the Zamboanga Sibugay 2025 row, printed `0908001000`, quarantined in headcount (9 rows) and denominator (1 row). A row override to `0908300000` (`accepted`) resolved it.
 
-The full results of every run go to [`06-evidence/`](../../06-evidence/README.md). How to read them: [quality results and evidence](../quality/quality-results-and-evidence.md).
+The full results of every run go to [`06-evidence/`](../../06-evidence/README.md). How to read them: [quality results and evidence](../quality/quality-results.md).
 
 ## 15. Reading the results
 
@@ -474,7 +477,7 @@ QUALIFY row_number() OVER (PARTITION BY target_table ORDER BY finished_at DESC) 
 
 ## 17. Limitations
 
-- `strict_registry` is off. Codes missing from `quality.check_registry` still run and are reported as unregistered. The domain codes must be in `quality_registry_seed.sql` before it is switched on.
+- `strict_registry` is on since 2026-10-21 (`dq_utils.py` default; `psgc_population_silver_qc.py` too). A code missing from `quality.check_registry` stops its QC script; every silver code is in `quality_registry_seed.sql` (Step 1b). SG and AB build checks write to `qc_results` directly, so strict mode does not apply to them; the `qc_registry` job task still checks their codes (O-17).
 - A rerun that gives the same rows (idempotency) is not checked automatically for the observation tables. Geography and boundaries show it as 0 inserts and 0 updates on a rerun.
 - S29 does not cover geography, boundaries and population, which are not built through `build_inputs`. Their row checks are GS05, ASB05 and S09.
 - Restricted tables have no profile and no quarantine copy, so a reviewer reads their set-aside rows in silver, under the access rules of D-47.
@@ -489,3 +492,4 @@ QUALIFY row_number() OVER (PARTITION BY target_table ORDER BY finished_at DESC) 
 | 2026-10-19 | Rule 2a: controls from the YAML, settings from `build_log.parameters`; GS07, GS08 and S59 added; S08 ceilings are the current year; S08 checks ISO weeks (D-44, D-46); cross-domain years derived |
 | 2026-10-19 | Page written |
 | 2026-10-20 | Workforce: Zamboanga Sibugay 2025 row override (S29, S73); latest run updated (68 checks, 0 FAIL, 10 WARN) |
+| 2026-10-21 | Strict registry on (O-17) |

@@ -25,12 +25,12 @@ Recorded with the seven queries in [`evidence_queries.sql`](../../evidence_queri
 | Started | 2026-10-21 02:16 UTC (10:16 Manila) |
 | Ended | 2026-10-21 03:16 UTC (11:16 Manila) |
 | Duration | 59m 45s |
-| Result | Succeeded: every task green, including `setup` and the six `gate_<domain>` tasks |
-| Code | Same commit as run 1: no merge or bundle deploy between the runs |
+| Result | Succeeded: every task green, including `setup`, the six `gate_<domain>` tasks and the last task `qc_registry` (first registry check run: every check code recorded by the QC scripts is in `check_registry` with the right layer) |
+| Code | Pipeline code (bronze, silver, gold builds and QC scripts) same as run 1. Changed between runs 1 and 2: the job YAML (new last task `qc_registry`), setup YAML comments, the registry seed (`quality_registry_seed.sql`) and the new `quality_registry_check.sql`. These change QC metadata and add a read-only check; they don't change how any table is built. G12 PASS on all 9 gold tables and equal row counts confirm the data is the same |
 
 ![Run row](8_run2.png)
 
-![Job run details and task list](9_run2.png)
+![Job run details and task list: job id 587047839768584, run 26759964775689, started 10:16, ended 11:16, succeeded](9_run2.png)
 
 ## 2. Timeline from the quality tables
 

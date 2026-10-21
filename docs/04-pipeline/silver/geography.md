@@ -1,5 +1,8 @@
 # Silver — geography
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Geography is the spine of the platform. `geography_silver` is the only table that may define a PSGC code; every other domain maps its area labels to it and is checked against it. The HDX administrative boundaries are matched to it so that maps and point-in-polygon work use the same codes.
 
 Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), section 4.1. Back to the [silver overview](README.md).

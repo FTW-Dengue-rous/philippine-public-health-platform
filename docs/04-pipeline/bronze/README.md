@@ -1,5 +1,8 @@
 # Bronze layer
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Bronze is the platform's filing cabinet. Every source file is copied into the lakehouse exactly as it arrived: DOH FOI releases, PSA tables, FHSIS workbooks, PhilHealth claims, hospital lists, OpenStreetMap points, the PSGC code list and the HDX boundaries. Nothing is corrected, converted or combined. If a spreadsheet says "1,234" as text, bronze keeps "1,234" as text.
 
 What bronze adds is a label on every row: which source, file, sheet and row it came from, when it was loaded, and which version of the source it is. That gives the platform two properties:

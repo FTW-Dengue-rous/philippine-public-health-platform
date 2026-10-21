@@ -1,10 +1,13 @@
 # Limitations and recommendations
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 This page covers the limits of the study and of the data, and what the team recommends. It is the last step of the story: what the results can and cannot claim, and what should happen next.
 
-Status date: 2026-10-20.
+Status date: 2026-10-21.
 
-**Read this first.** The figures here come from the test build of 2026-10-14 ([findings report](../04-pipeline/gold/findings-report.md)). The final rebuild on `public_health.gold` will refresh them. Check every figure in section 3.3 against the rebuild before you quote it.
+**Read this first.** The figures in section 3.3 come from the 2026-10-14 test build. They are historical examples, not current findings. The 2026-10-21 evidence records show that the pipeline ran, but they do not independently refresh or approve these rankings. Recompute and review each figure before quoting it.
 
 | Looking for | Go to |
 |---|---|

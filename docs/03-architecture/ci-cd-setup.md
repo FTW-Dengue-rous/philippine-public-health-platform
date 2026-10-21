@@ -99,9 +99,7 @@ Before merging a change that touches the pipeline:
 | Diseases silver `01`–`03` not linted | Split `01` into smaller files | Silver recommendation 10 |
 | Few automated tests | pytest for the bronze loader, `run_bronze.py`, `bronze_gate.py` | 21 |
 | No check that repo and Volume reference CSVs match | CI step comparing checksums | 16 |
-| Deploy of the 2026-10-19 job not confirmed | Deploy and run; record evidence | 10 |
 | No dashboard refresh task | Add `dashboard_refresh` after `qc_gold` if needed | 10 |
-| `check_registry` not seeded | Seed, then switch QC to `strict_registry=True`; a CI check could fail on unknown codes | 7 |
 
 ## 7. History of updates
 
@@ -113,3 +111,4 @@ Before merging a change that touches the pipeline:
 | 2026-10-19 | Job updated: preload gate tasks, geography inside `run_bronze.py`, gold paths. Page written |
 | 2026-10-20 | Runs stay manual (D-59); three evidence runs; failing checks on `dev` listed as a gap |
 | 2026-10-21 | CI checks on `dev` fixed; they pass. Gap row removed |
+| 2026-10-21 | Deployed bundle job ran the three final runs; registry seeded and strict registry on. Both gap rows removed. Current CI/CD detail: [CI/CD and testing](../07-operations/ci-cd-and-testing.md) |

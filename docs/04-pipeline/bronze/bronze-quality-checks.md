@@ -1,5 +1,8 @@
 # Bronze — quality checks
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Every check that guards the bronze layer: what it tests, which source it runs on, how bad a failure is, and what to do about it. The check IDs, names and severities on this page are the ones in the QC scripts' `CHECKS` dictionaries.
 
 Status date: 2026-10-20. Back to the [bronze overview](README.md). The full reference (loaders, `run_bronze.py`, recovery) is [`src/02_bronze/README.md`](../../../src/02_bronze/README.md); every code across all layers (B, S, G) is in the [quality check catalog](../quality/quality-check-catalog.md).
@@ -325,7 +328,7 @@ runpy.run_path("<repo>/src/05_quality/bronze/bronze_gate.py", run_name="__main__
 - STALE is not detected for HDX boundaries, which write no `ingestion_metadata` row.
 - YAML parsing-setting changes are not detected; a changed setting needs `--force_keys`.
 - No statistical drift checks (row count or key sums against the previous load) yet.
-- `strict_registry` is on only for population QC. GB, HB and B16 codes are not in `quality_registry_seed.sql` yet (O-17).
+- `strict_registry` is on for every bronze QC script since 2026-10-21 (`dq_utils.py` default). GB, HB and B16 codes are in `quality_registry_seed.sql` (Step 1b), and the `qc_registry` job task checks the registry after every run (O-17).
 - The four file-domain QC scripts are the same code, kept in sync by hand (backlog: one shared module).
 - WARNs reach silver by design; the gate does not stop on them.
 
@@ -341,3 +344,4 @@ Open items: [known issues and backlog](../../08-governance/known-issues-and-back
 | 2026-10-15 | PSGC loader writes `ingestion_metadata` and a QC handoff; HDX QC as a job script |
 | 2026-10-19 | QC re-queue in `run_bronze.py`; preload gate per domain; geography QC on `DQRun` (GB00–GB13); population QC inside `run_bronze.py` and the gate; YAML overrides validated and recorded; B13 FAIL when a load cannot be verified; one `batch_id` form; gate matches results per domain; timezone-aware UTC timestamps |
 | 2026-10-20 | Page written |
+| 2026-10-21 | Strict registry on for every bronze QC script (O-17) |

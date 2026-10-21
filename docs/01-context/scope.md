@@ -100,7 +100,7 @@ The output is a **dashboard only** (D-02). A researcher dataset is not delivered
 | 2 | Final model, silver, QC, dashboard |
 | 3 | Productionize, answer the business questions, presentation |
 | 4 | Preparation and practice |
-| After the capstone | Reliability pass: bronze (closed 2026-10-19), silver (closed 2026-10-20), gold, docs, three evidence runs |
+| After the capstone | Reliability pass: bronze (closed 2026-10-19), silver (closed 2026-10-20), gold, docs, three evidence runs (done 2026-10-21) |
 
 Detail: [Team and timeline](../08-governance/team-and-timeline.md).
 
@@ -120,3 +120,4 @@ Detail: [Team and timeline](../08-governance/team-and-timeline.md).
 | 2026-10-20 | BQ2 relabelled previous scope to match the context page; Owner and Last updated metadata added |
 | 2026-10-20 | Scope-page integration pass: question-framework link and `mart_capacity_gap` status added; CI row expanded to the actual GitHub Actions checks; deployment boundary added to out of scope |
 | 2026-10-20 | Conditional CON2 (PSMO vs cancer estimates) row and patient-level clinical data out-of-scope row added. Draft's GLOBOCAN source, "priority scoring gated" claim, and stretch-listing of already-built CON1 and CASE rejected as unsupported or contradicted by the build |
+| 2026-10-21 | After-capstone row: three evidence runs done |

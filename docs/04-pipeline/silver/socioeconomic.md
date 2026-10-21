@@ -1,5 +1,8 @@
 # Silver — socioeconomic
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 The conditions around care: official poverty by area, how health spending is financed, spending per person, and child mortality by background. Poverty is the only table placed on PSGC areas; the others are national or by survey characteristic.
 
 Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), section 4.5. Back to the [silver overview](README.md).
@@ -14,6 +17,8 @@ Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), sectio
 | PSA Yearbook 9.9 (NDHS) | Infant, child and under-five mortality by region, residence, education and wealth | Surveys 2017, 2022 |
 
 Settings: `config/sources_socioeconomic.yaml`, including the control values QC checks.
+
+The poverty source is the PSA Full-Year 2025 release, configured with an as-of date of 2026-08-26. It contains 2021, 2023, and 2025 estimates; the pipeline does not interpolate missing years. A project rule in `socioeconomic_silver_01_poverty.sql` marks incidence or poor-population estimates with a coefficient of variation above 10% as `use_with_caution`. This is a precision flag, not a change to the source estimate.
 
 ## Tables
 
@@ -60,6 +65,7 @@ Every check of this domain, with its rule and severity: [silver quality checks](
 
 - Poverty is among **population**, **full year**. Do not mix it with family-based or first-semester figures.
 - Province rows with `comparison_eligible = false` cover a different population than PSGC province figures (they may include or leave out highly urbanized cities). See `exclusion_reason`.
+- Do not interpolate between the published poverty years. A missing estimate remains missing and cannot support a rate or ranking for that year.
 - Financing agents form a hierarchy: never add a parent to its children. Only level-1 agents add up to the total.
 - Child mortality regions are the 17 regions of the old definition (no Negros Island Region): regional context only.
 - `survey_year` is the survey, not the year deaths occurred.

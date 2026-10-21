@@ -1,5 +1,8 @@
 # Bronze Layer - Diseases Domain
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 ## 1. Domain Overview
 
 **Purpose**

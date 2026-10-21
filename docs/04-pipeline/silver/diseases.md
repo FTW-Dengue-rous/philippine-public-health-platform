@@ -1,5 +1,8 @@
 # Silver — diseases
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Disease burden from eight public sources, plus TB programme data and two restricted hospital tables. Every count keeps its source, area, period and definition, so gold can compare like with like and never add things that should not be added.
 
 Reference: [`src/03_silver/README.md`](../../../src/03_silver/README.md), section 4.2. Back to the [silver overview](README.md).
@@ -81,7 +84,7 @@ Every check of this domain, with its rule and severity: [silver quality checks](
 - Counts only (`value_unit = count`). Rates are computed in gold.
 - Never add across `_source_key`, `geo_level`, `period_grain`, `value_type` or `measure_definition`, or a cause and its sub-causes. Use `diseases_cause_aggregation` to add causes.
 - `location_basis` says what the area means: usual residence (PSA), reporting unit (FHSIS), modelled population (IHME), facility location (claims), patient origin (hospital).
-- Read `diseases_source_coverage_silver` before comparing years: DOH FOI 2025 holds January to September only.
+- Read `diseases_source_coverage_silver` before comparing years: DOH FOI 2025 holds January to September only. Its configured as-of date is 2025-09-30 and is marked `CONFIRM` in `sources_diseases.yaml`; completeness close to extraction is uncertain, so do not infer a reporting-lag duration.
 - Series breaks are flags, not fixes: claims 2020–2021 (COVID), 2024 amounts, IHD with MI from 2025.
 
 ## Limitations

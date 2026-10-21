@@ -1,5 +1,8 @@
 # Gold — data marts
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 The marts turn the model into answers. Each mart is a **view** that answers one group of business questions for the dashboard. For each mart, this page gives the question, the row, the method, the rules and the reasons. [Metric definitions](metric-definitions.md) holds the formulas. The [data dictionary](data-dictionary.md) holds the columns.
 
 Status date: 2026-10-20. Back to the [gold overview](README.md).

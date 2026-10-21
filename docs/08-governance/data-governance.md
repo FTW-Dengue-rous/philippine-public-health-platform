@@ -1,8 +1,11 @@
 # Data governance
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 How the platform handles data that comes with conditions: restricted releases, licensed data, personal details and attribution. These rules apply in every layer and on the dashboard.
 
-Status date: 2026-10-20. Decision behind most of this page: D-47.
+Decision behind most of this page: D-47. All decision references (D-xx) are in the [decision log](decision-log.md).
 
 ---
 
@@ -20,6 +23,8 @@ Every source has a `sharing` value in its YAML entry ([data sources](../02-data/
 
 The release letters set no sharing terms of their own. The restriction is **our own commitment**, made in each request: the data is for academic use (the FTW capstone) and is reported only in aggregate form, with small-cell suppression where needed (D-47). IHME GBD is restricted by its licence: non-commercial use, no redistribution of the export.
 
+Restricted data must not be redistributed outside the project. Raw restricted files and row-level restricted data stay on the platform. Only suppressed aggregates may appear in dashboard charts and published outputs.
+
 If the dashboard is published beyond the capstone, ask each FOI officer to confirm aggregate publication in writing first ([data request log](../02-data/data-request-log.md)).
 
 ## 3. Rules for restricted data
@@ -31,7 +36,7 @@ If the dashboard is published beyond the capstone, ask each FOI officer to confi
 | Bronze | Loaded as text like any source; bronze QC writes no column profile for them |
 | Silver | Kept at row level for the pipeline only. Never profiled, never copied to `quality.quarantine`; QC stores counts and row references only. The Davao extract has no encounter id (dropped for privacy); anonymous bed records are never matched to registry facilities (D-18) |
 | Gold | Published as aggregates only. A cell built from fewer than **3 records or hospitals** is suppressed (`value_status = 'suppressed'`) |
-| Dashboard | Shows aggregates; restricted charts carry "Aggregated; cells under 3 suppressed" |
+| Dashboard | Shows aggregates; restricted charts carry "Aggregated; cells under 3 suppressed". See the [dashboard guide](../../dashboard/dashboard-guide.md) for which pages use restricted data |
 | Docs and config | No record-level restricted value. Aggregate totals used as QC controls (for example claims filed per year) are the only restricted figures in the YAML |
 | IHME | `value_lower` / `value_upper` are kept out of column profiles; values are labelled as modelled |
 
@@ -58,7 +63,7 @@ If the dashboard is published beyond the capstone, ask each FOI officer to confi
 
 ## 6. Access control
 
-`sharing: restricted` is declared, not enforced. The workspace is a personal Databricks workspace used by the team; Unity Catalog grants on the restricted bronze and silver tables are in the backlog (item 23). Until then, the protection is that restricted rows never leave silver except as suppressed aggregates.
+`sharing: restricted` is declared, not enforced. The workspace is a personal Databricks workspace used by the team; Unity Catalog grants on the restricted bronze and silver tables are in the backlog (item 23, KI-05 in [known issues and backlog](known-issues-and-backlog.md)). Until then, the protection is that restricted rows never leave silver except as suppressed aggregates.
 
 ## 7. Retention
 
@@ -80,3 +85,4 @@ Set the restricted YAML entries to `enabled: false`. The pipeline still runs; th
 | 2026-10-08 | FOI datasets labelled `sharing: restricted` (D-19) |
 | 2026-10-18 | Basis set: our own aggregate-only commitment; suppression under 3 (D-47) |
 | 2026-10-20 | Page written |
+| 2026-10-21 | Header changed to Owner / Last updated format; added explicit redistribution prohibition for restricted data; linked KI-05 to known issues and backlog |
