@@ -46,8 +46,10 @@
 #   All parameters are optional; job/widget parameters of the same names work too.
 #   Run after the last gold file (gold_24_mart_evidence_readiness.sql).
 #
-# Registry: check codes are not in quality.check_registry yet (strict_registry=False), so
-# check_name and check_type are passed here. Add G01-G13 to quality_registry_seed.sql.
+# Registry: G00-G13 are in quality_registry_seed.sql (Step 1b) since 2026-10-21. The script
+# runs with the dq_utils default strict_registry=True since 2026-10-21 (O-17: the qc_registry
+# task passed in the final runs), so an unknown code stops it. check_name and check_type are
+# still passed here, so qc_results reads the same as before.
 # =============================================================================
 
 import argparse
