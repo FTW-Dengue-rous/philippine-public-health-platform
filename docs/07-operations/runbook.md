@@ -1,5 +1,8 @@
 # Runbook
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 How to run the pipeline, how to find out why a run stopped, how to fix it, and how to rerun safely. It also keeps a log of the failures and data incidents we have had: add a row every time a run stops, or when a data gap changes what a mart can show (incident 6).
 
 Status date: 2026-10-20. Started 2026-10-13. First-time setup: [setup guide](setup-guide.md). Symptom-by-symptom fixes: [troubleshooting](troubleshooting.md).

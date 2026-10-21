@@ -1,5 +1,8 @@
 # Silver — quality checks
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Every check that guards the silver layer: what it tests, which table it runs on, how bad a failure is, and what to do about it. The check IDs, names and severities on this page are the ones in the QC scripts' `CHECKS` dictionaries.
 
 Status date: 2026-10-19, after the rule 2a revision. Back to the [silver overview](README.md). Row accounting is explained in [reconciliation](reconciliation.md); every code across all layers (B, S, G) is in the [quality check catalog](../quality/quality-check-catalog.md).
@@ -421,7 +424,7 @@ Passed: S04 for workforce (0 of 1,743 codes missing from geography), S08 everywh
 
 The previous run (2026-10-19, `e56cdd87-64bd-4686-9f32-74ff95622ed6`, 11 WARN) had one more S29 WARN: the Zamboanga Sibugay 2025 row, printed `0908001000`, quarantined in headcount (9 rows) and denominator (1 row). A row override to `0908300000` (`accepted`) resolved it.
 
-The full results of every run go to [`06-evidence/`](../../06-evidence/README.md). How to read them: [quality results and evidence](../quality/quality-results-and-evidence.md).
+The full results of every run go to [`06-evidence/`](../../06-evidence/README.md). How to read them: [quality results and evidence](../quality/quality-results.md).
 
 ## 15. Reading the results
 

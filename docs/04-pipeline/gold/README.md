@@ -1,5 +1,8 @@
 # Gold
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 Gold turns the cleaned silver tables into answers. It arranges the data around five things a policymaker thinks in: **where** (geography), **when** (date), **which disease**, **which facility** and **which source said so**. Four fact tables hold the numbers:
 
 - capacity: facilities and beds in an area;

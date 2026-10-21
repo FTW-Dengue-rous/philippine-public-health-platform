@@ -1,5 +1,8 @@
 # Quality results and evidence
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 This page gives the results of the recorded runs, layer by layer, with their evidence. Each result names its date and its `validation_id` where it has one. Use them to find the result again in `public_health.quality`. Screenshots and query outputs go to [`06-evidence/`](../../06-evidence/README.md).
 
 Status date: 2026-10-20.

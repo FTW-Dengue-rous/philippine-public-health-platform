@@ -1,5 +1,8 @@
 # Lineage and quality contract
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 One contract for lineage and QC identity across every domain (geography, facilities, diseases, workforce, socioeconomic) and every layer. Domain pages and READMEs reference this page and only declare what is specific to their sources.
 
 | | |

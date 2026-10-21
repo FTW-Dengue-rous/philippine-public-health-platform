@@ -1,5 +1,8 @@
 # Quality control framework
 
+Owner: LUNASaan Documentation Team
+Last updated: 2026-10-21
+
 This page sets the rules for every quality check. It covers where checks run, what stops the pipeline, how a check gets its status, where results go, and how to add or change a check. The [check catalog](quality-check-catalog.md) lists each check. The [lineage and quality contract](lineage-and-quality-contract.md) fixes the identifiers and lineage behind them.
 
 Status date: 2026-10-20. Back to the [quality overview](README.md).
