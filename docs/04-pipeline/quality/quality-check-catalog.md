@@ -4,7 +4,7 @@ Every check code in the platform, in one list. A code has one meaning in every d
 
 The names and severities here are the ones in the scripts (`CHECKS` dictionaries and recorded `check_name`). How each check works, what fails it and what to do: [bronze quality checks](../bronze/bronze-quality-checks.md), [silver quality checks](../silver/silver-quality-checks.md), and [gold analytical validation and traceability](../gold/analytical-validation-and-traceability.md). Rules for severities and gates: [quality control framework](quality-control-framework.md).
 
-Status date: 2026-10-20. Back to the [quality overview](README.md).
+Status date: 2026-10-21. Back to the [quality overview](README.md).
 
 ---
 
@@ -313,7 +313,16 @@ Each silver domain took its own block of codes, so one idea can have several cod
 
 ## 6. Registry
 
-Codes and their default severity live in `public_health.quality.check_registry`, filled by `quality_registry_seed.sql`. The seed does not yet hold every code (GB, HB, B16, S59, SG/AB, the G codes; O-17), so the scripts run with `strict_registry=False`, except population QC. Once the seed is complete, every script switches to `strict_registry=True` and an unknown code stops the run (to-do 7).
+This page is for people. The scripts use a table instead: `public_health.quality.check_registry`. It holds the same codes, with their layer, type and default severity.
+
+| Item | How it works |
+|---|---|
+| Filled by | `quality_registry_seed.sql`, in the setup job, on every run. It only adds missing codes, so a rerun changes nothing |
+| Checked by | `qc_registry`, the last task of the pipeline job (`quality_registry_check.sql`). It fails when a script uses a code the registry does not hold, or holds under another layer |
+| Holds today | Every code on this page (since 2026-10-21) |
+| Still open | The scripts run with `strict_registry=False`, except population QC. After one run where `qc_registry` passes, switch every script to `strict_registry=True` (O-17, to-do 7) |
+
+**Adding a check code:** add it to the script, to this page, and to Step 1b of `quality_registry_seed.sql`, in the same pull request. If you forget the seed, `qc_registry` fails and names the code.
 
 ## 7. History of updates
 
@@ -321,3 +330,4 @@ Codes and their default severity live in `public_health.quality.check_registry`,
 |---|---|
 | 2026-10-20 | Page written from the QC scripts' check lists (silver chat) |
 | 2026-10-20 | Merged with the gold pass: S tables per domain, the gold validation link, named build gates, G07/G08 pointer |
+| 2026-10-21 | Section 6 rewritten: the seed holds every code and runs in the setup job; the `qc_registry` job task checks it; only the switch to `strict_registry=True` is left (O-17) |

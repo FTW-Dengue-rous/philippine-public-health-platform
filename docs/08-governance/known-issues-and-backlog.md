@@ -14,7 +14,7 @@ Status date: 2026-10-21. Decisions: [decision log](decision-log.md). Assumptions
 |---|---|---|---|---|
 | KI-01 | Rows held for review: 18 FHSIS TB special-area rows, 21 PhilHealth claims location pairs marked REVIEW, 34 Davao city labels, San Jose (Oriental Mindoro); four workforce row overrides still `proposed` (Taguig, San Juan 2022; Surigao del Norte, Alegria 2025) | Those rows are quarantined or kept out of analysis | Deliberate hold: each is counted, has a reason and is under 1% of its source (S29). Deferred to after submission (D-58) | 13 |
 | KI-02 | Automated tests are thin. (The failing CI checks on `dev` were fixed on 2026-10-21) | CI passes, but it covers little of the pipeline code | Add pytest for the bronze loader, `run_bronze.py`, `bronze_gate.py` | 21 |
-| KI-03 | `check_registry` not fully seeded (GB, HB, B16, S59, G codes); `strict_registry=False` except population QC | A script could use an unregistered code | Seed, then switch every script to `strict_registry=True` (O-17) | 7 |
+| KI-03 | The registry seed holds every code since 2026-10-21, but the scripts still run with `strict_registry=False`, except population QC | A script could still use an unregistered code | Run the setup job, check that the `qc_registry` job task passes, then switch every script to `strict_registry=True` (O-17) | 7 |
 | KI-04 | Files without `qc.expected_rows` | B03 is only WARN for them; a wrong file with a plausible count passes | Fill the expected counts | 7b |
 | KI-05 | `sharing: restricted` is declared, not enforced by grants | Anyone with workspace access can read restricted silver rows | Restricted rows never leave silver except as suppressed aggregates; apply Unity Catalog grants | 23 |
 | KI-06 | HDX boundaries write no `ingestion_metadata` row | The gate can't detect STALE for `hdx_phl_admin` | HB01 / HB02 reconcile counts to the manifest instead | 18c |
@@ -34,7 +34,7 @@ These limits affect how the pipeline runs, not what the data means.
 |---|---|---|
 | EL-01 | Silver observation tables and gold rebuild in full on every run, even when no bronze file changed. Cost grows with total rows, not new rows | Deliberate at current volume (D-57). Every gate checks the whole table, and a rule change reaches every row. Cost steps R0–R5 are in section 3. Full explanation: [silver rebuild strategy](../04-pipeline/silver/rebuild-strategy.md) |
 | EL-02 | Silver reads bronze at its current version, not a pinned version | Silver runs right after bronze QC in the same job |
-| EL-03 | `check_registry` is not fully seeded. Most QC scripts run with `strict_registry=False` | Seed it at the end of the project (KI-03, O-17) |
+| EL-03 | Most QC scripts run with `strict_registry=False`. The seed is complete since 2026-10-21 | Switch to strict after one clean run (KI-03, O-17) |
 | EL-04 | Four domain files hold copies of the bronze loader and QC code | Kept identical by hand. A shared module is item 14 |
 | EL-05 | `sharing: restricted` is declared, not enforced by grants | Unity Catalog grants are item 23 (KI-05) |
 | EL-06 | The loader does not detect parsing-setting changes in the YAML | Reload with `--force_keys`. Detection is item 17 |
@@ -57,7 +57,7 @@ These limits affect how the pipeline runs, not what the data means.
 | # | Item | Layer | Effort |
 |---|---|---|---|
 | 13 | Close the review rows (KI-01) | silver | 1 day |
-| 7 | Seed `check_registry` with every code; `strict_registry=True` everywhere | quality | 1 day |
+| 7 | `strict_registry=True` everywhere. The seed is done (2026-10-21) | quality | 0.5 day |
 | 7a | Confirm the migration; drop `bronze.qc_results`; fix the `batch_id` comment | quality | 0.5 day |
 | 7b | `qc.expected_rows` for every file | bronze | 0.5 day |
 | 10 | Confirm the bundle deploy; optional `dashboard_refresh` task after `qc_gold` | job | 0.5 day |
@@ -135,3 +135,4 @@ Silver and gold stay full rebuilds and runs stay manual (D-57, D-59). Build thes
 | 2026-10-20 | Late FOI releases: KI-13 and item 36 added for the OHSRS regional release; KI-12 / item 12 (eFOI 2026-5476) linked to it; stretch 32 notes both as inputs |
 | 2026-10-20 | Engineering limitations EL-01 to EL-09 moved here from "Assumptions and limitations" as section 1.2. Links point to the new assumptions page and the limitations and recommendations page |
 | 2026-10-21 | CI on `dev` fixed: KI-02 and EL-09 now cover thin tests only; the Tier 2 CI row moved to section 4 |
+| 2026-10-21 | Registry seed holds every check code (O-17); only the switch to `strict_registry=True` is left |
