@@ -6,11 +6,12 @@ Last updated: 2026-10-21
 Run these only after a successful gold and quality run. Inspect the mart's status and coverage fields before presenting a result.
 
 ```sql
--- Planning units that have a recorded service gap.
-SELECT area_name, population, hospitals_recorded, hospital_beds, poverty_incidence_pct
+-- Planning units with the fewest recorded hospital beds per 10,000 people.
+SELECT area_name, population, population_year, hospitals, beds, beds_per_10k,
+       poverty_incidence_pct, poverty_year
 FROM public_health.gold.mart_area_service_profile
 WHERE population IS NOT NULL
-ORDER BY hospital_beds / NULLIF(population, 0), area_name;
+ORDER BY beds_per_10k NULLS FIRST, area_name;
 ```
 
 ```sql
@@ -23,3 +24,9 @@ LIMIT 1;
 ```
 
 Do not sum sources, coverage bases, or periods merely because their columns share a name. Apply [gold usage rules](gold-usage-rules.md) and use [metric definitions](metric-definitions.md) for interpretation.
+
+## History of updates
+
+| Date | Change |
+|---|---|
+| 2026-10-21 | Query 1 uses the mart's real columns (`hospitals`, `beds`, `beds_per_10k`) |
