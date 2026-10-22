@@ -20,7 +20,6 @@ variables:
 sync:
   exclude:
     - archive/**
-    - dashboard/**
     - data/**
     - docs/**
     - presentation/**
